@@ -1,0 +1,18 @@
+// 故事包内素材 → 浏览器可用的 blob 地址
+import type { StoryFiles } from "@my-oasis/schema";
+const MIME: Record<string, string> = { webp: "image/webp", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", ogg: "audio/ogg", mp3: "audio/mpeg", m4a: "audio/mp4", woff2: "font/woff2" };
+export class AssetBox {
+  private urls = new Map<string, string>();
+  constructor(private files: StoryFiles, private assets: Record<string, any> = {}) {}
+  url(ref: unknown): string | undefined {
+    if (typeof ref !== "string" || !ref) return;
+    const path = ref.startsWith("asset:") ? this.assets[ref.slice(6)]?.path : ref;
+    if (!path) return;
+    if (this.urls.has(path)) return this.urls.get(path);
+    const d = this.files.get(path); if (!d) return;
+    const u = URL.createObjectURL(new Blob([d as BlobPart], { type: MIME[path.split(".").pop()!.toLowerCase()] ?? "application/octet-stream" }));
+    this.urls.set(path, u); return u;
+  }
+  meta(ref: unknown): any { return typeof ref === "string" && ref.startsWith("asset:") ? this.assets[ref.slice(6)] : undefined; }
+  dispose() { for (const u of this.urls.values()) URL.revokeObjectURL(u); this.urls.clear(); }
+}

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { validateFiles, filesFromText, type Story } from "@my-oasis/schema";
-import { Game, runEntry, createQuickJsRunner, type LLM, type ScriptRunner } from "../src/index.js";
+import { Game, runEntry, runEntries, createQuickJsRunner, type LLM, type ScriptRunner } from "../src/index.js";
 
 const root = new URL("../../../", import.meta.url).pathname;
 const load = (y: string, extra: Record<string, string> = {}) => {
@@ -261,5 +261,49 @@ describe("最高原则：玩家边界", () => {
     expect(() => Game.load(story, JSON.parse(JSON.stringify(d)))).not.toThrow();
     const bad = JSON.parse(JSON.stringify(d)); bad.state.oil = 999;
     expect(() => Game.load(story, bad)).toThrow(/改动/);
+  });
+});
+
+describe("多个 AI 环节合并成一次请求", () => {
+  const y = `spec: oasis/0.3
+meta: { id: merge-test, title: 合并, version: 0.1.0, summary: 测试, language: zh-CN, rating: all-ages }
+state:
+  n: { type: number, init: 0 }
+actions:
+  poke: { callable_by: [player, ai], steps: [ { inc: { n: 1 } } ] }
+endings:
+  list: [ { id: done, label: 完, kind: good, when: "state.n >= 9" } ]
+tools:
+  poke_t: { action: poke, desc: 戳一下 }
+ai:
+  rules: { max_authority: 2 }
+  entry_points:
+    narr:  { kind: narrate, trigger: action:poke, prompt: 写一句, card: { task: 叙述, authority: 0, output: { format: text, to: region:main } } }
+    mood:  { kind: narrate, trigger: action:poke, prompt: 写一句, priority: background, card: { task: 心情, authority: 0, output: { format: text, to: region:main } } }
+    judge: { kind: judge, trigger: action:poke, prompt: 判断, card: { task: 裁定, authority: 2, tools: { poke_t: {} }, output: { format: text, to: region:main } } }
+ui:
+  components:
+    log: { type: text-log, region: main, content: ai }
+    b: { type: button, region: input, label: 戳, action: poke }
+`;
+  it("只出文字的接入点合并为一次请求，用工具的单独请求", async () => {
+    const { story } = load(y);
+    const g = new Game(story, { seed: 1 }); g.start();
+    const reqs: any[] = [];
+    const llm = { async chat(req: any) { reqs.push(req); return req.json ? { content: JSON.stringify({ narr: "海浪声。", mood: "平静" }) } : { content: "裁定完毕" }; } };
+    const rs = await runEntries(g, ["narr", "mood", "judge"], llm);
+    expect(reqs.length).toBe(2);
+    expect(rs.find((r) => r.entry === "narr")!.text).toBe("海浪声。");
+    expect(rs.find((r) => r.entry === "mood")!.text).toBe("平静");
+    expect(rs[0].entry).toBe("judge");
+  });
+  it("合并结果不完整时退回逐个请求", async () => {
+    const { story } = load(y);
+    const g = new Game(story, { seed: 1 }); g.start();
+    let n = 0;
+    const llm = { async chat(req: any) { n++; return { content: req.json ? "{\"narr\":\"x\"}" : "单独" }; } };
+    const rs = await runEntries(g, ["narr", "mood"], llm);
+    expect(n).toBe(3);
+    expect(rs.map((r) => r.text)).toEqual(["单独", "单独"]);
   });
 });

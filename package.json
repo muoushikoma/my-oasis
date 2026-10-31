@@ -5,7 +5,7 @@
   "scripts": {
     
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/desktop/tsconfig.json",
     "oasis": "tsx packages/cli/src/index.ts"
   },
   "devDependencies": {

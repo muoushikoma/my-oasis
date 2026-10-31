@@ -455,6 +455,17 @@ export class Game {
     this.write(key, text, ctx); this.dispatch(ctx.changed); this.checkEndings();
   }
 
+  /** 界面输入框直接填值（只限作者声明了 writes、且状态允许 ui 写的输入框） */
+  uiWrite(componentId: string, value: string): ActionResult {
+    const c: any = this.story.ui?.components?.[componentId];
+    const key = c?.type === "text-input" ? c.writes : undefined, d = key ? this.story.state[key] : undefined;
+    if (!d || !(d.writable_by ?? []).includes("ui")) return { ok: false, error: "这里不能填写", changes: [] };
+    const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "player", changed: new Set() };
+    try { this.write(key, String(value).slice(0, 200), ctx); } catch (e: any) { return { ok: false, error: e.message, changes: [] }; }
+    this.dispatch(ctx.changed); this.checkEndings();
+    return { ok: true, changes: [] };
+  }
+
   // ---------- 存档 ----------
   save(): SaveData {
     const d: SaveData = { format: "oasis-save/1", story: { id: this.story.meta.id, version: this.story.meta.version, hash: storyHash(this.story) },

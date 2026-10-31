@@ -161,3 +161,58 @@ export function openAiCompatible(cfg: { baseUrl: string; apiKey?: string; model:
     },
   };
 }
+
+/** 能不能和别的接入点合并成一次请求：不用工具（不改状态）、输出为文字或分段 */
+export function canMerge(game: Game, entryId: string): boolean {
+  const ep = game.entry(entryId), f = ep.card.output.format ?? "text";
+  return game.toolsFor(entryId).length === 0 && (f === "text" || f === "sections");
+}
+
+/**
+ * 同一次操作触发的多个 AI 接入点：
+ * - 要调用工具的（会改状态）按优先级逐个单独运行，保证规则检查顺序；
+ * - 其余只出文字的，合并成**一次请求**，让模型按 JSON 一次返回各自的内容；合并失败自动退回逐个请求。
+ */
+export async function runEntries(game: Game, ids: string[], llm: LLM, input = "", event?: any,
+  opts: { onText?: (entryId: string, chunk: string) => void; allowActions?: string[]; merge?: boolean } = {}): Promise<EntryRunResult[]> {
+  const order = (id: string) => (game.entry(id).priority === "background" ? 1 : 0);
+  const sorted = [...ids].sort((a, b) => order(a) - order(b));
+  const solo = sorted.filter((id) => !(opts.merge !== false && canMerge(game, id)));
+  const mergeable = sorted.filter((id) => !solo.includes(id));
+  const results: EntryRunResult[] = [];
+  for (const id of solo) results.push(await runEntry(game, id, llm, input, event, { allowActions: opts.allowActions, onText: (c) => opts.onText?.(id, c) }));
+  if (mergeable.length === 1) results.push(await runEntry(game, mergeable[0], llm, input, event, { onText: (c) => opts.onText?.(mergeable[0], c) }));
+  else if (mergeable.length > 1) {
+    const merged = await runMerged(game, mergeable, llm, input, event);
+    if (merged) results.push(...merged);
+    else for (const id of mergeable) results.push(await runEntry(game, id, llm, input, event, { onText: (c) => opts.onText?.(id, c) }));
+  }
+  return results;
+}
+
+async function runMerged(game: Game, ids: string[], llm: LLM, input: string, event: any): Promise<EntryRunResult[] | null> {
+  const parts = ids.map((id) => {
+    const m = buildMessages(game, id, input, event);
+    const sys = String(m[0].content ?? "").replace(PLATFORM_PREFIX, "").trim();
+    const user = String(m[m.length - 1].content ?? "");
+    const out = game.entry(id).card.output;
+    const shape = out.format === "sections" ? `一个对象，字段：${Object.keys(out.sections ?? {}).join("、")}` : `一段文字（不超过 ${out.max_chars ?? 800} 字）`;
+    return `### 任务「${id}」\n【任务说明】\n${sys}\n【本次内容】\n${user}\n【输出】${shape}`;
+  });
+  const sys = `${PLATFORM_PREFIX}\n\n本次请你一次完成 ${ids.length} 个互相独立的任务。每个任务只遵守它自己的说明。\n只输出一个 JSON 对象，键是任务 id（${ids.join("、")}），值是该任务的输出。不要输出别的内容。`;
+  let res: ChatResponse;
+  try { res = await llm.chat({ messages: [{ role: "system", content: sys }, { role: "user", content: parts.join("\n\n") }], json: true, temperature: 0.8 }); }
+  catch { return null; }
+  const j = parseJsonLoose(res.content ?? "");
+  if (!j || !ids.every((id) => id in j)) return null;
+  return ids.map((id) => {
+    const ep = game.entry(id), out = ep.card.output, target = out.to ?? "none";
+    const r: EntryRunResult = { entry: id, target, text: "", toolLog: [] };
+    if (out.format === "sections") { const v = j[id] ?? {}; r.sections = Object.fromEntries(Object.keys(out.sections ?? {}).map((k) => [k, String(v?.[k] ?? "").slice(0, out.max_chars ?? 800)])); }
+    else { r.text = String(typeof j[id] === "string" ? j[id] : JSON.stringify(j[id])).trim().slice(0, out.max_chars ?? 800); if (target.startsWith("state:")) game.writeAiText(target.slice(6), r.text); }
+    const h = ((game.extra.history ??= {})[id] ??= []);
+    h.push({ role: "user", content: input || "（继续）" }, { role: "assistant", content: r.text || JSON.stringify(r.sections ?? "") });
+    if (h.length > 80) h.splice(0, h.length - 80);
+    return r;
+  });
+}
