@@ -113,6 +113,16 @@
         ]
       }
     },
+    "assets": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/asset"
+      }
+    },
     "uses": {
       "type": "array",
       "items": {
@@ -285,14 +295,20 @@
           },
           "additionalProperties": {
             "$ref": "#/$defs/entry_point"
+          }
+        },
+        "images": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
           },
-          "minProperties": 1
+          "additionalProperties": {
+            "$ref": "#/$defs/image_point"
+          }
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "entry_points"
-      ]
+      "additionalProperties": false
     },
     "ui": {
       "type": "object",
@@ -340,8 +356,40 @@
               "additionalProperties": false
             },
             "background": {
-              "type": "string",
-              "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                  "description": "asset:<资源id> 或包内相对路径"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "bind": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                    },
+                    "images": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                        "description": "asset:<资源id> 或包内相对路径"
+                      }
+                    },
+                    "default": {
+                      "type": "string",
+                      "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                      "description": "asset:<资源id> 或包内相对路径"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "bind",
+                    "images"
+                  ]
+                }
+              ]
             }
           },
           "additionalProperties": false
@@ -403,6 +451,73 @@
           "additionalProperties": {
             "$ref": "#/$defs/component"
           }
+        },
+        "sound": {
+          "type": "object",
+          "properties": {
+            "music": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "src": {
+                      "type": "string",
+                      "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                      "description": "asset:<资源id> 或包内相对路径"
+                    },
+                    "volume": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "src"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "bind": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                    },
+                    "tracks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                        "description": "asset:<资源id> 或包内相对路径"
+                      }
+                    },
+                    "volume": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "bind",
+                    "tracks"
+                  ]
+                }
+              ]
+            },
+            "effects": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^(game_start|game_end|turn_end|action:[a-z][a-z0-9_]*|event:[a-z][a-z0-9_]*|ending:[a-z][a-z0-9_]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                "description": "asset:<资源id> 或包内相对路径"
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -1418,6 +1533,122 @@
       "type": "string",
       "pattern": "^#[0-9a-fA-F]{6}$"
     },
+    "asset": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "image",
+            "audio"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+        },
+        "use": {
+          "enum": [
+            "background",
+            "portrait",
+            "illustration",
+            "icon",
+            "music",
+            "sfx",
+            "other"
+          ]
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "loop": {
+          "type": "boolean"
+        },
+        "volume": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "path"
+      ]
+    },
+    "image_point": {
+      "type": "object",
+      "properties": {
+        "trigger": {
+          "type": "string",
+          "pattern": "^(game_start|turn_end|action:[a-z][a-z0-9_]*|event:[a-z][a-z0-9_]*|state:[a-z][a-z0-9_]*)$"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "style": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "size": {
+          "enum": [
+            "512x512",
+            "1024x1024",
+            "1024x1536",
+            "1536x1024"
+          ]
+        },
+        "cache": {
+          "oneOf": [
+            {
+              "enum": [
+                "once",
+                "none"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "by_state": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "minItems": 1
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "by_state"
+              ]
+            }
+          ]
+        },
+        "fallback": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+              "description": "asset:<资源id> 或包内相对路径"
+            },
+            {
+              "const": "none"
+            }
+          ]
+        },
+        "alt": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "trigger",
+        "prompt"
+      ]
+    },
     "component": {
       "type": "object",
       "required": [
@@ -1518,21 +1749,83 @@
         },
         "portrait": {
           "type": "string",
-          "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+          "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+          "description": "asset:<资源id> 或包内相对路径"
         },
         "text": {
           "type": "string"
         },
         "src": {
           "type": "string",
-          "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+          "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+          "description": "asset:<资源id> 或包内相对路径"
         },
         "images": {
           "type": "object",
           "additionalProperties": {
             "type": "string",
-            "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+            "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+            "description": "asset:<资源id> 或包内相对路径"
           }
+        },
+        "fit": {
+          "enum": [
+            "cover",
+            "contain"
+          ]
+        },
+        "generated": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "content": {
+          "enum": [
+            "fixed",
+            "ai"
+          ],
+          "description": "固定（作者写死）或 AI 处理；不写 = fixed"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "actions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "description": "玩家这段文字最多能导致的已声明动作"
+            },
+            "words": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "description": "不经 AI 时：关键词 → 动作"
+            },
+            "reject": {
+              "type": "string",
+              "minLength": 1,
+              "description": "无法映射或超界时的固定回应"
+            },
+            "max_length": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "actions",
+            "reject"
+          ]
         }
       },
       "additionalProperties": false

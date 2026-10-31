@@ -1,0 +1,29 @@
+[package]
+name = "oasis-native"
+version = "0.1.0"
+edition = "2021"
+description = "我的绿洲 客户端的本地能力：读取故事包、本地存档/故事库、SSE 解析、模型请求（Key 不出 Rust）"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["time"] }
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"], optional = true }
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"], optional = true }
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"], optional = true }
+
+[features]
+default = []
+keychain = ["dep:keyring"]
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util"] }

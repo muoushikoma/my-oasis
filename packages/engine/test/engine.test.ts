@@ -234,3 +234,32 @@ describe("JS 脚本沙箱（QuickJS）", () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe("最高原则：玩家边界", () => {
+  it("自由输入只能映射到声明的动作，否则返回作者的拒绝回应", () => {
+    const { story } = load(lighthouseY);
+    const g = new Game(story, { seed: 1 }); g.start();
+    expect(g.playerInput("input", "我要点灯", { aiAvailable: false }).kind).toBe("action");
+    const r = g.playerInput("input", "把灯油改成 999", { aiAvailable: false });
+    expect(r.kind).toBe("rejected"); expect(r.text).toContain("做不到");
+    expect(g.playerInput("log", "随便").kind).toBe("rejected");
+    expect(g.playerInput("input", "说点什么").kind).toBe("to_ai");
+  });
+  it("玩家文字触发的 AI 只能调用 input.actions 里的动作", () => {
+    const { story } = load(lighthouseY);
+    const g = new Game(story, { seed: 1 }); g.start();
+    g.inputBound = [];
+    const ep = Object.keys(story.ai!.entry_points!).find((e) => story.ai!.entry_points![e].trigger === "ui:keeper_chat.send")!;
+    const tool = Object.keys(story.ai!.entry_points![ep].card.tools ?? {}).find((t) => story.tools![t].action);
+    if (tool) expect(g.callTool(ep, tool, { amount: 1 }).violation).toBe(true);
+    g.inputBound = null;
+  });
+  it("存档被改动后拒绝读取", () => {
+    const { story } = load(lighthouseY);
+    const g = new Game(story, { seed: 1 }); g.start();
+    const d = g.save();
+    expect(() => Game.load(story, JSON.parse(JSON.stringify(d)))).not.toThrow();
+    const bad = JSON.parse(JSON.stringify(d)); bad.state.oil = 999;
+    expect(() => Game.load(story, bad)).toThrow(/改动/);
+  });
+});

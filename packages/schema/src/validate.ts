@@ -3,7 +3,7 @@ import Ajv2020Mod from "ajv/dist/2020.js";
 import schemaJson from "./story.schema.json" with { type: "json" };
 import { strFromU8 } from "fflate";
 import { parseExpr, collectRefs, ExprError, BUILTIN_FUNCS, RANDOM_FUNCS, DICE_FUNCS } from "./expr.js";
-import { ALLOWED_EXT, LIMITS, type StoryFiles } from "./files.js";
+import { ALLOWED_EXT, IMAGE_EXT, AUDIO_EXT, LIMITS, type StoryFiles } from "./files.js";
 import { DEFAULT_MAX_AUTHORITY, KNOWN_TEMPLATES, regionsOf, type Story, type Step, type StateDef } from "./types.js";
 
 export type Level = "error" | "warning" | "info";
@@ -94,9 +94,10 @@ export function validateFiles(files: StoryFiles): ValidationResult {
     if (p.startsWith("/") || p.split("/").includes("..")) push({ level: "error", code: "bad_path", file: p, path: [], message: `文件路径「${p}」不安全。`, fix: "只用包内相对路径，不要以 / 开头、不要含 ..。", ref: "§1" });
     const ext = (p.match(/\.[^./]+$/)?.[0] ?? "").toLowerCase();
     if (!ALLOWED_EXT.includes(ext)) push({ level: "error", code: "bad_file_type", file: p, path: [], message: `不支持的文件类型「${p}」。`, fix: `只能放这些类型：${ALLOWED_EXT.join(" ")}`, ref: "§1" });
-    if ([".webp", ".png", ".jpg", ".jpeg"].includes(ext) && d.length > LIMITS.imageBytes) push({ level: "error", code: "image_too_big", file: p, path: [], message: `图片「${p}」有 ${(d.length / 1024).toFixed(0)} KB，超过 500 KB。`, fix: "压缩图片或转成 WebP。", ref: "§1" });
+    if (IMAGE_EXT.includes(ext) && d.length > LIMITS.imageBytes) push({ level: "error", code: "image_too_big", file: p, path: [], message: `图片「${p}」有 ${(d.length / 1024).toFixed(0)} KB，超过 1 MB。`, fix: "压缩图片或转成 WebP。", ref: "§13.5" });
+    if (AUDIO_EXT.includes(ext) && d.length > LIMITS.audioBytes) push({ level: "error", code: "audio_too_big", file: p, path: [], message: `音频「${p}」有 ${(d.length / 1024 / 1024).toFixed(1)} MB，超过 5 MB。`, fix: "降低码率（如 96–128 kbps 的 OGG/MP3）或剪短。", ref: "§13.5" });
   }
-  if (total > LIMITS.packageBytes * 1.5) push({ level: "warning", code: "package_big", path: [], message: `故事包未压缩时约 ${(total / 1024 / 1024).toFixed(1)} MB，压缩后可能超过 2 MB 上限。`, ref: "§1" });
+  if (total > LIMITS.packageBytes) push({ level: "error", code: "package_big", path: [], message: `故事包有 ${(total / 1024 / 1024).toFixed(1)} MB，超过 20 MB 上限。`, fix: "压缩图片和音频，或删掉没用到的素材。", ref: "§1" });
 
   // ---------- 语法 ----------
   const src = strFromU8(files.get(mainFile)!).replace(/^\uFEFF/, "");
@@ -230,6 +231,7 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
   const events = Array.isArray(s.events) ? s.events : [];
   const comps = obj(s.ui?.components);
   const entries = obj(s.ai?.entry_points);
+  const isAi = (c: any) => c?.content === "ai" || c?.from_ai === true;
   const uses = Array.isArray(s.uses) ? s.uses : [];
   const hasDice = uses.some((u) => String(u).startsWith("oasis/dice@"));
   const stateIds = Object.keys(state), actionIds = Object.keys(actions), endingIds = endings.map((e: any) => e?.id).filter(Boolean);
@@ -241,8 +243,37 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     if (typeof p === "string" && !fileExists(p)) report("error", "missing_file", path, `${what}引用了文件「${p}」，但故事包里没有这个文件。`, `把文件放进故事包，或检查路径大小写（包内文件有：${[...files.keys()].slice(0, 8).join("、")}${files.size > 8 ? "……" : ""}）。`, "§1");
   };
 
+  // assets（素材清单）
+  const assets = obj((s as any).assets);
+  const extOf = (x: string) => (x.match(/\.[^./]+$/)?.[0] ?? "").toLowerCase();
+  for (const [id, a] of Object.entries<any>(assets)) {
+    if (!a || typeof a.path !== "string") continue;
+    const p = ["assets", id];
+    if (!files.has(a.path)) { report("error", "missing_file", p, `素材「${id}」的文件「${a.path}」不在故事包里。`, "把文件放进故事包，或检查路径和大小写。", "§13.5", "path"); continue; }
+    const ext = extOf(a.path);
+    if (a.type === "image" && !IMAGE_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为图片，但「${a.path}」不是 WebP/PNG/JPG。`, undefined, "§13.5", "path");
+    if (a.type === "audio" && !AUDIO_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为音频，但「${a.path}」不是 OGG/MP3/M4A。`, undefined, "§13.5", "path");
+    if ((a.use === "music" || a.use === "sfx") && a.type !== "audio") report("error", "asset_use", p, `素材「${id}」用途是 ${a.use}，类型应为 audio。`, undefined, "§13.5", "use");
+    if (["background", "portrait", "illustration", "icon"].includes(a.use) && a.type !== "image") report("error", "asset_use", p, `素材「${id}」用途是 ${a.use}，类型应为 image。`, undefined, "§13.5", "use");
+  }
+  const assetIds = Object.keys(assets);
+  /** 检查素材引用：asset:<id> 或包内路径 */
+  const checkRef = (path: (string | number)[], ref: unknown, want: "image" | "audio", what: string, key?: string) => {
+    if (typeof ref !== "string") return;
+    if (ref.startsWith("asset:")) {
+      const id = ref.slice(6), a = assets[id];
+      if (!a) report("error", "unknown_asset", path, `${what}引用的素材「${id}」没有在 assets 里登记。${didYouMean(id, assetIds)}`, `已登记的素材：${listOf(assetIds)}。`, "§13.5", key);
+      else if (a.type !== want) report("error", "asset_type", path, `${what}需要${want === "image" ? "图片" : "音频"}，但素材「${id}」是${a.type === "image" ? "图片" : "音频"}。`, undefined, "§13.5", key);
+      return;
+    }
+    if (!files.has(ref)) { report("error", "missing_file", path, `${what}引用了文件「${ref}」，但故事包里没有这个文件。`, "把文件放进故事包，或改用 asset:素材id。", "§13.5", key); return; }
+    const ok = (want === "image" ? IMAGE_EXT : AUDIO_EXT).includes(extOf(ref));
+    if (!ok) report("error", "asset_format", path, `${what}需要${want === "image" ? "图片（WebP/PNG/JPG）" : "音频（OGG/MP3/M4A）"}，但「${ref}」格式不对。`, undefined, "§13.5", key);
+  };
+  const images = obj((s as any).ai?.images);
+
   // meta
-  checkFile(["meta", "cover"], s.meta?.cover, "封面");
+  checkRef(["meta"], s.meta?.cover, "image", "封面", "cover");
   checkFile(["meta", "setting"], s.meta?.setting, "设定");
   if (s.meta?.rating === "mature") report("warning", "mature_rating", ["meta", "rating"], "分级是 mature：可以在本地导入游玩，但目前（暂定）主故事库不收 mature，上传会被拒绝。", "如果内容其实适合全年龄或青少年，改成 all-ages 或 teen。", "§4");
   uses.forEach((u, i) => { if (!KNOWN_TEMPLATES.includes(u)) report("error", "unknown_template", ["uses", i], `不认识的官方模板「${u}」。${didYouMean(u, KNOWN_TEMPLATES)}`, `可用的有：${KNOWN_TEMPLATES.join("、")}。`, "§11"); });
@@ -487,6 +518,8 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
         const [k, v] = to.split(":");
         if (k === "region" && !regions.includes(v)) report("error", "unknown_region", path, `输出到区域「${v}」，但界面里没有这个区域。${didYouMean(v, regions)}`, `当前布局的区域：${listOf(regions)}。`, "§13", key);
         if (k === "component" && !(v in comps)) report("error", "unknown_component", path, `输出到组件「${v}」，但界面里没有这个组件。${didYouMean(v, Object.keys(comps))}`, `已有组件：${listOf(Object.keys(comps))}。`, "§13", key);
+        else if (k === "component" && !isAi(comps[v])) report("error", "ai_into_fixed", path, `AI 要输出到组件「${v}」，但它没有标为 AI 处理（不写就是固定内容）。`, `在组件「${v}」里加 content: ai。`, "§0", key);
+        if (k === "region" && regions.includes(v) && !Object.values<any>(comps).some((c) => c?.region === v && isAi(c))) report("error", "ai_into_fixed", path, `AI 要输出到区域「${v}」，但这个区域里没有标为 AI 处理的组件。`, `给区域「${v}」里的显示组件（如 text-log）加 content: ai。`, "§0", key);
         if (k === "state") {
           const d = state[v];
           if (!d) report("error", "unknown_state", path, `输出到状态「${v}」，但它不存在。`, undefined, "§10.3", key);
@@ -531,7 +564,7 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
       for (const sid of Array.isArray(ep.context?.state) ? ep.context.state : []) if (!(sid in state)) report("error", "unknown_state", [...p, "context"], `context 里的状态「${sid}」不存在。`, undefined, "§10.4", "state");
       if (ep.optional && !ep.fallback) report("warning", "optional_no_fallback", p, "这个 AI 接入点玩家可以关闭，但没写 fallback（关闭后显示什么）。", "加一句 fallback 文字。", "§10.4");
     }
-    if (!Object.keys(entries).length) report("error", "no_entry", ["ai"], "写了 ai 但没有任何接入点。", "要么删掉整个 ai（纯规则故事），要么在 entry_points 里加一个。", "§10.1");
+    if (!Object.keys(entries).length && !Object.keys(images).length) report("error", "no_entry", ["ai"], "写了 ai 但没有任何接入点或生图点。", "要么删掉整个 ai（纯规则故事），要么在 entry_points 里加一个。", "§10.1");
     const narr = Object.values<any>(entries).some((e) => e?.kind === "narrate");
     if (narr && s.ui?.components && !Object.values<any>(comps).some((c) => c?.type === "text-log")) report("warning", "no_text_log", ["ui", "components"], "有 AI 叙述，但界面里没有叙述区（text-log），叙述可能看不到。", "加一个 { type: text-log, region: main }。", "§13");
   }
@@ -563,17 +596,71 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     if (c.type === "button" && c.action === undefined && c.emit === undefined && !Object.values<any>(entries).some((e) => e?.trigger === `ui:${id}.click`))
       report("warning", "button_noop", p, "这个按钮点了什么也不会发生（没有 action、emit，也没有 AI 接入点用它触发）。", undefined, "§13");
     if (c.emit) emitted.add(c.emit);
+    // 最高原则：自由文字必须有边界
+    if ((c.type === "text-input" && c.writes === undefined) || c.type === "chat-box") {
+      if (!c.input) report("error", "free_input_unbounded", p, `「${id}」让玩家自由打字，但没有写 input（能映射到哪些动作、超界怎么回应）。`, "加上 input: { actions: [允许的动作], reject: 超界时的固定回应 }；actions 可以是 []（只聊天、不改任何东西）。", "§0", "type");
+      else {
+        for (const a of c.input.actions ?? []) if (!(a in actions)) report("error", "unknown_action", [...p, "input"], `input.actions 里的动作「${a}」没有声明。${didYouMean(a, Object.keys(actions))}`, undefined, "§0", "actions");
+        for (const a of Object.keys(obj(c.input.words))) if (!(c.input.actions ?? []).includes(a)) report("error", "word_not_allowed", [...p, "input"], `words 里的动作「${a}」不在 input.actions 里。`, `把「${a}」加进 actions，或删掉这一条。`, "§0", "words");
+        const fedToAi = Object.values<any>(entries).some((e) => e?.trigger === "player_input" ? c.type === "text-input" : e?.trigger === `ui:${id}.send` || e?.trigger === `ui:${id}.submit`);
+        if (!fedToAi && !Object.keys(obj(c.input.words)).length) report("warning", "input_always_rejected", [...p, "input"], `「${id}」的文字既不交给 AI，也没有关键词 words，玩家输入什么都会得到拒绝回应。`, undefined, "§0");
+      }
+    }
     if (c.type === "text-input" && c.writes !== undefined) { const d = state[c.writes]; if (!d) report("error", "unknown_state", p, `输入框要写入的状态「${c.writes}」不存在。`, undefined, "§13", "writes"); else if (!(d.writable_by ?? []).includes("ui")) report("error", "not_ui_writable", p, `状态「${c.writes}」不允许界面直接写。`, `在状态里加 writable_by: [rules, ui]。`, "§13", "writes"); }
-    for (const k of ["src", "portrait"]) checkFile(p, c[k], "组件");
-    for (const v of Object.values(obj(c.images))) checkFile([...p, "images"], v, "组件图片");
+    for (const k of ["src", "portrait"]) checkRef(p, c[k], "image", "组件", k);
+    for (const [k, v] of Object.entries(obj(c.images))) checkRef([...p, "images"], v, "image", "组件图片", k);
+    if (c.type === "image" && Array.isArray(c.bind)) report("error", "image_bind", p, "图片组件只能绑定一个状态。", "写成 bind: location（不要用列表）。", "§13", "bind");
+    if (c.type === "image" && typeof c.bind === "string" && state[c.bind]?.type === "enum" && c.images) {
+      const miss = (state[c.bind].values ?? []).filter((x) => !(x in c.images));
+      if (miss.length) report("warning", "image_missing_values", p, `状态「${c.bind}」为 ${listOf(miss)} 时没有对应图片，会显示空白（或 src 默认图）。`, undefined, "§13", "images");
+    }
+    if (c.generated !== undefined && !(c.generated in images)) report("error", "unknown_image_point", p, `组件要显示的 AI 生图「${c.generated}」没有在 ai.images 里定义。`, undefined, "§10.5", "generated");
+    if (c.type === "image" && c.src === undefined && c.bind === undefined && c.generated === undefined) report("error", "image_no_source", p, "图片组件没有图片来源。", "写 src、bind + images，或 generated。", "§13");
     if (c.type === "dice-log" && !hasDice) report("error", "dice_needs_template", p, "dice-log 组件需要骰子模板。", "加上 `uses: [oasis/dice@1]`。", "§13");
+  }
+
+  // 背景、声音
+  const bg = (s.ui as any)?.theme?.background;
+  if (typeof bg === "string") checkRef(["ui", "theme"], bg, "image", "背景", "background");
+  else if (bg && typeof bg === "object") {
+    if (!(bg.bind in state)) report("error", "unknown_state", ["ui", "theme", "background"], `背景绑定的状态「${bg.bind}」不存在。`, undefined, "§13", "bind");
+    for (const [k, v] of Object.entries(obj(bg.images))) checkRef(["ui", "theme", "background", "images"], v, "image", "背景", k);
+    checkRef(["ui", "theme", "background"], bg.default, "image", "默认背景", "default");
+  }
+  const sound = obj((s.ui as any)?.sound);
+  const music = obj(sound.music);
+  checkRef(["ui", "sound", "music"], music.src, "audio", "背景音乐", "src");
+  if (music.bind !== undefined && !(music.bind in state)) report("error", "unknown_state", ["ui", "sound", "music"], `背景音乐绑定的状态「${music.bind}」不存在。`, undefined, "§13", "bind");
+  for (const [k, v] of Object.entries(obj(music.tracks))) checkRef(["ui", "sound", "music", "tracks"], v, "audio", "背景音乐", k);
+  for (const [k, v] of Object.entries(obj(sound.effects))) {
+    checkRef(["ui", "sound", "effects"], v, "audio", "音效", k);
+    const [kind, id] = k.split(":");
+    if (kind === "action" && !(id in actions)) report("error", "unknown_action", ["ui", "sound", "effects"], `音效绑定的动作「${id}」不存在。`, undefined, "§13", k);
+    if (kind === "ending" && !endingIds.includes(id)) report("error", "unknown_ending", ["ui", "sound", "effects"], `音效绑定的结局「${id}」不存在。`, undefined, "§13", k);
+    if (kind === "event" && !eventIds.has(id) && !emitted.has(id)) report("error", "unknown_event", ["ui", "sound", "effects"], `音效绑定的事件「${id}」不存在。`, undefined, "§13", k);
+  }
+
+  // AI 生图
+  for (const [id, ip] of Object.entries<any>(images)) {
+    const p = ["ai", "images", id];
+    if (typeof ip?.trigger === "string") {
+      const [k, v] = ip.trigger.split(":");
+      if (k === "state" && !(v in state)) report("error", "unknown_state", p, `生图触发用的状态「${v}」不存在。`, undefined, "§10.5", "trigger");
+      if (k === "action" && !(v in actions)) report("error", "unknown_action", p, `生图触发用的动作「${v}」不存在。`, undefined, "§10.5", "trigger");
+      if (k === "event" && !eventIds.has(v) && !emitted.has(v)) report("error", "unknown_event", p, `生图触发用的事件「${v}」不存在。`, undefined, "§10.5", "trigger");
+    }
+    for (const sid of Array.isArray(ip?.cache?.by_state) ? ip.cache.by_state : []) if (!(sid in state)) report("error", "unknown_state", [...p, "cache"], `缓存依据的状态「${sid}」不存在。`, undefined, "§10.5", "by_state");
+    if (ip?.fallback && ip.fallback !== "none") checkRef(p, ip.fallback, "image", "生图失败时的替代图", "fallback");
+    if (ip?.fallback === undefined) report("warning", "image_no_fallback", p, "没写 fallback：生图失败或玩家关闭生图时，这里将不显示图片。", "写 fallback: asset:某张自带图片，或 fallback: none 表示确认只显示文字。", "§10.5");
+    for (const m of String(ip?.prompt ?? "").matchAll(/\{\{\s*state\.([a-z0-9_]+)\s*\}\}/g)) if (!(m[1] in state)) report("error", "unknown_state", p, `生图提示词里的 {{state.${m[1]}}} 引用了不存在的状态。`, undefined, "§10.5", "prompt");
+    if (!Object.values<any>(comps).some((c) => c?.generated === id) && !(typeof bg === "object")) report("warning", "image_unused", p, `AI 生图「${id}」没有任何图片组件显示它（组件里写 generated: ${id}）。`, undefined, "§10.5");
   }
 
   // 未使用的动作
   for (const id of actionIds) if (!usedActions.has(id) && !(Array.isArray(actions[id]?.callable_by) && actions[id].callable_by.includes("player") && !s.ui?.components))
     if (!usedActions.has(id)) report("info", "unused_action", ["actions", id], `动作「${id}」没有被任何工具、组件或步骤用到，玩家和 AI 都触发不了它。`, "如果是要给 AI 用，在 tools 里注册；给玩家用，就放一个按钮。", "§6.2");
   // 无 AI 且无组件
-  if (!s.ai && !Object.values<any>(comps).some((c) => ["button", "choice-buttons"].includes(c?.type)))
+  if (!Object.keys(entries).length && !Object.values<any>(comps).some((c) => ["button", "choice-buttons"].includes(c?.type)))
     report("warning", "no_way_to_play", [], "这是一个没有 AI 的故事，但界面里没有按钮或选项，玩家没办法操作。", "加 button 或 choice-buttons 组件，或者加一个 AI 接入点。", "§13");
 }
 

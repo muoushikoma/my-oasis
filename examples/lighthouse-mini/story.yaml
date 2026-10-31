@@ -98,7 +98,20 @@ ai:
 ui:
   layout: { template: two-column }
   components:
-    log:   { type: text-log, region: main }
-    input: { type: text-input, region: input, placeholder: 你要做什么？ }
+    log:   { type: text-log, region: main, content: ai }
+    input:
+      type: text-input
+      region: input
+      placeholder: 你要做什么？
+      input:
+        actions: [move, search, tend_light]     # 玩家打的字最多只能变成这三个动作
+        words: { tend_light: [点灯, 添油, 守灯] }  # 没配 Key 时按关键词映射
+        reject: 这件事在这座岛上做不到。你可以移动、搜索或照看灯塔。
+        max_length: 300
     stats: { type: stat-list, region: side, bind: [oil, day, location, clues] }
-    keeper_chat: { type: chat-box, region: side, title: 老守灯人 }
+    keeper_chat:
+      type: chat-box
+      region: side
+      title: 老守灯人
+      content: ai
+      input: { actions: [], reject: 老人只是看着你，没有回答。, max_length: 200 }

@@ -19,13 +19,18 @@
 ````text
 你是“我的绿洲”故事包作者助手。请严格按照 Oasis Story Format v0.3 生成一个故事包。
 
+【最高原则，必须遵守】
+1. 每一处内容要么固定、要么 AI 处理，不写就是固定。AI 要输出到的组件必须写 content: ai（choice-buttons 用 from_ai: true）。
+2. 玩家只能做 actions 里声明的事。放 text-input（自由输入）或 chat-box 时必须写 input: { actions: [允许导致的动作], reject: 做不到时的固定回应 }；只聊天就写 actions: []。可加 words: { 动作id: [关键词] } 让没有 AI 时也能用。
+3. 不要设计“玩家说一句话就能改数值或跳结局”的地方；这些只能通过动作和规则发生。
+
 【输出要求】
 - 只输出文件，每个文件用这种格式：
   文件：story.yaml
   ```yaml
   （内容）
   ```
-- 必须输出 story.yaml；需要时可另外输出 setting.md、prompts/*.md、scripts/*.js。不要输出图片。
+- 必须输出 story.yaml；需要时可另外输出 setting.md、prompts/*.md、scripts/*.js。不要输出图片或音频文件本身；如需素材，在 assets 里登记路径，并在最后列出“需要准备的素材清单”（文件名、内容描述、建议尺寸）。
 - YAML 用 2 个空格缩进，不用 Tab；UTF-8。
 - 输出后附一段“自检结果”，逐条确认下面【自检清单】。
 
@@ -120,8 +125,22 @@ ui:
     simple 区域：main input status；two-column：main input side；stage：top main input side
   components:
     <组件id>: { type, region, ... }
-    type 可选：text-log, text-input(placeholder), button(action 或 emit), choice-buttons(choices 或 from_ai), stat-list(bind 列表), stat-bar(bind，需 min/max 的 number), item-list(bind), chat-box(title), text-block(bind 或 text), image(src 或 bind+images), dice-log(需 oasis/dice)
-  AI 的 output.to 要指向存在的区域或组件。至少要有一个 text-log 显示叙述（如果有 narrate 接入点）。
+    通用：content: fixed（默认）| ai
+    type 可选：text-log, text-input(placeholder, input 必填), button(action 或 emit), choice-buttons(choices 或 from_ai), stat-list(bind 列表), stat-bar(bind，需 min/max 的 number), item-list(bind), chat-box(title, portrait, input 必填), text-block(bind 或 text), image(src，或 bind+images，或 generated), dice-log(需 oasis/dice)
+  theme.background: asset:id，或 { bind: 状态id, images: { 值: asset:id }, default: asset:id }
+  sound: { music: { src: asset:id } 或 { bind: 状态id, tracks: { 值: asset:id } }, effects: { "action:id"|"event:id"|"ending:id"|game_start|turn_end: asset:id } }
+  AI 的 output.to 要指向存在且标了 content: ai 的组件，或含有这种组件的区域。至少要有一个 text-log 显示叙述（如果有 narrate 接入点）。
+
+【assets 素材】（可省略）
+assets:
+  <素材id>: { type: image|audio, path: assets/xxx.webp, use: background|portrait|illustration|icon|music|sfx|other, alt, loop, volume }
+  引用写 asset:<素材id>。图片 webp/png/jpg ≤ 1 MB；音频 ogg/mp3/m4a ≤ 5 MB；整包 ≤ 20 MB。
+
+【ai.images AI 生图】（可省略；玩家可能关闭生图，所以要写 fallback）
+ai:
+  images:
+    <生图点id>: { trigger: game_start|turn_end|action:id|event:id|state:id, prompt: "可用 {{state.x}}", style, size: 1024x1024, cache: once|none|{ by_state: [...] }, fallback: asset:id 或 none }
+  图片组件写 generated: <生图点id> 来显示。
 
 【脚本】（一般不需要；声明式写不出来再用）
 scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.js#run
@@ -138,6 +157,9 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 8. json 输出写了 schema；optional 接入点写了 fallback
 9. 故事一定会结束（有回合/天数等上限对应的结局）
 10. 内容符合 rating，全年龄内容不含血腥、色情
+11. AI 输出到的组件都写了 content: ai；没标的都是固定内容
+12. 每个 text-input（不带 writes 的）和 chat-box 都写了 input（actions + reject），actions 里的动作都存在
+13. 所有 asset:id 都在 assets 里登记，图片处用图片、音乐处用音频；每个生图点写了 fallback
 11. 事件用 hook 不用 on；没有用 Tab
 
 【我的故事想法】

@@ -58,7 +58,7 @@ async function play(target: string) {
   let shown = 0;
   const flushLog = () => {
     for (const l of game.log.slice(shown)) {
-      if (l.kind === "random" || l.kind === "action") continue;
+      if (l.kind === "random" || l.kind === "action" || l.kind === "rejected") continue;
       const icon = { rule: "📜", dice: "", event: "✨", ending: "🏁", error: "⚠️ ", violation: "🚫" }[l.kind] ?? "";
       console.log(`  ${icon} ${l.text}`);
     }
@@ -78,13 +78,13 @@ async function play(target: string) {
     }
     return items;
   };
-  const runAi = async (entryId: string, input: string, event?: any) => {
+  const runAi = async (entryId: string, input: string, event?: any, allowActions?: string[]) => {
     const ep = game.entry(entryId);
     if (!llm) { if (ep.fallback) say(ep.card.output.to, ep.fallback); return; }
     try {
       process.stdout.write("  …AI 思考中\r");
       const clear = () => process.stdout.write("\r" + " ".repeat(20) + "\r");
-      const r = await runEntry(game, entryId, llm, input, event).finally(clear);
+      const r = await runEntry(game, entryId, llm, input, event, { allowActions }).finally(clear);
       for (const t of r.toolLog) console.log(`  🔧 ${t.tool}(${JSON.stringify(t.args)}) → ${t.result.ok ? "成功" : t.result.error}`);
       flushLog();
       if (r.text) say(r.target, r.text);
@@ -139,14 +139,22 @@ async function play(target: string) {
       if (!r.ok) console.log(`  ✋ ${r.error}`); else { acted = true; if (r.result !== true && r.result !== undefined) console.log(`  → ${JSON.stringify(r.result)}`); }
     } else if (line.startsWith("/say ")) {
       const [, cid, ...rest] = line.split(/\s+/);
-      if (!entriesFor(game, `ui:${cid}.send`).length) console.log(`  没有和「${cid}」相关的对话。`); else { await triggerUi(`ui:${cid}.send`, rest.join(" ")); acted = true; }
+      const r = game.playerInput(cid, rest.join(" "), { aiAvailable: !!llm });
+      if (r.kind === "rejected") console.log(`  ${r.text}`);
+      else if (r.kind === "to_ai") { for (const e of entriesFor(game, `ui:${cid}.send`)) await runAi(e, r.text, undefined, r.allowActions); acted = true; }
+      else acted = true;
     } else if (/^\d+$/.test(line) && items[Number(line) - 1]) {
       const r = await items[Number(line) - 1].run();
       if (r && r.ok === false) console.log(`  ✋ ${r.error}`); else acted = true;
     } else {
-      const eps = entriesFor(game, "player_input");
-      if (!eps.length) console.log("  这个故事没有 AI 来理解文字，请用上面的按钮数字或 /do。");
-      else { for (const e of eps) await runAi(e, line); acted = true; }
+      const cid = Object.entries<any>(story.ui?.components ?? {}).find(([, c]) => c.type === "text-input" && c.input)?.[0];
+      if (!cid) console.log("  这个故事没有开放自由输入，请用上面的按钮数字或 /do。");
+      else {
+        const r = game.playerInput(cid, line, { aiAvailable: !!llm });
+        if (r.kind === "rejected") console.log(`  ${r.text}`);
+        else if (r.kind === "to_ai") { for (const e of entriesFor(game, "player_input")) await runAi(e, r.text, undefined, r.allowActions); acted = true; }
+        else acted = true;
+      }
     }
     if (acted) { flushLog(); if (!game.ending) game.endTurn(); flushLog(); showState(); }
   }

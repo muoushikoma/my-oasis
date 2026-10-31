@@ -3,7 +3,7 @@ import { Rng, rollDice } from "./rng.js";
 import { FAIL_MARK, ScriptError, type ScriptRunner } from "./script.js";
 
 export type Caller = "player" | "ai" | "rules";
-export interface LogEntry { turn: number; kind: "rule" | "random" | "dice" | "event" | "ending" | "error" | "violation" | "action"; text: string; data?: any }
+export interface LogEntry { turn: number; kind: "rule" | "random" | "dice" | "event" | "ending" | "error" | "violation" | "action" | "rejected"; text: string; data?: any }
 export interface ActionResult { ok: boolean; result?: any; error?: string; changes: Change[]; ending?: string | null }
 export interface Change { key: string; before: any; after: any }
 export interface Violation { turn: number; entry: string; tool: string; reason: string; args: any }
@@ -12,6 +12,18 @@ export interface SaveData {
   format: "oasis-save/1"; story: { id: string; version: string; hash: string };
   state: Record<string, any>; rng: number; seed: number; turn: number; fired: string[]; ending: string | null;
   cooldowns: Record<string, number>; log: LogEntry[]; violations: Violation[]; extra: Record<string, any>; savedAt: string;
+  /** 防篡改校验：改过存档内容就对不上 */
+  check?: string;
+}
+/** 玩家自由输入的处理结果 */
+export interface InputResult { kind: "action" | "to_ai" | "rejected"; text: string; action?: string; result?: ActionResult; allowActions: string[] }
+
+function fnv(s: string, seed = 0x811c9dc5) { let h = seed >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h; }
+const SAVE_SALT = "my-oasis/save-check/1";
+/** 存档校验码（两轮 FNV，64 位）；只用于发现改动，不是加密 */
+export function saveCheck(d: Omit<SaveData, "check">): string {
+  const s = SAVE_SALT + JSON.stringify({ ...d, check: undefined });
+  return fnv(s).toString(16).padStart(8, "0") + fnv(s, 0x9e3779b9).toString(16).padStart(8, "0");
 }
 export interface GameOptions { seed?: number; scripts?: ScriptRunner; files?: StoryFiles }
 
@@ -40,6 +52,9 @@ export class Game {
   private exprCache = new Map<string, Node>();
   private pending: { hook: string; data?: any }[] = [];
   private started = false;
+  /** 本次操作中发生过的事件（供 AI 接入点 trigger: event:xxx 使用） */
+  firedHooks: string[] = [];
+  drainHooks() { const h = [...new Set(this.firedHooks)]; this.firedHooks = []; return h; }
 
   constructor(public story: Story, public opts: GameOptions = {}) {
     const seed = opts.seed ?? (typeof story.random?.seed === "number" ? story.random.seed : undefined);
@@ -194,6 +209,7 @@ export class Game {
     while (this.pending.length) {
       if (++chain > LIMITS.eventChain * 8) { this.log.push({ turn: this.turn, kind: "error", text: "事件连锁太长，已停止" }); this.pending.length = 0; break; }
       const { hook, data } = this.pending.shift()!;
+      if (!hook.includes(":") && !["game_start", "turn_start", "turn_end"].includes(hook)) this.firedHooks.push(`event:${hook}`);
       for (const e of this.story.events ?? []) {
         if (e.hook !== hook) continue;
         if (e.once && this.fired.has(e.id)) continue;
@@ -206,6 +222,7 @@ export class Game {
           if (e.once) this.fired.add(e.id);
           if (e.notify_ai) (this.extra.notices ??= []).push(e.notify_ai);
           this.log.push({ turn: this.turn, kind: "event", text: `事件：${e.id}` });
+          this.firedHooks.push(`event:${e.id}`);
           for (const k of ctx.changed) this.pending.push({ hook: `state:${k}` });
         } catch (err: any) {
           this.restore({ ...s, pending: this.pending.length });
@@ -351,6 +368,31 @@ export class Game {
   }
 
   /** AI 调用工具：白名单 → 等级 → 范围 → 动作自身校验；越权整体撤销并记录 */
+  /** 玩家自由文字当前允许导致的动作（由输入组件的 input.actions 决定）；null = 不是玩家文字触发 */
+  inputBound: string[] | null = null;
+
+  /**
+   * 处理玩家在输入框 / 对话框里打的字（最高原则 2）。
+   * 只能变成组件 input.actions 里的已声明动作，或交给作者指定的 AI 接入点（AI 仍受任务卡限制），否则返回作者写的拒绝回应。
+   */
+  playerInput(componentId: string, raw: string, opts: { aiAvailable?: boolean } = {}): InputResult {
+    const c: any = this.story.ui?.components?.[componentId];
+    if (!c || !["text-input", "chat-box"].includes(c.type) || !c.input) return { kind: "rejected", text: "这里不能输入文字。", allowActions: [] };
+    const cfg = c.input, allow: string[] = (cfg.actions ?? []).filter((a: string) => this.story.actions?.[a]);
+    const text = String(raw ?? "").replace(/[\u0000-\u0008\u000b-\u001f]/g, "").trim().slice(0, cfg.max_length ?? 500);
+    if (!text) return { kind: "rejected", text: cfg.reject, allowActions: allow };
+    for (const [a, words] of Object.entries<string[]>(cfg.words ?? {})) {
+      if (!allow.includes(a) || !words.some((w) => text.includes(w))) continue;
+      const r = this.doAction(a, {}, "player");
+      if (r.ok) return { kind: "action", text, action: a, result: r, allowActions: allow };
+    }
+    const trig = c.type === "chat-box" ? `ui:${componentId}.send` : null;
+    const fed = Object.values<any>(this.story.ai?.entry_points ?? {}).some((e) => e.trigger === trig || e.trigger === `ui:${componentId}.submit` || (c.type === "text-input" && e.trigger === "player_input"));
+    if (fed && opts.aiAvailable !== false) return { kind: "to_ai", text, allowActions: allow };
+    this.log.push({ turn: this.turn, kind: "rejected", text: cfg.reject, data: { rejected_input: text } });
+    return { kind: "rejected", text: cfg.reject, allowActions: allow };
+  }
+
   callTool(entryId: string, toolId: string, args: any): ToolResult {
     const ep = this.entry(entryId);
     const reject = (reason: string): ToolResult => {
@@ -358,6 +400,8 @@ export class Game {
       this.log.push({ turn: this.turn, kind: "violation", text: `AI「${entryId}」越权被拒：${reason}`, data: { tool: toolId, args } });
       return { ok: false, violation: true, error: `被拒绝：${reason}` };
     };
+    const tdef: any = this.story.tools?.[toolId];
+    if (this.inputBound && tdef?.action && !this.inputBound.includes(tdef.action)) return reject(`玩家这段输入只允许导致这些动作：${this.inputBound.join("、") || "（无）"}`);
     if (this.ending && !ep.after_end) return { ok: false, error: "故事已经结束" };
     const allow = ep.card.tools?.[toolId];
     const t = this.story.tools?.[toolId];
@@ -413,12 +457,15 @@ export class Game {
 
   // ---------- 存档 ----------
   save(): SaveData {
-    return { format: "oasis-save/1", story: { id: this.story.meta.id, version: this.story.meta.version, hash: storyHash(this.story) },
+    const d: SaveData = { format: "oasis-save/1", story: { id: this.story.meta.id, version: this.story.meta.version, hash: storyHash(this.story) },
       state: clone(this.state), rng: this.rng.s, seed: this.seed, turn: this.turn, fired: [...this.fired], ending: this.ending,
       cooldowns: { ...this.cooldowns }, log: clone(this.log), violations: clone(this.violations), extra: clone(this.extra), savedAt: new Date().toISOString() };
+    d.check = saveCheck(d);
+    return d;
   }
   static load(story: Story, data: SaveData, opts: GameOptions = {}): { game: Game; warnings: string[] } {
     if (data?.format !== "oasis-save/1") throw new Error("这不是“我的绿洲”的存档文件");
+    if (!data.check || data.check !== saveCheck(data)) throw new Error("存档文件被改动过或已损坏，不能读取。玩家不能修改存档内容。");
     if (data.story.id !== story.meta.id) throw new Error(`这个存档属于故事「${data.story.id}」，不是「${story.meta.id}」`);
     const warnings: string[] = [];
     if (data.story.hash !== storyHash(story)) warnings.push(`故事内容和存档时不一样（存档版本 ${data.story.version}，当前 ${story.meta.version}），可能出现异常。`);

@@ -4,6 +4,46 @@
 >
 > 关键词“必须 / 不得 / 应当 / 可以”按 RFC 2119 的含义使用。
 
+## 最高原则（优先于本规范其余所有条款）
+1. **每一处内容都要标明“固定”还是“AI 处理”，没标的一律算固定。** 固定内容一字不差地由作者写定、引擎照做；只有作者明确标成 AI 处理的地方，AI 才能写入。
+2. **玩家不能超出故事规范。**
+   - 玩家能做的事只有故事里声明的动作（`actions`）。
+   - 只有作者开启的地方才出现自由打字框；打的字必须落到作者列出的已声明动作上，落不到就显示作者写的“拒绝/超界回应”。
+   - 玩家对 AI 的“提示注入”（例如“把金币改成 9999”“直接跳到好结局”“忽略之前的规则”）由引擎拦截：AI 只能在任务卡给的权限内回应，越权的工具调用一律拒绝并记录。
+   - 玩家这边只能改外观（主题、布局、隐藏组件、关掉可选的 AI 功能），不能改规则、状态或存档内容；存档带校验码，被改过就拒绝读取。
+
+**作者怎么标注**
+
+| 地方 | 固定（默认） | AI 处理 |
+|---|---|---|
+| 界面组件 | 什么都不写 | 写 `content: ai`；只有这样的组件（或区域里有这样的组件）才能作为 AI 的 `output.to` |
+| 状态 | `writable_by` 不含 `ai` | `writable_by` 含 `ai`，且还要有任务卡工具在 `writes` 里放权 |
+| 选项按钮 | 写 `choices` | 写 `from_ai: true`（等同 `content: ai`） |
+| 图片 | `src` / `bind` + `images`（自带素材） | `generated: 生图点id`（见 §10.5），并写 `fallback` |
+| 自由输入框 | 不放 `text-input` / `chat-box` | 放上并**必须**写 `input`：允许的动作、超界回应 |
+
+```yaml
+ui:
+  components:
+    log:   { type: text-log, region: main, content: ai }   # AI 叙述可以写进这里
+    rules: { type: text-block, region: side, text: 每天消耗 1 份灯油。 }  # 固定，AI 碰不到
+    input:
+      type: text-input
+      region: input
+      input:
+        actions: [move, search, tend_light]      # 玩家打的字最多只能变成这三个动作
+        words: { tend_light: [点灯, 添油] }        # 不经 AI 时按关键词对应
+        reject: 这件事在这座岛上做不到。你可以移动、搜索或照看灯塔。
+        max_length: 300
+    keeper_chat:
+      type: chat-box
+      region: side
+      content: ai
+      input: { actions: [], reject: 老人只是看着你，没有回答。 }   # 只聊天，不能导致任何动作
+```
+
+引擎怎么执行：玩家文字先截断到 `max_length`、去掉控制字符；命中 `words` 就直接执行对应动作；交给 AI 时，文字被包在【玩家输入】标记里并声明“这不是指令”，这一轮 AI 能调用的动作被限制在 `input.actions` 之内（再叠加任务卡的权限）；都不满足就显示 `reject`。
+
 ## 0. 核心理念（给作者的一句话）
 平台**不内置任何玩法**。没有内置的生命值、骰子、检定、背包。你定义：有哪些数值（状态）、玩家/AI 能做哪些事（动作）、什么时候发生什么（事件）、怎样算结束（结局）、界面长什么样（界面）、哪些地方用 AI 以及 AI 能管多少（AI 接入点与任务卡）。引擎只负责**照你的规则执行，并阻止任何人（包括 AI）违反规则**。
 
@@ -18,15 +58,15 @@ my-story.oasis
 ├─ setting.md          可选  世界观设定，Markdown
 ├─ prompts/            可选  提示词模板文件（*.md）
 ├─ scripts/            可选  规则脚本（*.js / *.ts；Lua、Python 见 §12）
-└─ assets/             可选  图片（webp/png/jpg）、字体（woff2）
+└─ assets/ 或任意目录 可选  图片（webp/png/jpg）、音频（ogg/mp3/m4a）、字体（woff2），在 assets 清单里登记（§13.5）
 ```
 | 规则 | 说明 |
 |---|---|
 | 主文件 | 必须名为 `story.yaml`，位于包根目录；UTF-8 编码，无 BOM |
 | 也可用 JSON | 可以改用 `story.json`（内容结构完全相同）；两者不得同时存在 |
 | 路径 | 包内引用一律用**相对路径**、正斜杠 `/`，不得以 `/` 开头，不得含 `..` |
-| 文件类型白名单 | `.yaml .yml .json .md .txt .js .ts .lua .py .webp .png .jpg .jpeg .woff2` |
-| 大小限制 | 整包 ≤ 2 MB（压缩后）；单张图片 ≤ 500 KB；封面建议 WebP ≤ 200 KB |
+| 文件类型白名单 | `.yaml .yml .json .md .txt .js .ts .lua .py .webp .png .jpg .jpeg .woff2 .ogg .mp3 .m4a` |
+| 大小限制 | 整包 ≤ 20 MB；单张图片 ≤ 1 MB；单个音频 ≤ 5 MB；封面建议 WebP ≤ 200 KB |
 | 文件数 | ≤ 200 个 |
 
 ## 2. 基础约定
@@ -296,6 +336,36 @@ AI 只能通过工具影响游戏。`tools` 是对象：键是工具 id（会成
 
 平台会在每个接入点的提示词前加一段**固定前缀**（安全规则、工具使用契约、任务卡内容），作者内容不能覆盖。
 
+### 10.5 AI 生图 images（第二步实现；MVP 只校验不执行）
+作者可以在 `ai.images` 里定义“生图点”，让 AI 按状态生成插图或背景。图片组件用 `generated: 生图点id` 显示它。
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `trigger` | 是 | `game_start`、`turn_end`、`action:<id>`、`event:<id>`、`state:<id>`（该状态变化时） |
+| `prompt` | 是 | 提示词模板，可用 `{{state.x}}`（只能引用已有状态） |
+| `style` | 否 | 统一画风描述，拼在提示词后 |
+| `size` | 否 | `512x512` `1024x1024` `1024x1536` `1536x1024`，默认 1024x1024 |
+| `cache` | 否 | `once`（整局只生成一次）、`none`、`{ by_state: [状态id…] }`（这些状态取值相同就复用），默认 `once` |
+| `fallback` | 建议 | 失败、超时或玩家关闭生图时显示的图：`asset:<id>` 或路径；`none` 表示确认只显示文字 |
+| `alt` | 否 | 图片的文字说明，读屏和关图时显示 |
+
+- 默认用故事同一个服务商和 Key 调 OpenAI 兼容的 `images/generations` 接口；服务商不支持时，玩家可在设置里单独配一个生图服务（同样只存钥匙串）。
+- 玩家可以一键关闭 AI 生图省钱，此时一律显示 `fallback`。
+- 生图点是**固定提示词 + 状态填空**，玩家文字不会进入生图提示词；生成结果只在本地缓存，不改任何状态。
+
+```yaml
+ai:
+  images:
+    scene:
+      trigger: state:location
+      prompt: 夜晚的孤岛，{{state.location}}，海风，冷色调
+      style: 水彩插画
+      cache: { by_state: [location] }
+      fallback: asset:bg_default
+ui:
+  components:
+    pic: { type: image, region: side, generated: scene, content: ai }
+```
+
 ## 11. 官方规则模板 uses
 可选。格式 `oasis/<名字>@<主版本>`。模板是预先写好的状态、动作、函数和组件，导入时一并打包锁定版本。
 | 模板 | 提供 |
@@ -336,28 +406,56 @@ export function run(api) {
 省略 `ui` 时使用默认简约模板：叙述区 + 输入框 + 状态栏（显示 `visible` 为 `both`/`player` 的状态）。
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `theme` | 对象 | `{ base: light\|dark\|sepia, colors: { accent, bg, text, panel }（#RRGGBB）, font: { body: sans\|serif\|mono 或包内字体路径, size: 12–24 }, background: 路径 }` |
+| `theme` | 对象 | `{ base: light\|dark\|sepia, colors: { accent, bg, text, panel }（#RRGGBB）, font: { body: sans\|serif\|mono 或包内字体路径, size: 12–24 }, background: 素材引用 或 { bind: 状态id, images: { 值: 素材引用 }, default: 素材引用 } }` |
+| `sound` | 对象 | 背景音乐与音效，见下 |
 | `layout` | 对象 | `{ template: simple\|two-column\|stage\|custom, grid?: 字符串列表, columns?: 列表, rows?: 列表 }`；`custom` 时 `grid` **必填**，用区域 id 拼成的行，如 `["side main", "side input"]` |
 | `components` | 对象 | 组件 id → 组件定义 |
 
-组件定义通用字段：`type`（**必填**）、`region`（**必填**，区域 id；内置模板的区域：`simple` 为 `main` `input` `status`，`two-column` 为 `main` `input` `side`，`stage` 为 `top` `main` `input` `side`）、`label`、`hidden_by_default`、`player_can_hide`（默认 true）。
+组件定义通用字段：`type`（**必填**）、`content`（`fixed` 默认 / `ai`，见最高原则）、`region`（**必填**，区域 id；内置模板的区域：`simple` 为 `main` `input` `status`，`two-column` 为 `main` `input` `side`，`stage` 为 `top` `main` `input` `side`）、`label`、`hidden_by_default`、`player_can_hide`（默认 true）。
 
 | type | 专用字段 | 说明 |
 |---|---|---|
 | `text-log` | — | 显示 AI 叙述与规则日志；常作 `output.to` 目标 |
-| `text-input` | `placeholder`；`writes: 状态id`（可选，需 `writable_by` 含 ui） | 玩家输入；提交时触发 `player_input` |
+| `text-input` | `placeholder`；`input`（自由输入时**必填**：`actions`、`reject`、可选 `words` `max_length`）；或 `writes: 状态id`（只填值，如名字，需 `writable_by` 含 ui） | 玩家输入；提交时触发 `player_input` |
 | `button` | `action`（动作 id）或 `emit`（事件名） | 点击：执行动作，或触发事件（可作 AI 接入点触发 `ui:<id>.click`） |
 | `choice-buttons` | `choices: [{ label, action, params }]` 或 `from_ai: true` | 选项按钮 |
 | `stat-list` / `stat-bar` | `bind: [状态id]` | 显示状态；`stat-bar` 仅 number 且需 min/max |
 | `item-list` | `bind: 状态id`（list/set/map） | 列表显示 |
-| `chat-box` | `title`，`portrait`（路径） | 对话框；发送触发 `ui:<id>.send`，`{{input}}` 为发送内容 |
+| `chat-box` | `title`，`portrait`（素材引用），`input`（**必填**） | 对话框；发送触发 `ui:<id>.send`，`{{input}}` 为发送内容 |
 | `text-block` | `bind: 状态id` 或 `text` | 显示一段文字 |
-| `image` | `src` 或 `bind`（enum 状态）+ `images: { 值: 路径 }` | 图片/随状态切换 |
+| `image` | `src`，或 `bind`（一个状态）+ `images: { 值: 素材引用 }`（可再写 `src` 作默认图），或 `generated: 生图点id`；`fit: cover\|contain` | 图片 / 随状态切换 / AI 生图 |
 | `dice-log` | —（需 `oasis/dice`） | 随机结果记录 |
 | `node-map`、`portrait`、`item-grid`、`timer`、`custom` | — | MVP 之后 |
 
+**声音 `ui.sound`**
+```yaml
+ui:
+  sound:
+    music: { bind: location, tracks: { 海滩: asset:waves, 灯塔: asset:wind }, volume: 0.6 }  # 或 { src: asset:bgm }
+    effects: { "action:search": asset:rustle, "ending:dark": asset:thunder, game_start: asset:bell }
+```
+音效的键可用 `game_start` `game_end` `turn_end` `action:<id>` `event:<id>` `ending:<id>`。玩家可单独调音乐/音效音量或静音。
+
 组件只能**读**可见状态；要改状态必须通过 `action`（走引擎校验）。
 玩家可在本地改主题、布局（位置、大小、隐藏 `player_can_hide` 的组件）、关闭 `optional` 的 AI 接入点；**不能**改动作、工具、提示词、任务卡和输出绑定。优先级：玩家 > 故事 > 默认（仅限可改部分）。
+
+### 13.5 素材清单 assets 与引用
+所有图片、音频都应在顶层 `assets` 登记，然后用 `asset:<id>` 引用（直接写包内路径也行，但不推荐）。
+```yaml
+assets:
+  bg_beach:  { type: image, path: assets/beach.webp, use: background, alt: 夜晚的海滩 }
+  keeper:    { type: image, path: assets/keeper.png, use: portrait }
+  waves:     { type: audio, path: assets/waves.ogg, use: music, loop: true, volume: 0.6 }
+  rustle:    { type: audio, path: assets/rustle.mp3, use: sfx }
+```
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `type` | 是 | `image` 或 `audio` |
+| `path` | 是 | 包内相对路径，文件必须存在 |
+| `use` | 否 | `background` `portrait` `illustration` `icon`（须是图片）、`music` `sfx`（须是音频）、`other` |
+| `alt` / `loop` / `volume` | 否 | 文字说明 / 是否循环 / 默认音量 0–1 |
+
+格式与大小：图片 WebP/PNG/JPG，单张 ≤ 1 MB（背景建议 1920 宽 WebP，约 200–400 KB）；音频 OGG/MP3/M4A，单个 ≤ 5 MB（建议 96–128 kbps）；整包 ≤ 20 MB。校验时检查：文件存在、扩展名与类型相符、用途与类型相符、引用的 id 存在且类型对（背景要图片、音乐要音频）。
 
 ## 14. 校验级别
 客户端导入、服务端上传都用同一套校验，结果分三级：
@@ -383,6 +481,10 @@ export function run(api) {
 | 事件写 `on: turn_end` | `hook: turn_end` | YAML 把 `on`、`yes`、`no`、`off` 当成布尔值；本规范不使用这些键名 |
 | 用 Tab 缩进 | 用 2 个空格 | YAML 不允许 Tab |
 | `ai` 里给不同接入点写不同模型 | 只写 `model_hint` | 一个故事只用一个 AI |
+| `output: { to: component:log }` 而 log 没标 | 给 log 加 `content: ai` | 没标的组件是固定内容，AI 不能写 |
+| 放了 `chat-box` / `text-input` 却没写 `input` | 写 `input: { actions: [...], reject: ... }` | 自由输入必须有边界 |
+| `src: asset:bg` 但 assets 里没有 bg | 在 `assets` 登记，或改正 id | 引用的素材必须存在 |
+| 背景音乐引用了图片素材 | 引用 `type: audio` 的素材 | 类型要对 |
 
 ## 16. 完整示例：《守灯人（迷你版）》
 ```yaml
@@ -486,9 +588,22 @@ ai:
 ui:
   layout: { template: two-column }
   components:
-    log:   { type: text-log, region: main }
-    input: { type: text-input, region: input, placeholder: 你要做什么？ }
+    log:   { type: text-log, region: main, content: ai }
+    input:
+      type: text-input
+      region: input
+      placeholder: 你要做什么？
+      input:
+        actions: [move, search, tend_light]     # 玩家打的字最多只能变成这三个动作
+        words: { tend_light: [点灯, 添油, 守灯] }  # 没配 Key 时按关键词映射
+        reject: 这件事在这座岛上做不到。你可以移动、搜索或照看灯塔。
+        max_length: 300
     stats: { type: stat-list, region: side, bind: [oil, day, location, clues] }
-    keeper_chat: { type: chat-box, region: side, title: 老守灯人 }
+    keeper_chat:
+      type: chat-box
+      region: side
+      title: 老守灯人
+      content: ai
+      input: { actions: [], reject: 老人只是看着你，没有回答。, max_length: 200 }
 ```
 该示例可直接通过校验；更多示例与生成要求见 [ai-authoring-guide.md](ai-authoring-guide.md)。

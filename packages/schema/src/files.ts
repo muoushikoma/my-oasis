@@ -2,8 +2,10 @@ import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 /** 故事包里的文件：相对路径 → 内容 */
 export type StoryFiles = Map<string, Uint8Array>;
 
-export const ALLOWED_EXT = [".yaml", ".yml", ".json", ".md", ".txt", ".js", ".ts", ".lua", ".py", ".webp", ".png", ".jpg", ".jpeg", ".woff2"];
-export const LIMITS = { packageBytes: 2 * 1024 * 1024, imageBytes: 500 * 1024, fileCount: 200 };
+export const ALLOWED_EXT = [".yaml", ".yml", ".json", ".md", ".txt", ".js", ".ts", ".lua", ".py", ".webp", ".png", ".jpg", ".jpeg", ".woff2", ".ogg", ".mp3", ".m4a"];
+export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg"];
+export const AUDIO_EXT = [".ogg", ".mp3", ".m4a"];
+export const LIMITS = { packageBytes: 20 * 1024 * 1024, imageBytes: 1024 * 1024, audioBytes: 5 * 1024 * 1024, fileCount: 200 };
 
 export function filesFromZip(data: Uint8Array): StoryFiles {
   const raw = unzipSync(data);
