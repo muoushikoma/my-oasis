@@ -7,15 +7,15 @@ import { loadSettings, isLocalUrl } from "./settings";
 import { explainError } from "./providers";
 import { submitGuide } from "./online";
 import { submitView } from "./submit";
-import specMd from "../../../docs/ruleset-spec.md?raw";
+import formatMd from "../../../docs/story-format.md?raw";
 import guideMd from "../../../docs/ai-authoring-guide.md?raw";
 import schemaJson from "../../../docs/schema/story.schema.json?raw";
 
 const enc = new TextEncoder(), dec = new TextDecoder();
 export const AUTHOR_PROMPT = (() => { const i = guideMd.indexOf("````text"); const j = guideMd.indexOf("\n````", i + 8); return i >= 0 && j > i ? guideMd.slice(guideMd.indexOf("\n", i) + 1, j).trim() : guideMd; })();
 const DOCS = [
+  { id: "format", title: "故事交付格式", file: "我的绿洲-故事交付格式.md", text: formatMd, ext: "md" },
   { id: "guide", title: "AI 创作指南", file: "我的绿洲-AI创作指南.md", text: guideMd, ext: "md" },
-  { id: "spec", title: "故事包格式规范", file: "我的绿洲-故事包格式规范.md", text: specMd, ext: "md" },
   { id: "schema", title: "JSON Schema", file: "story.schema.json", text: schemaJson, ext: "json" },
 ];
 

@@ -6,9 +6,7 @@
   "type": "object",
   "required": [
     "spec",
-    "meta",
-    "state",
-    "endings"
+    "meta"
   ],
   "patternProperties": {
     "^x_": {}
@@ -167,8 +165,7 @@
       },
       "additionalProperties": {
         "$ref": "#/$defs/state_def"
-      },
-      "minProperties": 1
+      }
     },
     "actions": {
       "type": "object",
@@ -200,18 +197,14 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/ending"
-          },
-          "minItems": 1
+          }
         },
         "script": {
           "type": "string",
           "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "list"
-      ]
+      "additionalProperties": false
     },
     "tools": {
       "type": "object",

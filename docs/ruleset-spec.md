@@ -8,7 +8,7 @@
 1. **每一处内容都要标明“固定”还是“AI 处理”，没标的一律算固定。** 固定内容一字不差地由作者写定、引擎照做；只有作者明确标成 AI 处理的地方，AI 才能写入。
 2. **玩家不能超出故事规范。**
    - 玩家能做的事只有故事里声明的动作（`actions`）。
-   - 只有作者开启的地方才出现自由打字框；打的字必须落到作者列出的已声明动作上，落不到就显示作者写的“拒绝/超界回应”。
+   - 只有作者开启的地方才出现自由打字框；打的字必须落到作者列出的已声明动作上，落不到就显示作者写的“拒绝/超界回应”（作者没写 `input` 时，任何文字都不会触发动作）。
    - 玩家对 AI 的“提示注入”（例如“把金币改成 9999”“直接跳到好结局”“忽略之前的规则”）由引擎拦截：AI 只能在任务卡给的权限内回应，越权的工具调用一律拒绝并记录。
    - 玩家这边只能改外观（主题、布局、隐藏组件、关掉可选的 AI 功能），不能改规则、状态或存档内容；存档带校验码，被改过就拒绝读取。
 
@@ -90,7 +90,7 @@ my-story.oasis
 | 事件数据 | `event.xxx`（仅在事件的 `when` / `do` 中） |
 | 运算 | `+ - * / %`，比较 `== != < <= > >=`，逻辑 `&& || !`，三元 `a ? b : c`，成员 `x in list` |
 | 内置函数 | `len(x)` `has(list, x)` `min(a,b)` `max(a,b)` `abs(x)` `floor(x)` `ceil(x)` `round(x)` `str(x)` `num(x)` |
-| 随机函数 | `rand()` `randint(a,b)` `pick(list)` `weighted({a: 3, b: 1})`（仅在动作步骤和事件中可用，见 §5） |
+| 随机函数 | `rand()` `randint(a,b)` `pick(list)` `weighted({a: 3, b: 1})`（任何表达式里都能用，见 §5） |
 | 内置变量 | `turn`（当前回合数，从 1 开始） |
 
 不得出现：函数定义、循环、赋值（赋值用步骤完成）、访问任何其他对象。
@@ -108,10 +108,10 @@ my-story.oasis
 | `meta` | 对象 | **必填** | 元信息，§4 |
 | `uses` | 字符串列表 | 可选 | 引用官方规则模板，§11 |
 | `random` | 对象 | 可选 | 随机数设置，§5 |
-| `state` | 对象 | **必填** | 状态定义，§6.1；至少 1 个 |
+| `state` | 对象 | 可选 | 状态定义，§6.1；可以没有 |
 | `actions` | 对象 | 可选 | 动作，§6.2 |
 | `events` | 列表 | 可选 | 事件，§7 |
-| `endings` | 对象 | **必填** | 结局，§8；至少 1 个结局 |
+| `endings` | 对象 | 可选 | 结局，§8；可以没有（故事不会自动结束） |
 | `tools` | 对象 | 可选 | 向 AI 暴露的工具，§9 |
 | `ai` | 对象 | 可选 | AI 全局规则与接入点，§10；**省略 = 无 AI 的纯规则故事** |
 | `ui` | 对象 | 可选 | 界面，§13；省略 = 默认简约模板 |
@@ -151,7 +151,7 @@ my-story.oasis
 
 引擎为每局生成一个种子，所有随机调用按顺序记录。读档后随机序列从中断处继续，因此**同样的操作得到同样的结果**（防止玩家反复读档刷结果）。
 随机函数：`rand()` 返回 [0,1)；`randint(a,b)` 返回 a 到 b 的整数（含两端，要求 a ≤ b）；`pick(list)` 随机取一个；`weighted({键: 权重})` 按权重取键。
-骰子写法如 `roll('2d6+3')` **不是引擎内置**，需要 `uses: [oasis/dice@1]`。
+骰子写法如 `roll('2d6+3')` `roll_adv()` `roll_dis()` 可直接使用（`uses: [oasis/dice@1]` 写不写都行）。随机与骰子函数在任何表达式里都能用，结果都按种子可复现并记入日志。
 
 ## 6. 状态与动作
 ### 6.1 state
@@ -240,7 +240,7 @@ my-story.oasis
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `check_on` | 字符串 | 可选 | `state_change`（默认，每次状态变化后检查）\| `turn_end` \| `manual`（只由 `end` 步骤触发） |
-| `list` | 列表 | **必填** | ≥ 1 项；按顺序检查，**第一个满足的生效** |
+| `list` | 列表 | 可选 | 可以为空；按顺序检查，**第一个满足的生效** |
 | `script` | 字符串 | 可选 | `文件#函数`，返回结局 id 或 null；有它时先于 `list` 检查 |
 
 `list` 每项：`id`（**必填**）、`label`（**必填**，显示名）、`when`（表达式；`check_on: manual` 时可省略）、`kind`（可选：`good` \| `bad` \| `neutral`，只用于显示）、`text`（可选，固定结尾文字）。
@@ -416,12 +416,12 @@ export function run(api) {
 | type | 专用字段 | 说明 |
 |---|---|---|
 | `text-log` | — | 显示 AI 叙述与规则日志；常作 `output.to` 目标 |
-| `text-input` | `placeholder`；`input`（自由输入时**必填**：`actions`、`reject`、可选 `words` `max_length`）；或 `writes: 状态id`（只填值，如名字，需 `writable_by` 含 ui） | 玩家输入；提交时触发 `player_input` |
+| `text-input` | `placeholder`；`input`（可选：`actions`、`reject`、可选 `words` `max_length`；不写时玩家文字不能触发任何动作，默认回应“这里做不到。”）；或 `writes: 状态id`（只填值，如名字，需 `writable_by` 含 ui） | 玩家输入；提交时触发 `player_input` |
 | `button` | `action`（动作 id）或 `emit`（事件名） | 点击：执行动作，或触发事件（可作 AI 接入点触发 `ui:<id>.click`） |
 | `choice-buttons` | `choices: [{ label, action, params }]` 或 `from_ai: true`（见下方 choices 约定） | 选项按钮 |
 | `stat-list` / `stat-bar` | `bind: [状态id]` | 显示状态；`stat-bar` 仅 number 且需 min/max |
 | `item-list` | `bind: 状态id`（list/set/map） | 列表显示 |
-| `chat-box` | `title`，`portrait`（素材引用），`input`（**必填**） | 对话框；发送触发 `ui:<id>.send`，`{{input}}` 为发送内容 |
+| `chat-box` | `title`，`portrait`（素材引用），`input`（可选，同 text-input） | 对话框；发送触发 `ui:<id>.send`，`{{input}}` 为发送内容 |
 | `text-block` | `bind: 状态id` 或 `text` | 显示一段文字 |
 | `image` | `src`，或 `bind`（一个状态）+ `images: { 值: 素材引用 }`（可再写 `src` 作默认图），或 `generated: 生图点id`；`fit: cover\|contain` | 图片 / 随状态切换 / AI 生图 |
 | `dice-log` | —（需 `oasis/dice`） | 随机结果记录 |

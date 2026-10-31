@@ -314,3 +314,26 @@ describe("AI 选项按钮 choices 约定", () => {
     expect(parseChoices(Array.from({ length: 9 }, (_, i) => `选项${i}`).join("\n")).length).toBe(6);
   });
 });
+
+describe("规则不限制：没有状态和结局、随机数随处可用", () => {
+  it("没有 state / endings 的故事能开始、执行动作、存读档", () => {
+    const { story } = load("spec: oasis/0.3\nmeta: {id: bare-story, title: t, version: 1.0.0, summary: s, language: en, rating: all-ages}\nactions: {wave: {steps: [{log: \"'挥手'\"}]}}\nui: {components: {say: {type: text-input, region: input}}}\n");
+    const g = new Game(story, { seed: 1 });
+    g.start();
+    expect(g.doAction("wave", {}, "player").ok).toBe(true);
+    expect(g.ending).toBeFalsy();
+    const r = g.playerInput("say", "随便说点什么");
+    expect(r.kind).toBe("rejected");
+    expect(r.allowActions).toEqual([]);
+    const { game } = Game.load(story, g.save());
+    expect(game.turn).toBe(g.turn);
+  });
+  it("结局条件里用随机数、未引用模板也能掷骰，且同种子可复现", () => {
+    const y = "spec: oasis/0.3\nmeta: {id: rnd-story, title: t, version: 1.0.0, summary: s, language: zh-CN, rating: teen}\nstate: {x: {type: number, init: 0}}\nactions: {a: {steps: [{set: {x: \"roll('2d6')\"}}]}}\nendings: {check_on: state_change, list: [{id: e, label: 完, when: \"state.x > 0 && rand() >= 0\"}]}\n";
+    const { story } = load(y);
+    const a = new Game(story, { seed: 7 }), b = new Game(story, { seed: 7 });
+    a.start(); b.start(); a.doAction("a", {}, "player"); b.doAction("a", {}, "player");
+    expect(a.state.x).toBe(b.state.x);
+    expect(a.ending).toBe("e");
+  });
+});

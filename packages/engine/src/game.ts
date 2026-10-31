@@ -1,4 +1,4 @@
-import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, type EntryPointDef, type WriteLimit } from "@my-oasis/schema";
+import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type EntryPointDef, type WriteLimit } from "@my-oasis/schema";
 import { Rng, rollDice } from "./rng.js";
 import { FAIL_MARK, ScriptError, type ScriptRunner } from "./script.js";
 
@@ -57,6 +57,7 @@ export class Game {
   drainHooks() { const h = [...new Set(this.firedHooks)]; this.firedHooks = []; return h; }
 
   constructor(public story: Story, public opts: GameOptions = {}) {
+    this.story = story = normalizeStory(story);
     const seed = opts.seed ?? (typeof story.random?.seed === "number" ? story.random.seed : undefined);
     this.rng = Rng.seed(seed); this.seed = this.rng.s;
     for (const [k, d] of Object.entries(story.state)) this.state[k] = clone(d.init);
@@ -64,17 +65,17 @@ export class Game {
 
   // ---------- 表达式 ----------
   private ast(src: string) { let a = this.exprCache.get(src); if (!a) { a = parseExpr(src); this.exprCache.set(src, a); } return a; }
-  private hasDice() { return (this.story.uses ?? []).some((u) => u.startsWith("oasis/dice@")); }
   eval(src: unknown, ctx?: Partial<Ctx>, allowRandom = false): any {
     if (typeof src !== "string") return src;
     const funcs: Record<string, any> = { ...builtinFuncs };
-    if (allowRandom) {
+    void allowRandom; // 作者可以在任何表达式里用随机数（结果按种子可复现、记入日志）
+    {
       const rec = (fn: string, args: any[], r: any) => { this.log.push({ turn: this.turn, kind: "random", text: `${fn}(${args.map((a) => JSON.stringify(a)).join(", ")}) = ${JSON.stringify(r)}` }); return r; };
       funcs.rand = () => rec("rand", [], this.rng.next());
       funcs.randint = (a: number, b: number) => rec("randint", [a, b], this.rng.int(a, b));
       funcs.pick = (l: any[]) => rec("pick", [l], this.rng.pick(l));
       funcs.weighted = (m: any) => rec("weighted", [m], this.rng.weighted(m));
-      if (this.hasDice()) {
+      {
         const dice = (expr: string, mode?: "adv" | "dis") => {
           const a = rollDice(this.rng, expr);
           let total = a.total, text = `🎲 ${expr} → [${a.rolls.join(", ")}] = ${a.total}`;
@@ -377,8 +378,8 @@ export class Game {
    */
   playerInput(componentId: string, raw: string, opts: { aiAvailable?: boolean } = {}): InputResult {
     const c: any = this.story.ui?.components?.[componentId];
-    if (!c || !["text-input", "chat-box"].includes(c.type) || !c.input) return { kind: "rejected", text: "这里不能输入文字。", allowActions: [] };
-    const cfg = c.input, allow: string[] = (cfg.actions ?? []).filter((a: string) => this.story.actions?.[a]);
+    if (!c || !["text-input", "chat-box"].includes(c.type) || (c.type === "text-input" && c.writes !== undefined)) return { kind: "rejected", text: "这里不能输入文字。", allowActions: [] };
+    const cfg = c.input ?? { actions: [], reject: "这里做不到。" }, allow: string[] = (cfg.actions ?? []).filter((a: string) => this.story.actions?.[a]);
     const text = String(raw ?? "").replace(/[\u0000-\u0008\u000b-\u001f]/g, "").trim().slice(0, cfg.max_length ?? 500);
     if (!text) return { kind: "rejected", text: cfg.reject, allowActions: allow };
     for (const [a, words] of Object.entries<string[]>(cfg.words ?? {})) {

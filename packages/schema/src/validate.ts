@@ -203,7 +203,7 @@ export function validateFiles(files: StoryFiles): ValidationResult {
   // ---------- 语义 ----------
   semantic(story, files, report);
   const ok = !issues.some((i) => i.level === "error");
-  return { ok, story: ok ? story : undefined, issues: sortIssues(issues), mainFile };
+  return { ok, story: ok ? normalizeStory(story) : undefined, issues: sortIssues(issues), mainFile };
 }
 
 export function toSnake(x: string) {
@@ -233,7 +233,6 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
   const entries = obj(s.ai?.entry_points);
   const isAi = (c: any) => c?.content === "ai" || c?.from_ai === true;
   const uses = Array.isArray(s.uses) ? s.uses : [];
-  const hasDice = uses.some((u) => String(u).startsWith("oasis/dice@"));
   const stateIds = Object.keys(state), actionIds = Object.keys(actions), endingIds = endings.map((e: any) => e?.id).filter(Boolean);
   const regions = regionsOf(s.ui);
   const emitted = new Set<string>();
@@ -316,13 +315,8 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     const refs = collectRefs(ast);
     for (const fn of refs.calls) {
       if (BUILTIN_FUNCS.includes(fn)) continue;
-      if (RANDOM_FUNCS.includes(fn)) { if (!ctx.random) report("error", "random_not_here", path, `这里不能用随机函数 ${fn}()。`, "随机数只能在动作步骤和事件里使用；结局条件、前提条件请用确定的值。", "§2.2", key); continue; }
-      if (DICE_FUNCS.includes(fn)) {
-        if (!hasDice) report("error", "dice_needs_template", path, `用了 ${fn}()，但没有引用骰子模板。`, "在最外层加上 `uses: [oasis/dice@1]`。", "§11", key);
-        else if (!ctx.random) report("error", "random_not_here", path, `这里不能掷骰子 ${fn}()。`, "掷骰只能在动作步骤和事件里。", "§2.2", key);
-        continue;
-      }
-      report("error", "unknown_func", path, `不能使用函数「${fn}()」。${didYouMean(fn, [...BUILTIN_FUNCS, ...RANDOM_FUNCS, ...(hasDice ? DICE_FUNCS : [])])}`, `可用：${[...BUILTIN_FUNCS, ...RANDOM_FUNCS].join("、")}${hasDice ? "、" + DICE_FUNCS.join("、") : ""}。`, "§2.2", key);
+      if (RANDOM_FUNCS.includes(fn) || DICE_FUNCS.includes(fn)) continue; // 随机/骰子函数任何表达式里都能用（结果可复现）
+      report("error", "unknown_func", path, `不能使用函数「${fn}()」。${didYouMean(fn, [...BUILTIN_FUNCS, ...RANDOM_FUNCS, ...DICE_FUNCS])}`, `可用：${[...BUILTIN_FUNCS, ...RANDOM_FUNCS].join("、")}、${DICE_FUNCS.join("、")}。`, "§2.2", key);
     }
     for (const pth of refs.paths) {
       const [root, a, b] = pth;
@@ -564,7 +558,7 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
       for (const sid of Array.isArray(ep.context?.state) ? ep.context.state : []) if (!(sid in state)) report("error", "unknown_state", [...p, "context"], `context 里的状态「${sid}」不存在。`, undefined, "§10.4", "state");
       if (ep.optional && !ep.fallback) report("warning", "optional_no_fallback", p, "这个 AI 接入点玩家可以关闭，但没写 fallback（关闭后显示什么）。", "加一句 fallback 文字。", "§10.4");
     }
-    if (!Object.keys(entries).length && !Object.keys(images).length) report("error", "no_entry", ["ai"], "写了 ai 但没有任何接入点或生图点。", "要么删掉整个 ai（纯规则故事），要么在 entry_points 里加一个。", "§10.1");
+    // 写了 ai 但没有接入点：允许（等同于不用 AI）
     const narr = Object.values<any>(entries).some((e) => e?.kind === "narrate");
     if (narr && s.ui?.components && !Object.values<any>(comps).some((c) => c?.type === "text-log")) report("warning", "no_text_log", ["ui", "components"], "有 AI 叙述，但界面里没有叙述区（text-log），叙述可能看不到。", "加一个 { type: text-log, region: main }。", "§13");
   }
@@ -598,7 +592,7 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     if (c.emit) emitted.add(c.emit);
     // 最高原则：自由文字必须有边界
     if ((c.type === "text-input" && c.writes === undefined) || c.type === "chat-box") {
-      if (!c.input) report("error", "free_input_unbounded", p, `「${id}」让玩家自由打字，但没有写 input（能映射到哪些动作、超界怎么回应）。`, "加上 input: { actions: [允许的动作], reject: 超界时的固定回应 }；actions 可以是 []（只聊天、不改任何东西）。", "§0", "type");
+      if (!c.input) report("warning", "free_input_unbounded", p, `「${id}」没有写 input：玩家的文字不能触发任何动作（只会交给 AI 接入点，或得到默认回应“这里做不到。”）。`, "加上 input: { actions: [允许的动作], reject: 超界时的固定回应 }；actions 可以是 []（只聊天、不改任何东西）。", "§0", "type");
       else {
         for (const a of c.input.actions ?? []) if (!(a in actions)) report("error", "unknown_action", [...p, "input"], `input.actions 里的动作「${a}」没有声明。${didYouMean(a, Object.keys(actions))}`, undefined, "§0", "actions");
         for (const a of Object.keys(obj(c.input.words))) if (!(c.input.actions ?? []).includes(a)) report("error", "word_not_allowed", [...p, "input"], `words 里的动作「${a}」不在 input.actions 里。`, `把「${a}」加进 actions，或删掉这一条。`, "§0", "words");
@@ -612,7 +606,7 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     if (c.type === "choice-buttons" && c.from_ai) {
       const targets = Object.values<any>(entries).flatMap((e) => [e?.card?.output?.to, ...Object.values(obj(e?.card?.output?.sections))]);
       if (!targets.includes(`component:${id}`)) report("warning", "choices_no_source", p, `「${id}」写了 from_ai: true，但没有任何 AI 接入点输出到它，按钮会一直是空的。`, `在某个接入点的 output 里写 to: component:${id}（或 sections 的一项指向它），让 AI 每行写一个选项。`, "§13", "from_ai");
-      if (!Object.values<any>(comps).some((x) => x?.type === "text-input" && x.input)) report("error", "choices_no_input", p, `「${id}」的 AI 选项点击后要作为玩家文字提交，但界面里没有带 input 的 text-input。`, "加一个 text-input 并写 input（允许的动作、超界回应）；选项和手打的字走同样的边界检查。", "§13", "from_ai");
+      if (!Object.values<any>(comps).some((x) => x?.type === "text-input" && x.input)) report("warning", "choices_no_input", p, `「${id}」的 AI 选项点击后要作为玩家文字提交，但界面里没有带 input 的 text-input。`, "加一个 text-input 并写 input（允许的动作、超界回应）；选项和手打的字走同样的边界检查。", "§13", "from_ai");
     }
     if (c.type === "image" && Array.isArray(c.bind)) report("error", "image_bind", p, "图片组件只能绑定一个状态。", "写成 bind: location（不要用列表）。", "§13", "bind");
     if (c.type === "image" && typeof c.bind === "string" && state[c.bind]?.type === "enum" && c.images) {
@@ -621,7 +615,6 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     }
     if (c.generated !== undefined && !(c.generated in images)) report("error", "unknown_image_point", p, `组件要显示的 AI 生图「${c.generated}」没有在 ai.images 里定义。`, undefined, "§10.5", "generated");
     if (c.type === "image" && c.src === undefined && c.bind === undefined && c.generated === undefined) report("error", "image_no_source", p, "图片组件没有图片来源。", "写 src、bind + images，或 generated。", "§13");
-    if (c.type === "dice-log" && !hasDice) report("error", "dice_needs_template", p, "dice-log 组件需要骰子模板。", "加上 `uses: [oasis/dice@1]`。", "§13");
   }
 
   // 背景、声音
@@ -690,4 +683,10 @@ export function formatIssues(res: ValidationResult): string {
   const e = res.issues.filter((i) => i.level === "error").length, w = res.issues.filter((i) => i.level === "warning").length;
   out.push("", e ? `共 ${e} 个错误、${w} 个警告。错误改完才能导入。` : `✅ 可以导入（${w} 个警告建议处理）。`);
   return out.join("\n");
+}
+
+/** 补齐可省略的部分：没有状态、没有结局的故事也能直接交给引擎 */
+export function normalizeStory<T extends Story>(s: T): T {
+  const st: any = s ?? {};
+  return { ...st, state: st.state ?? {}, endings: { ...(st.endings ?? {}), list: Array.isArray(st.endings?.list) ? st.endings.list : [] } };
 }
