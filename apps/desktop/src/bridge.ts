@@ -1,3 +1,4 @@
+import { record as recordUsage } from "./usage";
 // 本地能力桥：在 Tauri 客户端里走 Rust 命令；在浏览器开发模式下用浏览器存储模拟（仅供开发自测）。
 import { filesFromZip, type StoryFiles } from "@my-oasis/schema";
 
@@ -7,7 +8,7 @@ export const isAndroid = typeof navigator !== "undefined" && /Android/i.test(nav
 
 export interface SaveInfo { slot: string; modified_ms?: number; size?: number }
 export interface ProviderCfg { base_url: string; model: string }
-export interface ChatOut { content: string | null; tool_calls: any[] }
+export interface ChatOut { content: string | null; tool_calls: any[]; usage?: { input_tokens: number; output_tokens: number } | null }
 export interface Picked { name: string; files: StoryFiles }
 
 const enc = new TextEncoder(), dec = new TextDecoder();
@@ -156,8 +157,20 @@ export const bridge = {
     if (isTauri) { const o = await import("@tauri-apps/plugin-opener"); return o.openUrl(url); }
     window.open(url, "_blank");
   },
-  /** 让 Rust 代发模型请求（流式） */
+  /** 让 Rust 代发模型请求（流式）；结束后把用量记到本机（见 usage.ts） */
   async chat(provider: string, config: ProviderCfg, body: any, onText?: (s: string) => void): Promise<ChatOut> {
+    // 请服务商在流的最后一块带上用量；个别服务不认这个参数会报 400，就去掉再试一次
+    let b = { ...body, stream_options: { include_usage: true } };
+    let r: ChatOut;
+    try { r = await bridge.chatRaw(provider, config, b, onText); }
+    catch (e: any) {
+      if (!/HTTP 400/.test(String(e?.message ?? e))) throw e;
+      b = { ...body }; r = await bridge.chatRaw(provider, config, b, onText);
+    }
+    try { recordUsage(provider, config.model, b, r); } catch { /* 记账失败不影响游玩 */ }
+    return r;
+  },
+  async chatRaw(provider: string, config: ProviderCfg, body: any, onText?: (s: string) => void): Promise<ChatOut> {
     if (isTauri) {
       const t = await tauri();
       const ch = new t.Channel<string>(); ch.onmessage = (s) => onText?.(s);
@@ -167,12 +180,12 @@ export const bridge = {
     let r: Response;
     try { r = await fetch(config.base_url.replace(/\/+$/, "") + "/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
-      body: JSON.stringify({ ...body, model: config.model, stream: false }),
+      body: JSON.stringify((({ stream_options: _so, ...rest }) => ({ ...rest, model: config.model, stream: false }))(body)),
     }); } catch (e: any) { throw new Error(`NETWORK：${e?.message ?? e}`); }
     if (!r.ok) throw new Error(`HTTP ${r.status}：${(await r.text()).slice(0, 400)}`);
     const j = await r.json(); const m = j.choices?.[0]?.message ?? {};
     if (m.content) onText?.(m.content);
-    return { content: m.content ?? null, tool_calls: m.tool_calls ?? [] };
+    return { content: m.content ?? null, tool_calls: m.tool_calls ?? [], usage: j.usage ? { input_tokens: j.usage.prompt_tokens ?? j.usage.input_tokens ?? 0, output_tokens: j.usage.completion_tokens ?? j.usage.output_tokens ?? 0 } : null };
   },
 };
 export { enc, dec };

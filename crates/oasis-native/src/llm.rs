@@ -1,5 +1,5 @@
 //! 向模型服务商发请求（OpenAI 兼容）。Key 由调用方从钥匙串取出后传入，只在这里使用。
-use crate::{msg, sse::{Accumulator, Delta, ToolCallAcc}, Result};
+use crate::{msg, sse::{Accumulator, Delta, ToolCallAcc, Usage}, Result};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -8,7 +8,7 @@ use std::time::Duration;
 pub struct ProviderConfig { pub base_url: String, pub model: String }
 
 #[derive(Debug, Serialize)]
-pub struct ChatResult { pub content: Option<String>, pub tool_calls: Vec<ToolCallOut> }
+pub struct ChatResult { pub content: Option<String>, pub tool_calls: Vec<ToolCallOut>, /** 服务商返回的用量；没返回为 None，由界面估算 */ pub usage: Option<Usage> }
 #[derive(Debug, Serialize)]
 pub struct ToolCallOut { pub id: String, #[serde(rename = "type")] pub kind: &'static str, pub function: FnOut }
 #[derive(Debug, Serialize)]
@@ -50,10 +50,11 @@ pub async fn chat_stream(cfg: &ProviderConfig, api_key: Option<&str>, mut body: 
         if acc.done { break; }
     }
     let content = if acc.content.is_empty() { None } else { Some(acc.content.clone()) };
+    let usage = acc.usage;
     let tool_calls = acc.tool_calls.into_iter().enumerate().map(|(i, t): (usize, ToolCallAcc)| ToolCallOut {
         id: if t.id.is_empty() { format!("call_{i}") } else { t.id }, kind: "function", function: FnOut { name: t.name, arguments: t.arguments },
     }).collect();
-    Ok(ChatResult { content, tool_calls })
+    Ok(ChatResult { content, tool_calls, usage })
 }
 
 async fn tokio_timeout<F: std::future::Future>(d: Duration, f: F) -> Result<F::Output> {
@@ -79,7 +80,7 @@ mod tests {
             let mut buf = vec![0u8; 8192]; let n = s.read(&mut buf).await.unwrap();
             let req = String::from_utf8_lossy(&buf[..n]).to_string();
             assert!(req.contains("authorization: Bearer test-key") || req.contains("Authorization: Bearer test-key"));
-            let body = "data: {\"choices\":[{\"delta\":{\"content\":\"潮\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"声\"}}]}\n\ndata: [DONE]\n\n";
+            let body = "data: {\"choices\":[{\"delta\":{\"content\":\"潮\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"声\"}}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":2}}\n\ndata: [DONE]\n\n";
             let resp = format!("HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\n\r\n{}", body.len(), body);
             s.write_all(resp.as_bytes()).await.unwrap();
         });
@@ -88,5 +89,6 @@ mod tests {
         let r = chat_stream(&cfg, Some("test-key"), serde_json::json!({"messages": []}), Duration::from_secs(5), |t| got.push_str(t)).await.unwrap();
         assert_eq!(got, "潮声");
         assert_eq!(r.content.as_deref(), Some("潮声"));
+        assert_eq!(r.usage, Some(Usage { input_tokens: 11, output_tokens: 2 }));
     }
 }

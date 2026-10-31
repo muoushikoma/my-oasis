@@ -70,7 +70,7 @@ API Key、GitHub token 只存在系统安全存储里（Windows 凭据管理器 
 | [故事包格式规范（完整版）](docs/ruleset-spec.md) | 每个字段的详细说明，以及引擎怎么执行它们 |
 | [AI 创作指南](docs/ai-authoring-guide.md) | 旧版的 AI 写故事提示词，内容含创作建议，仅供参考 |
 | [项目说明](docs/overview.md) | 项目是什么、给谁用、整体思路 |
-| [架构](docs/architecture.md) | 客户端、引擎、AI 接入和安全设计 |
+| [架构](docs/architecture.md) | 客户端、引擎、AI 接入和安全设计，以及 AI 用量（token）本机记录 |
 | [里程碑](docs/mvp.md) | 已完成和计划中的功能 |
 | [服务器 API（暂缓）](docs/server-api.md) | 以后做服务器时的接口草案，目前不做服务器 |
 | [故事版权与授权](stories/LICENSE.md) | 投稿故事的版权归属和授权范围 |

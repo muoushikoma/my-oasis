@@ -110,3 +110,9 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .rt-knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(127,127,127,.7); pointer-events: none; }
 .rt-buttons { display: flex; gap: 10px; pointer-events: auto; margin-left: auto; }
 .rt-btn { width: 64px; height: 64px; border-radius: 50%; font-weight: bold; touch-action: none; user-select: none; }
+/* AI 用量 */
+.usage { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+.usage-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed #0001; font-size: 14px; }
+.usage-row b { min-width: 6em; }
+.usage-row input, .card label input[type=number] { width: 7em; }
+@media (max-width: 640px) { .usage { max-width: 100%; white-space: normal; flex-basis: 100%; order: 10; } }

@@ -336,3 +336,11 @@ interface BlobStore {
 | 内测（IP） | 单台 ECS，Docker Compose，自签证书 + 固定 |
 | 公测 | 买域名、ICP 备案、公共 CA 证书；故事文件迁 OSS + 签名直链；安装包放 OSS |
 | 扩容 | 数据库迁 RDS；API 多实例 + SLB；按需加 Redis |
+
+## AI 用量记录（只在本机）
+
+- 每次 AI 调用结束后，客户端记录输入/输出 token：请求里带 `stream_options.include_usage`，Rust 侧从流里解析 `usage`（OpenAI 兼容 `prompt_tokens/completion_tokens`、`input_tokens/output_tokens`、Gemini `usageMetadata` 都认）；服务商不认该参数（HTTP 400）时去掉重试一次。
+- 服务商没返回用量时按文字长度估算（中日韩文字约 1 字 1 token，其余约 4 字符 1 token），并在界面标“估算”。
+- 分本局、按故事、全部累计三档，存 `localStorage`（`oasis.usage`），从不上传；“设置 → AI 用量”可查看和清零。
+- 费用 = token × 玩家自填单价（每 100 万 token，键为“服务商/模型”，存 `oasis.prices`）。付费模型默认不预填价格，本机模型（Ollama / LM Studio）按 0；只是粗算，以服务商账单为准。
+- 代码：`apps/desktop/src/usage.ts`，测试 `apps/desktop/test/usage.test.ts`。
