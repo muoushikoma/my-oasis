@@ -65,7 +65,7 @@ API Key、GitHub token 只存在系统安全存储里（Windows 凭据管理器 
 
 | 文档 | 用途 |
 |---|---|
-| ⭐ [故事交付格式](docs/story-format.md) | **写故事只看这一份，可直接交给 AI。** 规定 `.oasis` 故事包的文件结构和字段格式，不限制故事内容 |
+| ⭐ [故事交付格式](docs/story-format.md) | **写故事只看这一份，可直接交给 AI。** 规定 `.oasis` 故事包的文件结构和字段格式（含 oasis/0.4 实时游戏：循环、定时器、键盘/触摸/摇杆、画布、声音、异步 AI），不限制故事内容 |
 | [JSON Schema](docs/schema/story.schema.json) | 故事主文件的机器可读格式定义，客户端和投稿检查都用它校验 |
 | [故事包格式规范（完整版）](docs/ruleset-spec.md) | 每个字段的详细说明，以及引擎怎么执行它们 |
 | [AI 创作指南](docs/ai-authoring-guide.md) | 旧版的 AI 写故事提示词，内容含创作建议，仅供参考 |

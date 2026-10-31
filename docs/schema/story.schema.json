@@ -14,7 +14,10 @@
   "additionalProperties": false,
   "properties": {
     "spec": {
-      "const": "oasis/0.3"
+      "enum": [
+        "oasis/0.3",
+        "oasis/0.4"
+      ]
     },
     "meta": {
       "type": "object",
@@ -536,6 +539,140 @@
         }
       },
       "additionalProperties": false
+    },
+    "realtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "oasis/0.4：实时循环",
+      "properties": {
+        "tick_hz": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "tick_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "on_tick": {
+          "type": "string",
+          "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "on_ai": {
+          "type": "string",
+          "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "timers": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "every_ms": {
+                "type": "integer",
+                "minimum": 16
+              },
+              "after_ms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "action": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "params": {
+                "type": "object"
+              },
+              "emit": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "script": {
+                "type": "string",
+                "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+              }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "every_ms"
+                ]
+              },
+              {
+                "required": [
+                  "after_ms"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "oasis/0.4：键盘/触摸/摇杆输入",
+      "properties": {
+        "keys": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          }
+        },
+        "joystick": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "side": {
+                  "enum": [
+                    "left",
+                    "right"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "buttons": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 8
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "pointer": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "$defs": {
@@ -812,7 +949,8 @@
             "list",
             "set",
             "map",
-            "record"
+            "record",
+            "json"
           ]
         },
         "init": {},
@@ -1450,7 +1588,7 @@
         },
         "trigger": {
           "type": "string",
-          "pattern": "^(player_input|game_start|game_end|action:[a-z][a-z0-9_]*|event:[a-z][a-z0-9_]*|ui:[a-z][a-z0-9_]*\\.[a-z]+)$"
+          "pattern": "^(script|player_input|game_start|game_end|action:[a-z][a-z0-9_]*|event:[a-z][a-z0-9_]*|ui:[a-z][a-z0-9_]*\\.[a-z]+)$"
         },
         "prompt": {
           "type": "string",
@@ -1661,7 +1799,8 @@
             "chat-box",
             "text-block",
             "image",
-            "dice-log"
+            "dice-log",
+            "canvas"
           ]
         },
         "region": {
@@ -1820,6 +1959,23 @@
             "actions",
             "reject"
           ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 4096
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 4096
+        },
+        "render": {
+          "type": "string",
+          "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "pixelated": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false

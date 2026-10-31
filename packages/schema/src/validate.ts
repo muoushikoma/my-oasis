@@ -202,6 +202,7 @@ export function validateFiles(files: StoryFiles): ValidationResult {
 
   // ---------- 语义 ----------
   semantic(story, files, report);
+  realtimeChecks(story, files, report);
   const ok = !issues.some((i) => i.level === "error");
   return { ok, story: ok ? normalizeStory(story) : undefined, issues: sortIssues(issues), mainFile };
 }
@@ -654,11 +655,12 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     if (!Object.values<any>(comps).some((c) => c?.generated === id) && !(typeof bg === "object")) report("warning", "image_unused", p, `AI 生图「${id}」没有任何图片组件显示它（组件里写 generated: ${id}）。`, undefined, "§10.5");
   }
 
-  // 未使用的动作
+  // 未使用的动作（定时器调用的也算用到）
+  for (const t of Object.values<any>((s as any).realtime?.timers ?? {})) if (typeof t?.action === "string") usedActions.add(t.action);
   for (const id of actionIds) if (!usedActions.has(id) && !(Array.isArray(actions[id]?.callable_by) && actions[id].callable_by.includes("player") && !s.ui?.components))
     if (!usedActions.has(id)) report("info", "unused_action", ["actions", id], `动作「${id}」没有被任何工具、组件或步骤用到，玩家和 AI 都触发不了它。`, "如果是要给 AI 用，在 tools 里注册；给玩家用，就放一个按钮。", "§6.2");
   // 无 AI 且无组件
-  if (!Object.keys(entries).length && !Object.values<any>(comps).some((c) => ["button", "choice-buttons"].includes(c?.type)))
+  if (!Object.keys(entries).length && !(s as any).realtime && !Object.values<any>(comps).some((c) => ["button", "choice-buttons"].includes(c?.type)))
     report("warning", "no_way_to_play", [], "这是一个没有 AI 的故事，但界面里没有按钮或选项，玩家没办法操作。", "加 button 或 choice-buttons 组件，或者加一个 AI 接入点。", "§13");
 }
 
@@ -689,4 +691,40 @@ export function formatIssues(res: ValidationResult): string {
 export function normalizeStory<T extends Story>(s: T): T {
   const st: any = s ?? {};
   return { ...st, state: st.state ?? {}, endings: { ...(st.endings ?? {}), list: Array.isArray(st.endings?.list) ? st.endings.list : [] } };
+}
+
+/** oasis/0.4：实时循环、输入、画布的引用检查（只查格式与引用是否存在，不限制玩法） */
+function realtimeChecks(s: Story, files: StoryFiles, report: Report) {
+  const obj = (x: any) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
+  const v04 = s.spec === "oasis/0.4";
+  const comps = obj(s.ui?.components), actions = obj(s.actions), entries = obj(s.ai?.entry_points);
+  const need04 = (path: (string | number)[], what: string) => { if (!v04) report("error", "needs_0_4", path, `${what}是 oasis/0.4 的功能。`, "把第一行改成 spec: oasis/0.4（0.3 的内容不用改）。", "§1"); };
+  const ref = (path: (string | number)[], key: string, r: unknown) => {
+    if (typeof r !== "string") return;
+    const [file, fn] = r.split("#");
+    if (!fn) report("error", "script_ref", path, `脚本写法「${r}」不对。`, "写成 文件路径#函数名，例如 scripts/game.js#tick。", "§6.2", key);
+    else if (!files.has(file)) report("error", "missing_file", path, `脚本文件「${file}」不在故事包里。`, undefined, "§12", key);
+  };
+  if (s.realtime) {
+    need04(["realtime"], "实时循环 realtime ");
+    const rt: any = s.realtime;
+    ref(["realtime"], "on_tick", rt.on_tick); ref(["realtime"], "on_ai", rt.on_ai);
+    for (const [id, t] of Object.entries<any>(obj(rt.timers))) {
+      const p = ["realtime", "timers", id];
+      if (!t?.action && !t?.emit && !t?.script) report("error", "timer_body", p, `定时器「${id}」没写到点后做什么。`, "写 action、emit 或 script 中的至少一个。", "§14");
+      if (t?.action && !(t.action in actions)) report("error", "unknown_action", p, `定时器要执行的动作「${t.action}」不存在。`, undefined, "§14", "action");
+      ref(p, "script", t?.script);
+    }
+    if (!rt.on_tick && !Object.keys(obj(rt.timers)).length) report("warning", "realtime_empty", ["realtime"], "写了 realtime，但没有 on_tick 也没有定时器，循环里什么都不会发生。", undefined, "§14");
+  }
+  if (s.input) need04(["input"], "输入映射 input ");
+  for (const [id, c] of Object.entries<any>(comps)) {
+    if (c?.type !== "canvas") continue;
+    const p = ["ui", "components", id];
+    need04(p, "画布组件 canvas ");
+    if (!c.render) report("error", "canvas_no_render", p, `画布「${id}」没有 render 函数，不知道画什么。`, "写 render: scripts/game.js#draw。", "§14");
+    ref(p, "render", c.render);
+  }
+  for (const [id, e] of Object.entries<any>(entries)) if (e?.trigger === "script") need04(["ai", "entry_points", id], "由脚本调用的 AI 接入点（trigger: script）");
+  for (const [id, d] of Object.entries<any>(obj(s.state))) if (d?.type === "json") need04(["state", id], "json 类型的状态");
 }

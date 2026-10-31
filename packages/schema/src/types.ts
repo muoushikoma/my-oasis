@@ -1,7 +1,7 @@
 // 故事包（v0.3）的 TypeScript 类型，仅描述常用字段；完整约束见 story.schema.json。
 export type Step = Record<string, any>;
 export interface StateDef {
-  type: "number" | "bool" | "string" | "enum" | "list" | "set" | "map" | "record";
+  type: "number" | "bool" | "string" | "enum" | "list" | "set" | "map" | "record" | "json";
   init: any; label?: string; desc?: string;
   visible?: "both" | "player" | "ai" | "none";
   writable_by?: ("rules" | "ai" | "ui")[];
@@ -45,13 +45,20 @@ export interface UiDef {
   components?: Record<string, ComponentDef>;
 }
 export interface Story {
-  spec: "oasis/0.3";
+  spec: "oasis/0.3" | "oasis/0.4";
   meta: { id: string; title: string; version: string; summary: string; language: string; rating: string; [k: string]: any };
   uses?: string[]; random?: { seed?: "auto" | number }; start?: { intro?: string; do?: Step[] };
   state: Record<string, StateDef>; actions?: Record<string, ActionDef>; events?: EventDef[];
   endings: { check_on?: "state_change" | "turn_end" | "manual"; list: EndingDef[]; script?: string };
   tools?: Record<string, ToolDef>; ai?: AiDef; ui?: UiDef; scripts?: { limits?: { time_ms?: number; memory_mb?: number } };
+  realtime?: RealtimeDef; input?: InputDef; assets?: Record<string, { type: "image" | "audio"; path: string; [k: string]: any }>;
 }
+/** oasis/0.4：实时循环 */
+export interface TimerDef { every_ms?: number; after_ms?: number; action?: string; params?: Record<string, any>; emit?: string; script?: string }
+export interface RealtimeDef { tick_hz?: number; tick_ms?: number; on_tick?: string; on_ai?: string; timers?: Record<string, TimerDef> }
+/** oasis/0.4：输入映射。keys：按键（KeyboardEvent.code）→ 输入名 */
+export interface InputDef { keys?: Record<string, string>; joystick?: boolean | { side?: "left" | "right" }; buttons?: { id: string; label?: string }[]; pointer?: boolean }
+export interface InputState { held: Record<string, boolean>; pressed: Record<string, boolean>; joystick: { x: number; y: number }; pointer: { x: number; y: number; down: boolean; target?: string } }
 export const DEFAULT_MAX_AUTHORITY = 1; // 暂定默认
 export const KNOWN_TEMPLATES = ["oasis/dice@1", "oasis/check@1", "oasis/inventory@1", "oasis/clock@1"];
 export const TEMPLATE_REGIONS: Record<string, string[]> = {

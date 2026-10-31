@@ -21,7 +21,25 @@ const api = {
   end: (id) => __c("end", [id]),
   fail: (msg) => __c("fail", [String(msg)]),
   log: (msg) => __c("log", [String(msg)]),
+  // ---- oasis/0.4 实时 ----
+  sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id) => __c("sound.stop", [id == null ? null : String(id)]) },
+  ai: { request: (id, input, data) => __c("ai.request", [String(id), input == null ? "" : String(input), data || {}]) },
+  draw: {
+    clear: (color) => __d(["clear", color || null]),
+    rect: (x, y, w, h, color, o) => __d(["rect", x, y, w, h, color || "#fff", o || {}]),
+    circle: (x, y, r, color, o) => __d(["circle", x, y, r, color || "#fff", o || {}]),
+    line: (x1, y1, x2, y2, color, width) => __d(["line", x1, y1, x2, y2, color || "#fff", width || 1]),
+    text: (s, x, y, o) => __d(["text", String(s), x, y, o || {}]),
+    image: (id, x, y, w, h, o) => __d(["image", String(id), x, y, w == null ? null : w, h == null ? null : h, o || {}]),
+    tilemap: (o) => __d(["tilemap", o || {}]),
+    camera: (x, y, zoom) => __d(["camera", x || 0, y || 0, zoom || 1]),
+  },
 };
+const __draw = [];
+function __d(c) { if (__draw.length >= 5000) throw new Error("一帧最多 5000 条绘制指令"); __draw.push(c); }
+Object.defineProperty(api, "input", { get: () => __c("input", []) });
+Object.defineProperty(api, "dt", { get: () => __c("time", [])[0] });
+Object.defineProperty(api, "time", { get: () => __c("time", [])[1] });
 Math.random = () => { throw new Error("脚本里不能用 Math.random，请用 api.random"); };
 Date.now = () => { throw new Error("脚本里不能读取时间"); };
 `;
@@ -48,7 +66,7 @@ export async function createQuickJsRunner(opts: { transpileTs?: (src: string) =>
           return vm.newString(JSON.stringify(r === undefined ? null : r));
         });
         vm.setProp(vm.global, "__host", h); h.dispose();
-        const code = `${PRELUDE}\n${src}\n;if (typeof ${fn} !== "function") throw new Error("脚本里没有函数 ${fn}");\nJSON.stringify(${fn}(api) ?? null);`;
+        const code = `${PRELUDE}\n${src}\n;if (typeof ${fn} !== "function") throw new Error("脚本里没有函数 ${fn}");\n(() => { const __r = ${fn}(api); if (__draw.length) __c("draw.commit", [__draw]); return JSON.stringify(__r ?? null); })();`;
         const res = vm.evalCode(code, file);
         if (res.error) {
           const e = vm.dump(res.error); res.error.dispose();
