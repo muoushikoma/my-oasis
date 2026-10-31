@@ -1,15 +1,16 @@
-// 在线故事库：从公开仓库 muoushikoma/my-oasis-stories 读取 index.json，一键下载
+// 在线故事库：从公开仓库 muoushikoma/my-oasis 读取 index.json，一键下载
 import type { StoryFiles } from "@my-oasis/schema";
 import { h, toast } from "./dom";
 import { loadSettings, saveSettings } from "./settings";
 
-export interface OnlineStory { id: string; title: string; summary?: string; author?: string; version?: string; rating?: string; language?: string; tags?: string[]; ai?: boolean; files: { path: string; size?: number }[]; updated?: string }
+export interface OnlineStory { id: string; title: string; summary?: string; author?: string; version?: string; rating?: string; language?: string; tags?: string[]; ai?: boolean; cover?: string; files: { path: string; size?: number }[]; updated?: string }
 export interface OnlineIndex { format: string; updated?: string; stories: OnlineStory[] }
 
-export const REPO = "muoushikoma/my-oasis-stories";
+export const REPO = "muoushikoma/my-oasis";
 export const MIRRORS: { id: string; name: string; base: string; note: string }[] = [
   { id: "github", name: "GitHub 直连", base: `https://raw.githubusercontent.com/${REPO}/main`, note: "海外或网络好时用；国内可能很慢或打不开" },
   { id: "jsdelivr", name: "jsDelivr 加速", base: `https://cdn.jsdelivr.net/gh/${REPO}@main`, note: "公共 CDN，国内通常更快；新合并的故事可能有几小时延迟" },
+  { id: "pages", name: "GitHub Pages 发布页", base: "https://muoushikoma.github.io/my-oasis", note: "故事发布页同一份文件，合并后几分钟内更新" },
   { id: "custom", name: "自定义镜像/代理", base: "", note: "填写能访问到仓库文件的地址前缀（末尾不加 /），例如自建的代理地址" },
 ];
 export function storeBase(): string {
@@ -46,7 +47,7 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
   const s = loadSettings() as any;
   const mirrorSel = h("select", { onchange: (e: any) => { saveSettings({ ...loadSettings(), storeMirror: e.target.value } as any); load(); } },
     ...MIRRORS.map((m) => h("option", { value: m.id, selected: m.id === (s.storeMirror ?? "jsdelivr") }, m.name)));
-  const custom = h("input", { placeholder: "自定义地址前缀，如 https://你的代理/raw/muoushikoma/my-oasis-stories/main", value: s.storeCustom ?? "", onchange: (e: any) => { saveSettings({ ...loadSettings(), storeCustom: e.target.value.trim() } as any); load(); } });
+  const custom = h("input", { placeholder: "自定义地址前缀，如 https://你的代理/raw/muoushikoma/my-oasis/main", value: s.storeCustom ?? "", onchange: (e: any) => { saveSettings({ ...loadSettings(), storeCustom: e.target.value.trim() } as any); load(); } });
   const list = h("div", {});
   const q = h("input", { placeholder: "搜索标题、简介、标签", oninput: () => draw() }) as HTMLInputElement;
   let idx: OnlineIndex | null = null;
@@ -63,7 +64,9 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
         btn.disabled = false; btn.textContent = "下载并加入故事库";
       };
       const size = st.files.reduce((a, f) => a + (f.size ?? 0), 0);
-      return h("div", { class: "story-card" }, h("div", { class: "cover ph" }, (st.title.replace(/^[\s(（【\[]*(?:[^)）】\]]*[)）】\]])?\s*/, "") || st.title).slice(0, 1)),
+      const ph = h("div", { class: "cover ph" }, (st.title.replace(/^[\s(（【\[]*(?:[^)）】\]]*[)）】\]])?\s*/, "") || st.title).slice(0, 1));
+      const cover = st.cover && /^stories\/[a-z0-9-]+\/[^?#]+$/.test(st.cover) && !st.cover.includes("..") ? h("img", { class: "cover", src: `${storeBase()}/${st.cover.split("/").map(encodeURIComponent).join("/")}`, alt: "", onerror: (e: any) => e.target.replaceWith(ph) }) : ph;
+      return h("div", { class: "story-card" }, cover,
         h("div", { class: "info" },
           h("h3", {}, st.title, st.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
           h("p", { class: "muted" }, st.summary ?? ""),
@@ -77,7 +80,7 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
     try { idx = await fetchIndex(); draw(); }
     catch (e: any) { idx = null; list.replaceChildren(h("div", { class: "notice" }, `读取失败：${e.message}。国内访问 GitHub 可能较慢，可以在上方换成“jsDelivr 加速”或自定义镜像再试。`), h("div", { class: "row" }, h("button", { onclick: load }, "重试"))); }
   };
-  root.append(h("div", { class: "row" }, h("span", {}, "线路："), mirrorSel, custom, h("button", { onclick: load }, "刷新")), h("p", { class: "small muted" }, `故事来自公开仓库 github.com/${REPO}，由投稿者通过 PR 提交、维护者审核后上架。下载的故事和本地导入的一样会先检查格式。`),
+  root.append(h("div", { class: "row" }, h("span", {}, "线路："), mirrorSel, custom, h("button", { onclick: load }, "刷新")), h("p", { class: "small muted" }, `故事来自公开仓库 github.com/${REPO}，不用登录就能浏览和下载；投稿经维护者审核合并后才会出现在这里。下载的故事和本地导入的一样会先检查格式。`),
     h("div", { class: "row" }, q), list);
   load();
   return root;
@@ -88,7 +91,7 @@ export function submitGuide(): HTMLElement {
   const step = (n: number, title: string, ...kids: any[]) => h("div", { class: "card step" }, h("h3", {}, `第 ${n} 步：${title}`), ...kids);
   return h("div", {},
     h("p", {}, "写好的故事可以投稿到公开的在线故事库，审核通过后所有玩家都能在“游玩 → 在线故事库”里下载。整个过程不需要会编程，只需要一个免费的 GitHub 账号。"),
-    h("div", { class: "notice" }, "投稿须知：只收全年龄或青少年级别的内容，不收色情内容；不要包含别人的版权素材、真实个人信息或任何 Key。投稿即表示同意按仓库说明公开分享。"),
+    h("div", { class: "notice" }, "投稿须知：只收全年龄或青少年级别的内容，不收色情内容；不要包含别人的版权素材、真实个人信息或任何 Key。版权归你，投稿即授权本平台公开分发（详见仓库 stories/LICENSE.md）。"),
     step(1, "检查并导出", h("p", {}, "在“用 AI 写故事”的草稿里点“校验”，没有错误后点“导出 .oasis”；或者在“导入检查”里检查你自己写的故事。记下故事的 id（story.yaml 里 meta.id，例如 rainy-bookstore）。")),
     step(2, "注册 GitHub 并 Fork 故事库", h("ol", {},
       h("li", {}, "打开 https://github.com 注册账号（免费）。"),

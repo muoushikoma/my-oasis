@@ -6,6 +6,7 @@ import { issuesView, copyText } from "./issues";
 import { loadSettings, isLocalUrl } from "./settings";
 import { explainError } from "./providers";
 import { submitGuide } from "./online";
+import { submitView } from "./submit";
 import specMd from "../../../docs/ruleset-spec.md?raw";
 import guideMd from "../../../docs/ai-authoring-guide.md?raw";
 import schemaJson from "../../../docs/schema/story.schema.json?raw";
@@ -77,7 +78,7 @@ export function showCreate(app: HTMLElement, nav: HTMLElement, ctx: Ctx, tab = "
   app.replaceChildren(nav, page);
   if (tab === "docs") return docsTab(body);
   if (tab === "check") return checkTab(body, ctx);
-  if (tab === "submit") { body.replaceChildren(submitGuide()); return; }
+  if (tab === "submit") { body.replaceChildren(submitView(loadDrafts().map((d) => ({ title: d.title, files: () => draftFiles(d) })), submitGuide)); return; }
   return writeTab(body, ctx, draftId, () => showCreate(app, nav, ctx, "write"), (id) => showCreate(app, nav, ctx, "write", id));
 }
 

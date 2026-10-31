@@ -74,3 +74,30 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .facts { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; } .guide a { color: var(--accent); word-break: break-all; }
 .test-status { margin: 6px 0; font-size: 14px; } .test-status.ok { color: #1f8a70; } .test-status.bad { color: #c0392b; }
 .wizard { width: min(720px, 94vw) !important; }
+
+/* 投稿 */
+.code-big { font-size: 22px; letter-spacing: 3px; font-family: Consolas, monospace; }
+.pr-list { display: flex; flex-direction: column; gap: 6px; } .pr-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid #0001; }
+.tag.ok { background: color-mix(in srgb, var(--accent) 22%, transparent); } .tag.err { background: #c0392b22; color: #c0392b; }
+.card label.row { display: flex; } details summary { cursor: pointer; margin: 10px 0; }
+
+/* 手机 / 窄屏（安卓）：导航移到底部，大按钮，单列布局 */
+@media (max-width: 720px), (pointer: coarse) and (max-width: 900px) {
+  body { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+  button, select, input { min-height: 44px; } button { padding: 8px 14px; }
+  .nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; justify-content: space-around; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid #0002; border-bottom: none; }
+  .nav .brand, .nav .muted, .nav .spacer { display: none; } .nav button { flex: 1; font-size: 14px; white-space: nowrap; }
+  .page { padding: 12px 12px 90px; padding-top: calc(12px + env(safe-area-inset-top)); }
+  .cards { grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }
+  .story-card .cover { width: 64px; height: 86px; }
+  .tabs { overflow-x: auto; flex-wrap: nowrap; } .tabs button { white-space: nowrap; flex: none; }
+  .card { padding: 12px 14px; } .row input { min-width: 0; width: 100%; }
+  .editor { grid-template-columns: 1fr; } .editor .files { flex-direction: row; overflow-x: auto; }
+  .draft-row, .save-row { grid-template-columns: 1fr auto; } .pr-row { grid-template-columns: 1fr auto; }
+  .play { height: 100dvh; padding-top: env(safe-area-inset-top); } .topbar { flex-wrap: wrap; }
+  .play-body { flex-direction: column; } .debug { width: auto; max-height: 40vh; }
+  .grid { grid-template-columns: 1fr !important; grid-template-rows: none !important; grid-template-areas: none !important; overflow-y: auto; }
+  .grid > .region { grid-area: auto !important; }
+  .md { padding: 6px 14px 14px; overflow-x: auto; } .modal .card { width: 96vw; }
+  .toast { bottom: 80px; max-width: 92vw; }
+}

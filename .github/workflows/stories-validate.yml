@@ -1,0 +1,27 @@
+name: 检查投稿
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --ignore-scripts --prefix tools/stories
+      - name: 外部投稿只能改 stories/
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "$changed"
+          if echo "$changed" | grep -v '^stories/[^/]*/' ; then
+            echo "❌ 来自 fork 的投稿只能改动 stories/<故事id>/ 里的文件（上面列出的文件不在 stories/ 里）。改代码请另开普通 PR 并说明。"; exit 1
+          fi
+      - name: 校验所有故事
+        run: node tools/stories/validate.mjs

@@ -1,0 +1,43 @@
+# 合并到 main 后：重建 index.json（提交回 main）+ 生成并部署 GitHub Pages 故事发布页
+name: 更新故事目录与发布页
+on:
+  push:
+    branches: [main]
+    paths: ["stories/**", "site/**", "tools/stories/**", "index.json"]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: stories-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --ignore-scripts --prefix tools/stories
+      - run: node tools/stories/validate.mjs
+      - run: node tools/stories/build-index.mjs
+      - name: 提交 index.json
+        run: |
+          if git diff --quiet index.json; then echo "没有变化"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          git commit -m "更新 index.json [skip ci]"
+          git push
+      - run: node tools/stories/build-site.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
