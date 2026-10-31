@@ -25,26 +25,46 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       # 用 runner 自带的 Android SDK（不再用 setup-android），只补装需要的组件：
       # compileSdk/targetSdk 36、AGP 8.11 默认的 build-tools 35、NDK r27c
-      - name: 安装 SDK 组件并设置 NDK_HOME
+      - name: 找到 SDK 并设置环境变量
         run: |
-          set -e
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
-          [ -x "$SM" ] || SM=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
-          echo "SDK=$SDK  sdkmanager=$SM"
-          yes | "$SM" --licenses > /dev/null || true
-          "$SM" --install "platforms;android-36" "build-tools;35.0.0" "ndk;27.2.12479018" > /dev/null
+          echo "SDK=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
           echo "NDK_HOME=$SDK/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "BUILD_TOOLS=$SDK/build-tools/35.0.0" >> "$GITHUB_ENV"
-          ls "$SDK/ndk/27.2.12479018/toolchains/llvm/prebuilt"
+      # 缓存装好的 SDK 组件（key 含版本号；改版本就自动换新缓存）
+      - name: 缓存 Android SDK 组件与 NDK
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.SDK }}/platforms/android-36
+            ${{ env.SDK }}/build-tools/35.0.0
+            ${{ env.SDK }}/ndk/27.2.12479018
+          key: android-sdk-platforms36-bt35.0.0-ndk27.2.12479018-${{ runner.os }}
+      - name: 安装 SDK 组件（缓存命中则跳过）
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SM" ] || SM=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          echo "sdkmanager=$SM"
+          yes | "$SM" --licenses > /dev/null || true
+          "$SM" --install "platforms;android-36" "build-tools;35.0.0" "ndk;27.2.12479018" > /dev/null
+      - name: 检查 SDK 组件
+        run: ls "$NDK_HOME/toolchains/llvm/prebuilt" "$BUILD_TOOLS/apksigner" "$SDK/platforms/android-36/android.jar"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      # Rust 编译缓存：Cargo 工作区在仓库根目录（src-tauri 是其成员，产物统一在 ./target，含各安卓 target 子目录）
       - uses: Swatinem/rust-cache@v2
         with:
-          key: android
+          workspaces: ". -> target"
+          shared-key: android
+          cache-on-failure: true
+      # Gradle 依赖与构建缓存
+      - uses: gradle/actions/setup-gradle@v4
       - run: pnpm install --frozen-lockfile
       # 安卓工程（src-tauri/gen/android）不进仓库，每次在 CI 里生成
       - name: 生成安卓工程
