@@ -106,6 +106,10 @@ async fn gh_submit(id: String, title: String, body: String, files: Vec<SubmitFil
 #[tauri::command]
 async fn gh_my_prs() -> R<Vec<github::PrInfo>> { Gh::new()?.my_prs(&gh_token()?).await }
 
+/// 在线故事库下载公开文件（不带任何登录信息）
+#[tauri::command]
+async fn net_get(url: String) -> R<String> { Ok(base64::engine::general_purpose::STANDARD.encode(github::public_get(&url).await?)) }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "android")]
@@ -117,7 +121,7 @@ pub fn run() {
             read_package, library_list, library_put, library_get, library_delete,
             save_write, save_read, save_list, save_delete, export_text, export_bytes, import_text,
             key_set, key_has, key_delete, llm_chat,
-            gh_status, gh_device_start, gh_device_poll, gh_logout, gh_submit, gh_my_prs
+            gh_status, gh_device_start, gh_device_poll, gh_logout, gh_submit, gh_my_prs, net_get
         ])
         .run(tauri::generate_context!())
         .expect("启动失败");

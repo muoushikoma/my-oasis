@@ -2,7 +2,7 @@
 
 > ⏸ **暂停（2026-10-31）**：先做单机客户端试水，服务器设计保留备用。
 >
-> 内部文档。架构背景见 [architecture.md](architecture.md) §4–§6。
+> 暂缓方案（当前不做服务器）。架构背景见 [architecture.md](architecture.md) §4–§6。
 
 ## 1. 约定
 - 基础地址来自签名引导配置的 `api_endpoints`，路径前缀 `/api/v1`。

@@ -144,6 +144,14 @@ export const bridge = {
     if (isTauri) { const t = await tauri(); return t.invoke(cmd, args); }
     return devGh(cmd, args) as T;
   },
+  /** 下载公开文件：客户端里走 Rust（避开跨域），浏览器开发模式直接 fetch */
+  async netGet(url: string, timeoutMs = 30000): Promise<Uint8Array> {
+    if (isTauri) { const t = await tauri(); return b64ToBytes(await t.invoke<string>("net_get", { url })); }
+    const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), timeoutMs);
+    try { const r = await fetch(url, { signal: ac.signal, cache: "no-cache" }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return new Uint8Array(await r.arrayBuffer()); }
+    catch (e: any) { throw new Error(e?.name === "AbortError" ? "连接超时" : String(e?.message ?? e)); }
+    finally { clearTimeout(tm); }
+  },
   async openUrl(url: string) {
     if (isTauri) { const o = await import("@tauri-apps/plugin-opener"); return o.openUrl(url); }
     window.open(url, "_blank");

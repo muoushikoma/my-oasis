@@ -1,23 +1,24 @@
-# 合并到 main 后：重建 index.json（提交回 main）+ 生成并部署 GitHub Pages 故事发布页
+# 合并到 main 后：生成故事目录 index.json，上传到固定 Release（tag story-index，覆盖旧文件）。
+# index.json 不再提交回 main（个人仓库的分支保护不能让 Actions 绕过）。
+# 发布页（GitHub Pages）：只有仓库已开启 Pages（Source = GitHub Actions）时才构建部署；没开启就跳过，整个工作流仍然成功。
 name: 更新故事目录与发布页
 on:
   push:
     branches: [main]
-    paths: ["stories/**", "site/**", "tools/stories/**", "index.json"]
+    paths: ["stories/**", "site/**", "tools/stories/**", ".github/workflows/stories-publish.yml"]
   workflow_dispatch:
 permissions:
   contents: write
-  pages: write
-  id-token: write
 concurrency:
   group: stories-publish
   cancel-in-progress: false
 jobs:
-  publish:
+  index:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    outputs:
+      pages: ${{ steps.pages.outputs.enabled }}
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,14 +27,42 @@ jobs:
       - run: npm ci --ignore-scripts --prefix tools/stories
       - run: node tools/stories/validate.mjs
       - run: node tools/stories/build-index.mjs
-      - name: 提交 index.json
+      - name: 上传到 Release story-index
         run: |
-          if git diff --quiet index.json; then echo "没有变化"; exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.json
-          git commit -m "更新 index.json [skip ci]"
-          git push
+          if ! gh release view story-index >/dev/null 2>&1; then
+            gh release create story-index --target "$GITHUB_SHA" --title "故事目录 / Story index" \
+              --notes "自动生成的故事目录，客户端和发布页读取这里的 index.json。请勿手动修改。" --latest=false
+          fi
+          gh release upload story-index index.json --clobber
+      - name: 检查 Pages 是否已开启
+        id: pages
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/pages" --jq .build_type 2>/dev/null | grep -q workflow; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages 未开启（或 Source 不是 GitHub Actions），跳过发布页。"
+          fi
+  pages:
+    needs: index
+    if: needs.index.outputs.pages == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 从 Release 取 index.json
+        run: gh release download story-index -p index.json -O index.json --clobber
       - run: node tools/stories/build-site.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

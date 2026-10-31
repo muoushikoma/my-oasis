@@ -1,9 +1,12 @@
-# 安卓 APK 构建（手动触发或打 v* 标签）。不提交任何签名密钥：
+# 安卓 APK 构建（手动触发、打 v* 标签，或改了代码的 PR；只改故事的 PR 不触发）。不提交任何签名密钥：
 # - 默认每次用临时生成的自签名证书签名（能安装；但换证书后需先卸载旧版才能装新版）
 # - 以后想要固定签名：在仓库 Secrets 里放 ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD（keystore 别名 my-oasis）
 name: android-build
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths-ignore: ["stories/**", "site/**", "tools/stories/**", "**/*.md"]
   push:
     tags: ["v*"]
 permissions:

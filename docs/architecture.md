@@ -1,6 +1,6 @@
 # 整体架构
 
-> 状态：草案 v0.4（私有项目，内部文档）· 配套：[项目说明](overview.md) · [服务器 API](server-api.md) · [故事包格式规范](ruleset-spec.md) · [AI 创作指南](ai-authoring-guide.md) · [MVP](mvp.md)
+> 状态：草案 v0.4（开源项目）· 配套：[项目说明](overview.md) · [服务器 API](server-api.md) · [故事包格式规范](ruleset-spec.md) · [AI 创作指南](ai-authoring-guide.md) · [MVP](mvp.md)
 
 ## 1. 设计约束
 | 约束 | 含义 |
