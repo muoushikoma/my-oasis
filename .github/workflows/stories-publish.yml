@@ -61,6 +61,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - run: npm ci --ignore-scripts --prefix tools/stories
       - name: 从 Release 取 index.json
         run: gh release download story-index -p index.json -O index.json --clobber
       - run: node tools/stories/build-site.mjs
