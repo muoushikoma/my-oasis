@@ -1,0 +1,104 @@
+spec: oasis/0.3
+meta:
+  id: lighthouse-mini
+  title: 守灯人（迷你版）
+  version: 0.3.0
+  summary: 七夜之内保住灯火，查明失踪船只的真相。
+  language: zh-CN
+  rating: all-ages
+  est_minutes: 20
+uses: [oasis/dice@1]
+start:
+  intro: 你在潮声里醒来，灯塔顶端的火苗只剩豆大。
+state:
+  oil:      { type: number, init: 3, min: 0, max: 5, integer: true, label: 灯油 }
+  day:      { type: number, init: 1, integer: true, label: 天数 }
+  location: { type: enum, values: [灯塔, 海滩, 村庄], init: 灯塔, label: 地点 }
+  clues:    { type: set, of: string, init: [], label: 线索 }
+  keeper_trust: { type: number, init: 0, min: -3, max: 3, integer: true, visible: ai, desc: 老守灯人对玩家的信任 }
+actions:
+  move:
+    label: 前往
+    params: { to: { type: enum, values: [灯塔, 海滩, 村庄] } }
+    require: "params.to != state.location"
+    require_message: 你已经在这里了
+    steps: [ { set: { location: "params.to" } } ]
+  search:
+    label: 搜索
+    require: "state.location != '灯塔'"
+    require_message: 灯塔里已经没什么可找的
+    steps:
+      - let: { r: "roll('1d20')" }
+      - if: "r >= 12"
+        then: [ { add: { clues: "state.location + '的线索'" } }, { log: "'找到了线索'" } ]
+        else: [ { inc: { oil: -1 } }, { log: "'潮水打湿了灯油'" } ]
+    result: "{ ok: r >= 12, roll: r }"
+  tend_light:
+    label: 添油守夜
+    require: "state.location == '灯塔'"
+    steps: [ { inc: { oil: -1, day: 1 } } ]
+  change_trust:
+    params: { amount: { type: number, min: -1, max: 1 } }
+    steps: [ { inc: { keeper_trust: "params.amount" } } ]
+    callable_by: [ai]
+events:
+  - id: storm
+    hook: state:day
+    when: "state.day == 4"
+    once: true
+    do: [ { inc: { oil: -1 } } ]
+    notify_ai: 第四夜暴风雨来临，灯油被风吹灭了一些。
+endings:
+  list:
+    - { id: darkness, label: 灯火熄灭, kind: bad, when: "state.oil <= 0" }
+    - { id: truth, label: 真相大白, kind: good, when: "len(state.clues) >= 2 && state.location == '灯塔'" }
+    - { id: dawn, label: 平淡的黎明, kind: neutral, when: "state.day > 7" }
+tools:
+  move:   { action: move, desc: 玩家明确要去另一个地点时调用 }
+  search: { action: search, desc: 玩家在当前地点搜索时调用，结果由骰子决定 }
+  tend:   { action: tend_light, desc: 玩家在灯塔添油守夜时调用，会推进一天 }
+  trust:  { action: change_trust, desc: 老守灯人对玩家的信任变化时调用 }
+ai:
+  model_hint: { tier: standard }
+  system: 这是一个安静、略带悬疑的海边故事，全年龄。
+  rules:
+    max_authority: 2
+    must: [用第二人称叙述, 保持全年龄]
+    forbid: [透露玩家看不到的数值, 替玩家做决定]
+    on_violation: { retry: 1, tell_ai: true }
+  entry_points:
+    narrator:
+      kind: narrate
+      trigger: player_input
+      prompt: |
+        玩家行动：{{input}}
+        当前：{{state.location}}，灯油 {{state.oil}}，第 {{state.day}} 天。
+        根据玩家行动调用合适的工具，再叙述结果，结尾给 2-3 个选项。
+      card:
+        task: 叙述玩家行动的结果，用工具推进规则
+        authority: 2
+        must: [每次结尾给 2-3 个选项, 检定失败如实叙述]
+        tools: { move: {}, search: {}, tend: {} }
+        output: { format: text, to: region:main, max_chars: 400 }
+    keeper:
+      kind: dialogue
+      trigger: ui:keeper_chat.send
+      prompt: |
+        你是村里的老守灯人，话少、警惕。玩家对你说：{{input}}
+        你对玩家的信任：{{state.keeper_trust}}（-3 到 3）。
+      context: { state: [keeper_trust, clues], history_turns: 4 }
+      card:
+        task: 扮演老守灯人和玩家对话，信任足够高时透露线索
+        authority: 1
+        forbid: [直接说出失踪船只的真相]
+        tools: { trust: { writes: { keeper_trust: { delta: [-1, 1] } } } }
+        output: { format: text, to: component:keeper_chat, max_chars: 200 }
+      optional: true
+      fallback: 老人摇摇头，没有说话。
+ui:
+  layout: { template: two-column }
+  components:
+    log:   { type: text-log, region: main }
+    input: { type: text-input, region: input, placeholder: 你要做什么？ }
+    stats: { type: stat-list, region: side, bind: [oil, day, location, clues] }
+    keeper_chat: { type: chat-box, region: side, title: 老守灯人 }
