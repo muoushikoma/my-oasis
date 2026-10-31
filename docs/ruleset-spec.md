@@ -1,6 +1,6 @@
 # 故事包格式规范（Oasis Story Format v0.3，正式草案）
 
-> 内部文档。本规范是**唯一标准**：作者可以手写、用其他工具生成，或让 AI 按 [AI 创作指南](ai-authoring-guide.md) 生成故事包；客户端只负责**导入、校验、试玩、上传**。机器可读版本：[schema/story.schema.json](schema/story.schema.json)。
+> 公开文档。本规范是**唯一标准**：作者可以手写、用其他工具生成，或让 AI 按 [AI 创作指南](ai-authoring-guide.md) 生成故事包；客户端只负责**导入、校验、试玩、上传**。机器可读版本：[schema/story.schema.json](schema/story.schema.json)。
 >
 > 关键词“必须 / 不得 / 应当 / 可以”按 RFC 2119 的含义使用。
 

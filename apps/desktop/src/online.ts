@@ -1,5 +1,7 @@
-// 在线故事库：从公开仓库 muoushikoma/my-oasis 读取 index.json，一键下载
-import type { StoryFiles } from "@my-oasis/schema";
+// 在线故事库：目录读 Release story-index 的 index.json（读不到就列出 stories/ 现场生成），故事文件读本仓库 main 的 stories/
+import { filesFromZip, validateFiles, type StoryFiles } from "@my-oasis/schema";
+import { bridge } from "./bridge";
+const dec = new TextDecoder();
 import { h, toast } from "./dom";
 import { loadSettings, saveSettings } from "./settings";
 
@@ -7,35 +9,84 @@ export interface OnlineStory { id: string; title: string; summary?: string; auth
 export interface OnlineIndex { format: string; updated?: string; stories: OnlineStory[] }
 
 export const REPO = "muoushikoma/my-oasis";
-export const MIRRORS: { id: string; name: string; base: string; note: string }[] = [
-  { id: "github", name: "GitHub 直连", base: `https://raw.githubusercontent.com/${REPO}/main`, note: "海外或网络好时用；国内可能很慢或打不开" },
-  { id: "jsdelivr", name: "jsDelivr 加速", base: `https://cdn.jsdelivr.net/gh/${REPO}@main`, note: "公共 CDN，国内通常更快；新合并的故事可能有几小时延迟" },
-  { id: "pages", name: "GitHub Pages 发布页", base: "https://muoushikoma.github.io/my-oasis", note: "故事发布页同一份文件，合并后几分钟内更新" },
-  { id: "custom", name: "自定义镜像/代理", base: "", note: "填写能访问到仓库文件的地址前缀（末尾不加 /），例如自建的代理地址" },
+/** 故事目录 index.json 挂在固定 Release 上（合并后由工作流覆盖更新），不存进仓库 */
+export const RELEASE_INDEX = `https://github.com/${REPO}/releases/download/story-index/index.json`;
+const RAW = `https://raw.githubusercontent.com/${REPO}/main`;
+const JSD = `https://cdn.jsdelivr.net/gh/${REPO}@main`;
+const PAGES = "https://muoushikoma.github.io/my-oasis";
+export const MIRRORS: { id: string; name: string; note: string }[] = [
+  { id: "github", name: "GitHub 直连", note: "海外或网络好时用；国内可能很慢或打不开" },
+  { id: "jsdelivr", name: "jsDelivr 加速", note: "公共 CDN，国内通常更快；新合并的故事可能有几小时延迟" },
+  { id: "pages", name: "GitHub Pages 发布页", note: "从故事发布页下载整包（需要维护者开启发布页）" },
+  { id: "custom", name: "自定义代理", note: "填 GitHub 加速代理的前缀（会把 https://github.com/… 和 raw 地址接在后面），例如 https://你的代理/" },
 ];
-export function storeBase(): string {
-  const s = loadSettings() as any;
-  const m = MIRRORS.find((x) => x.id === (s.storeMirror ?? "jsdelivr")) ?? MIRRORS[1];
-  return (m.id === "custom" ? s.storeCustom ?? "" : m.base).replace(/\/+$/, "");
+
+/** 一条线路：目录从哪读、文件从哪下、读不到目录时怎么列出 stories/ */
+interface Source { indexUrls: string[]; file: (path: string) => string; zip?: (id: string) => string; list: () => Promise<{ path: string; size?: number }[]> }
+const enc = (p: string) => p.split("/").map(encodeURIComponent).join("/");
+const mirrorId = () => ((loadSettings() as any).storeMirror ?? "jsdelivr") as string;
+export function source(id = mirrorId()): Source {
+  const ghList = async () => {
+    const j = JSON.parse(dec.decode(await bridge.netGet(`https://api.github.com/repos/${REPO}/git/trees/main?recursive=1`)));
+    return (j.tree ?? []).filter((e: any) => e.type === "blob" && String(e.path).startsWith("stories/")).map((e: any) => ({ path: e.path, size: e.size }));
+  };
+  if (id === "jsdelivr") return {
+    indexUrls: [RELEASE_INDEX], file: (p) => `${JSD}/${enc(p)}`,
+    list: async () => {
+      const j = JSON.parse(dec.decode(await bridge.netGet(`https://data.jsdelivr.com/v1/packages/gh/${REPO}@main?structure=flat`)));
+      return (j.files ?? []).map((f: any) => ({ path: String(f.name).replace(/^\//, ""), size: f.size })).filter((f: any) => f.path.startsWith("stories/"));
+    },
+  };
+  if (id === "pages") return { indexUrls: [`${PAGES}/index.json`, RELEASE_INDEX], file: (p) => `${RAW}/${enc(p)}`, zip: (sid) => `${PAGES}/dl/${encodeURIComponent(sid)}.oasis`, list: ghList };
+  if (id === "custom") {
+    const px = String((loadSettings() as any).storeCustom ?? "").trim();
+    const pre = px ? (px.endsWith("/") ? px : px + "/") : "";
+    return { indexUrls: [pre + RELEASE_INDEX], file: (p) => `${pre}${RAW}/${enc(p)}`, list: ghList };
+  }
+  return { indexUrls: [RELEASE_INDEX], file: (p) => `${RAW}/${enc(p)}`, list: ghList };
 }
-async function get(url: string, timeoutMs = 20000): Promise<Response> {
-  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), timeoutMs);
-  try { const r = await fetch(url, { signal: ac.signal, cache: "no-cache" }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r; }
-  catch (e: any) { throw new Error(e?.name === "AbortError" ? "连接超时" : String(e?.message ?? e)); }
-  finally { clearTimeout(t); }
+
+/** 没有现成目录时：按 stories/<id>/ 分组，读每个 story 文件生成目录（与仓库里的 build-index 规则一致） */
+export async function indexFromListing(files: { path: string; size?: number }[], readText: (path: string) => Promise<string>): Promise<OnlineIndex> {
+  const groups = new Map<string, { path: string; size?: number }[]>();
+  for (const f of files) { const m = /^stories\/([a-z][a-z0-9-]{2,63})\/(.+)$/.exec(f.path); if (!m || m[2].split("/").some((x) => x.startsWith("."))) continue; (groups.get(m[1]) ?? groups.set(m[1], []).get(m[1])!).push(f); }
+  const stories: OnlineStory[] = [];
+  for (const [id, list] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+    const main = ["story.yaml", "story.yml", "story.json"].map((n) => `stories/${id}/${n}`).find((p) => list.some((f) => f.path === p));
+    if (!main) continue;
+    let res;
+    try { res = validateFiles(new Map([[main.slice(`stories/${id}/`.length), new TextEncoder().encode(await readText(main))]])); } catch { continue; }
+    const m: any = (res as any).story?.meta; if (!m) continue;
+    const data: any = (res as any).story;
+    let cover = typeof m.cover === "string" ? m.cover : "";
+    if (cover.startsWith("asset:")) { const a = data?.assets?.[cover.slice(6)]; cover = typeof a === "string" ? a : a?.path ?? a?.src ?? ""; }
+    cover = cover && !cover.includes("..") && list.some((f) => f.path === `stories/${id}/${cover}`) ? `stories/${id}/${cover}` : "";
+    stories.push({ id, title: m.title ?? id, summary: m.summary ?? "", author: Array.isArray(m.authors) ? m.authors.join("、") : (m.author ?? ""), version: m.version ?? "",
+      rating: m.rating ?? "", language: m.language ?? "", tags: Array.isArray(m.tags) ? m.tags : [], ai: !!(data?.ai && Object.keys(data.ai).length) || /"content":"ai"/.test(JSON.stringify(data ?? {})),
+      cover, files: [...list].sort((a, b) => a.path.localeCompare(b.path)) });
+  }
+  return { format: "oasis-index/1", stories };
 }
-export async function fetchIndex(): Promise<OnlineIndex> {
-  const base = storeBase(); if (!/^https:\/\//.test(base)) throw new Error("在线故事库地址没设置好（必须以 https:// 开头）");
-  const j = await (await get(`${base}/index.json`)).json();
-  if (!Array.isArray(j?.stories)) throw new Error("故事库目录格式不对");
-  return j;
+
+/** 读目录：先读 Release 里的 index.json；读不到就列出 stories/ 现场生成 */
+export async function fetchIndex(src = source()): Promise<OnlineIndex & { fallback?: boolean }> {
+  if (mirrorId() === "custom" && !/^https:\/\//.test(String((loadSettings() as any).storeCustom ?? ""))) throw new Error("自定义代理地址没设置好（必须以 https:// 开头）");
+  let firstErr = "";
+  for (const u of src.indexUrls) {
+    try { const j = JSON.parse(dec.decode(await bridge.netGet(u))); if (Array.isArray(j?.stories)) return j; firstErr ||= "目录格式不对"; }
+    catch (e: any) { firstErr ||= e?.message ?? String(e); }
+  }
+  try { const idx = await indexFromListing(await src.list(), async (p) => dec.decode(await bridge.netGet(src.file(p)))); return { ...idx, fallback: true }; }
+  catch (e: any) { throw new Error(`${firstErr}；直接列出故事也失败：${e?.message ?? e}`); }
 }
-export async function downloadStory(st: OnlineStory, onProgress?: (n: number, all: number) => void): Promise<StoryFiles> {
-  const base = storeBase(), files: StoryFiles = new Map(), prefix = `stories/${st.id}/`;
+export async function downloadStory(st: OnlineStory, onProgress?: (n: number, all: number) => void, src = source()): Promise<StoryFiles> {
+  const prefix = `stories/${st.id}/`;
+  if (src.zip) { try { onProgress?.(0, 1); const f = filesFromZip(await bridge.netGet(src.zip(st.id))); onProgress?.(1, 1); return f; } catch { /* 发布页没有就逐个下载 */ } }
+  const files: StoryFiles = new Map();
   let n = 0;
   for (const f of st.files) {
     if (!f.path.startsWith(prefix) || f.path.includes("..")) throw new Error("故事文件路径不对");
-    files.set(f.path.slice(prefix.length), new Uint8Array(await (await get(`${base}/${f.path.split("/").map(encodeURIComponent).join("/")}`)).arrayBuffer()));
+    files.set(f.path.slice(prefix.length), await bridge.netGet(src.file(f.path)));
     onProgress?.(++n, st.files.length);
   }
   return files;
@@ -47,7 +98,7 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
   const s = loadSettings() as any;
   const mirrorSel = h("select", { onchange: (e: any) => { saveSettings({ ...loadSettings(), storeMirror: e.target.value } as any); load(); } },
     ...MIRRORS.map((m) => h("option", { value: m.id, selected: m.id === (s.storeMirror ?? "jsdelivr") }, m.name)));
-  const custom = h("input", { placeholder: "自定义地址前缀，如 https://你的代理/raw/muoushikoma/my-oasis/main", value: s.storeCustom ?? "", onchange: (e: any) => { saveSettings({ ...loadSettings(), storeCustom: e.target.value.trim() } as any); load(); } });
+  const custom = h("input", { placeholder: "GitHub 加速代理前缀，如 https://你的代理/", value: s.storeCustom ?? "", onchange: (e: any) => { saveSettings({ ...loadSettings(), storeCustom: e.target.value.trim() } as any); load(); } });
   const list = h("div", {});
   const q = h("input", { placeholder: "搜索标题、简介、标签", oninput: () => draw() }) as HTMLInputElement;
   let idx: OnlineIndex | null = null;
@@ -65,7 +116,7 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
       };
       const size = st.files.reduce((a, f) => a + (f.size ?? 0), 0);
       const ph = h("div", { class: "cover ph" }, (st.title.replace(/^[\s(（【\[]*(?:[^)）】\]]*[)）】\]])?\s*/, "") || st.title).slice(0, 1));
-      const cover = st.cover && /^stories\/[a-z0-9-]+\/[^?#]+$/.test(st.cover) && !st.cover.includes("..") ? h("img", { class: "cover", src: `${storeBase()}/${st.cover.split("/").map(encodeURIComponent).join("/")}`, alt: "", onerror: (e: any) => e.target.replaceWith(ph) }) : ph;
+      const cover = st.cover && /^stories\/[a-z0-9-]+\/[^?#]+$/.test(st.cover) && !st.cover.includes("..") ? (() => { const img = h("img", { class: "cover", alt: "" }) as HTMLImageElement; bridge.netGet(source().file(st.cover!)).then((b) => { img.src = URL.createObjectURL(new Blob([b as BlobPart])); }).catch(() => img.replaceWith(ph)); return img; })() : ph;
       return h("div", { class: "story-card" }, cover,
         h("div", { class: "info" },
           h("h3", {}, st.title, st.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
@@ -77,8 +128,8 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
   const load = async () => {
     custom.style.display = (loadSettings() as any).storeMirror === "custom" ? "" : "none";
     list.replaceChildren(h("p", { class: "muted" }, "正在读取在线故事库…"));
-    try { idx = await fetchIndex(); draw(); }
-    catch (e: any) { idx = null; list.replaceChildren(h("div", { class: "notice" }, `读取失败：${e.message}。国内访问 GitHub 可能较慢，可以在上方换成“jsDelivr 加速”或自定义镜像再试。`), h("div", { class: "row" }, h("button", { onclick: load }, "重试"))); }
+    try { idx = await fetchIndex(); draw(); if ((idx as any).fallback) list.prepend(h("p", { class: "small muted" }, "（没读到现成的故事目录，已直接列出仓库里的故事）")); }
+    catch (e: any) { idx = null; list.replaceChildren(h("div", { class: "notice" }, `读取失败：${e.message}。国内访问 GitHub 可能较慢，可以在上方换成“jsDelivr 加速”或自定义代理再试。`), h("div", { class: "row" }, h("button", { onclick: load }, "重试"))); }
   };
   root.append(h("div", { class: "row" }, h("span", {}, "线路："), mirrorSel, custom, h("button", { onclick: load }, "刷新")), h("p", { class: "small muted" }, `故事来自公开仓库 github.com/${REPO}，不用登录就能浏览和下载；投稿经维护者审核合并后才会出现在这里。下载的故事和本地导入的一样会先检查格式。`),
     h("div", { class: "row" }, q), list);

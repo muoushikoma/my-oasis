@@ -177,3 +177,16 @@ mod tests {
         if CLIENT_ID.is_empty() { assert!(Gh::new().unwrap().device_start().await.is_err()); }
     }
 }
+
+/// 在线故事库的公开文件下载（https GET，最大 25 MB）。走 Rust 是为了避开网页跨域限制（Release 文件不带跨域头）。
+pub async fn public_get(url: &str) -> Result<Vec<u8>> {
+    if !url.starts_with("https://") { return msg("只允许 https 地址"); }
+    let c = reqwest::Client::builder().user_agent("my-oasis-client").connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(60)).build()?;
+    let r = c.get(url).send().await?;
+    let code = r.status().as_u16();
+    if !(200..300).contains(&code) { return msg(format!("HTTP {code}")); }
+    if r.content_length().unwrap_or(0) > 25 * 1024 * 1024 { return msg("文件太大"); }
+    let b = r.bytes().await?;
+    if b.len() > 25 * 1024 * 1024 { return msg("文件太大"); }
+    Ok(b.to_vec())
+}

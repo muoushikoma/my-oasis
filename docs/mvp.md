@@ -42,6 +42,6 @@
 ## v0.8 补充（2026-10-31）
 
 - 客户端分成「游玩」和「创作」两块。
-- 游玩：我的故事库 + 在线故事库（从公开仓库 muoushikoma/my-oasis（stories/ 目录） 读取 index.json，一键下载；线路可选 GitHub 直连 / jsDelivr 加速 / 自定义地址）。
+- 游玩：我的故事库 + 在线故事库（故事目录 index.json 由合并后的工作流生成并上传到本仓库固定 Release（tag `story-index`）；客户端默认读它，读不到时用 GitHub API / jsDelivr 列出 stories/ 现场生成；线路可选 GitHub 直连 / jsDelivr 加速 / GitHub Pages / 自定义代理）。
 - 创作：用已连接的 AI 写故事（生成草稿 → 校验 → 试玩 → 导出 .oasis）、规范与指南（可复制给 AI、可下载）、导入检查、投稿到故事库的图文引导。
 - 首次启动向导：选服务商 → 照教程拿 Key → 只粘贴 Key → 测试连接；失败时用大白话说明原因（Key 不对、余额不足、网络不通、模型名不对）。

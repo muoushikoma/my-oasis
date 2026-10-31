@@ -12,7 +12,7 @@
 ## 怎么玩
 
 1. 安装客户端。第一次打开时按向导接入你自己的 AI（DeepSeek、通义千问、Kimi、OpenAI 等，或本地模型）；纯规则的故事不需要 AI。
-2. 打开“游玩 → 在线故事库”，**不用登录**就能浏览、下载、游玩。客户端读的是本仓库 `main` 分支的 `index.json` 和 `stories/`。
+2. 打开“游玩 → 在线故事库”，**不用登录**就能浏览、下载、游玩。故事目录 `index.json` 在每次合并后自动生成，挂在固定发布 [`story-index`](https://github.com/muoushikoma/my-oasis/releases/tag/story-index) 上（不存进仓库）；客户端默认读它，读不到就直接列出 `main` 分支的 `stories/` 现场生成。故事文件来自 `main` 分支的 `stories/`。
 3. 列表打不开？在顶部换“线路”：GitHub 直连、jsDelivr 加速、GitHub Pages，或填自己的镜像/代理地址。
 4. 也可以在发布页直接下载 `.oasis` 文件，在客户端里导入。
 
@@ -46,7 +46,6 @@ packages/             schema（校验）、engine（规则引擎）、cli
 crates/oasis-native/  本地能力：故事包读取、存档、模型请求、GitHub 登录与投稿（Key/token 不出 Rust）
 docs/                 故事包格式规范、AI 创作指南、JSON Schema
 stories/<id>/         已上架的故事
-index.json            故事目录（合并后自动生成，请勿手改）
 site/                 故事发布页模板（GitHub Pages 自动部署）
 tools/stories/        投稿检查、生成目录与发布页的脚本
 ```

@@ -9,3 +9,4 @@ dist/
 saves/
 target/
 _site/
+/index.json

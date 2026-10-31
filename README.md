@@ -11,7 +11,7 @@ This repo holds both the **client source code** and the **public story library**
 
 ## Play
 1. Install the app and connect your own AI in the setup wizard (or a local model). Rules-only stories need no AI.
-2. Open **Play → Online library**. **No sign-in needed** to browse, download and play. The app reads `index.json` and `stories/` from `main`.
+2. Open **Play → Online library**. **No sign-in needed** to browse, download and play. The story index (`index.json`) is built after each merge and attached to the fixed Release [`story-index`](https://github.com/muoushikoma/my-oasis/releases/tag/story-index); the app reads it, or falls back to listing `stories/` on `main` directly. Story files come from `stories/` on `main`.
 3. Slow connection? Switch the source: GitHub, jsDelivr, GitHub Pages, or your own mirror.
 
 ## Submit a story
