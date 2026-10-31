@@ -1,0 +1,3 @@
+[workspace]
+resolver = "2"
+members = ["crates/oasis-native", "apps/desktop/src-tauri"]

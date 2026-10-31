@@ -1,0 +1,46 @@
+# Windows 安装包构建（只在本地写好，暂不推送；仓库转为私有后再启用）
+name: windows-build
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+  build:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - name: Rust 单元测试（含钥匙串之外的本地逻辑）
+        run: cargo test -p oasis-native
+      - name: 构建安装包（NSIS + MSI）
+        working-directory: apps/desktop
+        run: pnpm tauri build
+      # 试水阶段没有代码签名证书，安装时 Windows 会有 SmartScreen 提示
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-oasis-windows
+          path: |
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 14

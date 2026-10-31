@@ -1,0 +1,1834 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://my-oasis.internal/schema/story-0.3.json",
+  "title": "Oasis Story Format v0.3（story.yaml / story.json）",
+  "description": "结构校验。引用存在性、表达式语法、裁量权上限等语义检查由客户端校验器完成（规范 §14）。",
+  "type": "object",
+  "required": [
+    "spec",
+    "meta",
+    "state",
+    "endings"
+  ],
+  "patternProperties": {
+    "^x_": {}
+  },
+  "additionalProperties": false,
+  "properties": {
+    "spec": {
+      "const": "oasis/0.3"
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,63}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2}(-[A-Z]{2})?$"
+        },
+        "rating": {
+          "enum": [
+            "all-ages",
+            "teen",
+            "mature"
+          ]
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 12
+          },
+          "maxItems": 10
+        },
+        "content_warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cover": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+        },
+        "setting": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+        },
+        "est_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "min_engine": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "license": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "version",
+        "summary",
+        "language",
+        "rating"
+      ],
+      "if": {
+        "properties": {
+          "rating": {
+            "const": "mature"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "content_warnings"
+        ]
+      }
+    },
+    "assets": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "uses": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^oasis/[a-z][a-z0-9_-]*@\\d+$"
+      },
+      "uniqueItems": true
+    },
+    "random": {
+      "type": "object",
+      "properties": {
+        "seed": {
+          "oneOf": [
+            {
+              "const": "auto"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "start": {
+      "type": "object",
+      "properties": {
+        "intro": {
+          "type": "string"
+        },
+        "do": {
+          "$ref": "#/$defs/steps"
+        }
+      },
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/state_def"
+      },
+      "minProperties": 1
+    },
+    "actions": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/action"
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "endings": {
+      "type": "object",
+      "properties": {
+        "check_on": {
+          "enum": [
+            "state_change",
+            "turn_end",
+            "manual"
+          ]
+        },
+        "list": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ending"
+          },
+          "minItems": 1
+        },
+        "script": {
+          "type": "string",
+          "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "list"
+      ]
+    },
+    "tools": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/tool"
+      }
+    },
+    "ai": {
+      "type": "object",
+      "properties": {
+        "model_hint": {
+          "type": "object",
+          "properties": {
+            "tier": {
+              "enum": [
+                "light",
+                "standard",
+                "strong"
+              ]
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "system": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "object",
+          "properties": {
+            "max_authority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "must": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "forbid": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "on_violation": {
+              "type": "object",
+              "properties": {
+                "retry": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3
+                },
+                "tell_ai": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            },
+            "max_tool_calls": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "additionalProperties": false
+        },
+        "entry_points": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/entry_point"
+          }
+        },
+        "images": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/image_point"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ui": {
+      "type": "object",
+      "properties": {
+        "theme": {
+          "type": "object",
+          "properties": {
+            "base": {
+              "enum": [
+                "light",
+                "dark",
+                "sepia"
+              ]
+            },
+            "colors": {
+              "type": "object",
+              "properties": {
+                "accent": {
+                  "$ref": "#/$defs/color"
+                },
+                "bg": {
+                  "$ref": "#/$defs/color"
+                },
+                "text": {
+                  "$ref": "#/$defs/color"
+                },
+                "panel": {
+                  "$ref": "#/$defs/color"
+                }
+              },
+              "additionalProperties": false
+            },
+            "font": {
+              "type": "object",
+              "properties": {
+                "body": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 12,
+                  "maximum": 24
+                }
+              },
+              "additionalProperties": false
+            },
+            "background": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                  "description": "asset:<资源id> 或包内相对路径"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "bind": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                    },
+                    "images": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                        "description": "asset:<资源id> 或包内相对路径"
+                      }
+                    },
+                    "default": {
+                      "type": "string",
+                      "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                      "description": "asset:<资源id> 或包内相对路径"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "bind",
+                    "images"
+                  ]
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "layout": {
+          "type": "object",
+          "properties": {
+            "template": {
+              "enum": [
+                "simple",
+                "two-column",
+                "stage",
+                "custom"
+              ]
+            },
+            "grid": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "template"
+          ],
+          "if": {
+            "properties": {
+              "template": {
+                "const": "custom"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "grid"
+            ]
+          }
+        },
+        "components": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/component"
+          }
+        },
+        "sound": {
+          "type": "object",
+          "properties": {
+            "music": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "src": {
+                      "type": "string",
+                      "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                      "description": "asset:<资源id> 或包内相对路径"
+                    },
+                    "volume": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "src"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "bind": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                    },
+                    "tracks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                        "description": "asset:<资源id> 或包内相对路径"
+                      }
+                    },
+                    "volume": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "bind",
+                    "tracks"
+                  ]
+                }
+              ]
+            },
+            "effects": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^(game_start|game_end|turn_end|action:[a-z][a-z0-9_]*|event:[a-z][a-z0-9_]*|ending:[a-z][a-z0-9_]*)$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+                "description": "asset:<资源id> 或包内相对路径"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "scripts": {
+      "type": "object",
+      "properties": {
+        "limits": {
+          "type": "object",
+          "properties": {
+            "time_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "memory_mb": {
+              "type": "integer",
+              "minimum": 4,
+              "maximum": 64
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,39}$"
+    },
+    "expr": {
+      "type": "string",
+      "minLength": 1,
+      "description": "表达式（见规范 §2.2）"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "step": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "set": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{0,39}(\\.[a-z][a-z0-9_]{0,39})?$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/exprval"
+              },
+              "minProperties": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "set"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "inc": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{0,39}(\\.[a-z][a-z0-9_]{0,39})?$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/exprval"
+              },
+              "minProperties": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "inc"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "add": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{0,39}(\\.[a-z][a-z0-9_]{0,39})?$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/exprval"
+              },
+              "minProperties": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "add"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "remove": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{0,39}(\\.[a-z][a-z0-9_]{0,39})?$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/exprval"
+              },
+              "minProperties": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "remove"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "put": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{0,39}(\\.[a-z][a-z0-9_]{0,39})?$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/$defs/exprval"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/exprval"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "key",
+                  "value"
+                ]
+              },
+              "minProperties": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "put"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "let": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]{0,39}(\\.[a-z][a-z0-9_]{0,39})?$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/exprval"
+              },
+              "minProperties": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "let"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "if": {
+              "type": "string",
+              "minLength": 1,
+              "description": "表达式（见规范 §2.2）"
+            },
+            "then": {
+              "$ref": "#/$defs/steps"
+            },
+            "else": {
+              "$ref": "#/$defs/steps"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "if",
+            "then"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "call": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
+            },
+            "params": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "call"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "emit": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
+            },
+            "data": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "emit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "end": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "end"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "fail": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "fail"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "log": {
+              "type": "string",
+              "minLength": 1,
+              "description": "表达式（见规范 §2.2）"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "log"
+          ]
+        }
+      ]
+    },
+    "exprval": {
+      "type": [
+        "string",
+        "number",
+        "boolean"
+      ],
+      "description": "表达式；数字/布尔可直接写"
+    },
+    "basic": {
+      "enum": [
+        "number",
+        "string",
+        "bool"
+      ]
+    },
+    "state_def": {
+      "type": "object",
+      "required": [
+        "type",
+        "init"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "number",
+            "bool",
+            "string",
+            "enum",
+            "list",
+            "set",
+            "map",
+            "record"
+          ]
+        },
+        "init": {},
+        "label": {
+          "type": "string"
+        },
+        "desc": {
+          "type": "string"
+        },
+        "visible": {
+          "enum": [
+            "both",
+            "player",
+            "ai",
+            "none"
+          ]
+        },
+        "writable_by": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "rules",
+              "ai",
+              "ui"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "integer": {
+          "type": "boolean"
+        },
+        "max_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "of": {
+          "$ref": "#/$defs/basic"
+        },
+        "max_items": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/basic"
+          },
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "minProperties": 1
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "number"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "init": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "bool"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "init": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "init": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "enum"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "values"
+            ],
+            "properties": {
+              "init": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "list",
+                  "set"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "of"
+            ],
+            "properties": {
+              "init": {
+                "type": "array"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "map"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "of"
+            ],
+            "properties": {
+              "init": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "record"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fields"
+            ],
+            "properties": {
+              "init": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "param": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "number",
+            "string",
+            "bool",
+            "enum"
+          ]
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "desc": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ]
+    },
+    "action": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "desc": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/param"
+          }
+        },
+        "require": {
+          "type": "string",
+          "minLength": 1,
+          "description": "表达式（见规范 §2.2）"
+        },
+        "require_message": {
+          "type": "string"
+        },
+        "steps": {
+          "$ref": "#/$defs/steps"
+        },
+        "script": {
+          "type": "string",
+          "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "result": {
+          "type": "string",
+          "minLength": 1,
+          "description": "表达式（见规范 §2.2）"
+        },
+        "callable_by": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "player",
+              "ai",
+              "rules"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "cooldown_turns": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "steps"
+          ]
+        },
+        {
+          "required": [
+            "script"
+          ]
+        }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "hook": {
+          "type": "string",
+          "pattern": "^(game_start|turn_start|turn_end|action:[a-z][a-z0-9_]*|state:[a-z][a-z0-9_]*|[a-z][a-z0-9_]*)$"
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "description": "表达式（见规范 §2.2）"
+        },
+        "do": {
+          "$ref": "#/$defs/steps"
+        },
+        "once": {
+          "type": "boolean"
+        },
+        "notify_ai": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "hook",
+        "do"
+      ]
+    },
+    "ending": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "description": "表达式（见规范 §2.2）"
+        },
+        "kind": {
+          "enum": [
+            "good",
+            "bad",
+            "neutral"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label"
+      ]
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "desc"
+      ],
+      "properties": {
+        "desc": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "description": "表达式（见规范 §2.2）"
+        },
+        "write": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "action"
+          ]
+        },
+        {
+          "required": [
+            "query"
+          ]
+        },
+        {
+          "required": [
+            "write"
+          ]
+        }
+      ]
+    },
+    "limit": {
+      "oneOf": [
+        {
+          "const": "any"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "delta": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "delta"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "range": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "range"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "values": {
+              "type": "array",
+              "minItems": 1
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "values"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "add_only": {
+              "const": true
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "add_only"
+          ]
+        }
+      ]
+    },
+    "target": {
+      "type": "string",
+      "pattern": "^(region|component|state):[a-z][a-z0-9_]*$|^none$"
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "enum": [
+            "text",
+            "json",
+            "sections"
+          ]
+        },
+        "to": {
+          "$ref": "#/$defs/target"
+        },
+        "max_chars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8000
+        },
+        "schema": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(bool|number|string|enum:\\[.+\\])$"
+          },
+          "minProperties": 1
+        },
+        "then": {
+          "$ref": "#/$defs/steps"
+        },
+        "sections": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/target"
+          },
+          "minProperties": 1
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "json"
+              }
+            },
+            "required": [
+              "format"
+            ]
+          },
+          "then": {
+            "required": [
+              "schema"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "sections"
+              }
+            },
+            "required": [
+              "format"
+            ]
+          },
+          "then": {
+            "required": [
+              "sections"
+            ]
+          }
+        }
+      ]
+    },
+    "card": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "must": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "forbid": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "writes": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                },
+                "additionalProperties": {
+                  "$ref": "#/$defs/limit"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "output": {
+          "$ref": "#/$defs/output"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "task",
+        "authority",
+        "output"
+      ]
+    },
+    "entry_point": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "narrate",
+            "dialogue",
+            "judge",
+            "generate"
+          ]
+        },
+        "trigger": {
+          "type": "string",
+          "pattern": "^(player_input|game_start|game_end|action:[a-z][a-z0-9_]*|event:[a-z][a-z0-9_]*|ui:[a-z][a-z0-9_]*\\.[a-z]+)$"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "card": {
+          "$ref": "#/$defs/card"
+        },
+        "context": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "oneOf": [
+                {
+                  "const": "visible"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  }
+                }
+              ]
+            },
+            "history_turns": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "setting": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "priority": {
+          "enum": [
+            "critical",
+            "background"
+          ]
+        },
+        "merge": {
+          "type": "boolean"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "fallback": {
+          "type": "string"
+        },
+        "after_end": {
+          "type": "boolean"
+        },
+        "opening": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "trigger",
+        "prompt",
+        "card"
+      ]
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "asset": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "image",
+            "audio"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$"
+        },
+        "use": {
+          "enum": [
+            "background",
+            "portrait",
+            "illustration",
+            "icon",
+            "music",
+            "sfx",
+            "other"
+          ]
+        },
+        "alt": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "loop": {
+          "type": "boolean"
+        },
+        "volume": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "path"
+      ]
+    },
+    "image_point": {
+      "type": "object",
+      "properties": {
+        "trigger": {
+          "type": "string",
+          "pattern": "^(game_start|turn_end|action:[a-z][a-z0-9_]*|event:[a-z][a-z0-9_]*|state:[a-z][a-z0-9_]*)$"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "style": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "size": {
+          "enum": [
+            "512x512",
+            "1024x1024",
+            "1024x1536",
+            "1536x1024"
+          ]
+        },
+        "cache": {
+          "oneOf": [
+            {
+              "enum": [
+                "once",
+                "none"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "by_state": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "minItems": 1
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "by_state"
+              ]
+            }
+          ]
+        },
+        "fallback": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+              "description": "asset:<资源id> 或包内相对路径"
+            },
+            {
+              "const": "none"
+            }
+          ]
+        },
+        "alt": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "trigger",
+        "prompt"
+      ]
+    },
+    "component": {
+      "type": "object",
+      "required": [
+        "type",
+        "region"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "text-log",
+            "text-input",
+            "button",
+            "choice-buttons",
+            "stat-list",
+            "stat-bar",
+            "item-list",
+            "chat-box",
+            "text-block",
+            "image",
+            "dice-log"
+          ]
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "label": {
+          "type": "string"
+        },
+        "hidden_by_default": {
+          "type": "boolean"
+        },
+        "player_can_hide": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "writes": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "action": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "emit": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "params": {
+          "type": "object"
+        },
+        "choices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "params": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "label",
+              "action"
+            ]
+          }
+        },
+        "from_ai": {
+          "type": "boolean"
+        },
+        "bind": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "portrait": {
+          "type": "string",
+          "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+          "description": "asset:<资源id> 或包内相对路径"
+        },
+        "text": {
+          "type": "string"
+        },
+        "src": {
+          "type": "string",
+          "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+          "description": "asset:<资源id> 或包内相对路径"
+        },
+        "images": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(asset:[a-z][a-z0-9_]{0,39}|(?!/)(?!.*\\.\\.)[^\\\\:]+)$",
+            "description": "asset:<资源id> 或包内相对路径"
+          }
+        },
+        "fit": {
+          "enum": [
+            "cover",
+            "contain"
+          ]
+        },
+        "generated": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "content": {
+          "enum": [
+            "fixed",
+            "ai"
+          ],
+          "description": "固定（作者写死）或 AI 处理；不写 = fixed"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "actions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "description": "玩家这段文字最多能导致的已声明动作"
+            },
+            "words": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "description": "不经 AI 时：关键词 → 动作"
+            },
+            "reject": {
+              "type": "string",
+              "minLength": 1,
+              "description": "无法映射或超界时的固定回应"
+            },
+            "max_length": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "actions",
+            "reject"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

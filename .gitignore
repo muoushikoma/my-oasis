@@ -1,0 +1,10 @@
+drafts/
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+*.key
+*.pem
+saves/
+target/

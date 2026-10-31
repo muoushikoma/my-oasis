@@ -1,0 +1,17 @@
+{
+  "name": "my-oasis",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/desktop/tsconfig.json",
+    "oasis": "tsx packages/cli/src/index.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^20.0.0"
+  }
+}

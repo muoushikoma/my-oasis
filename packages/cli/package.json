@@ -1,0 +1,4 @@
+{ "name": "@my-oasis/cli", "version": "0.1.0", "private": true, "type": "module",
+  "bin": { "oasis": "./src/index.ts" },
+  
+  "dependencies": { "@my-oasis/schema": "workspace:*", "@my-oasis/engine": "workspace:*" } }

@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "strict": true, "esModuleInterop": true, "skipLibCheck": true, "resolveJsonModule": true,
+    "noEmit": true, "allowImportingTsExtensions": false, "types": ["node"],
+    "baseUrl": ".", "paths": { "@my-oasis/schema": ["packages/schema/src/index.ts"], "@my-oasis/schema/node": ["packages/schema/src/node.ts"], "@my-oasis/engine": ["packages/engine/src/index.ts"] }
+  },
+  "include": ["packages/*/src", "packages/*/test"]
+}
