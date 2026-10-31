@@ -14,8 +14,9 @@ const files = loadDir(dir);
 const r = validateFiles(files);
 if (!r.ok) throw new Error(JSON.stringify(r.issues));
 const story = r.story as Story;
-let runner: ScriptRunner;
-beforeAll(async () => { runner = await createQuickJsRunner(); });
+// 玩法测试与机器速度无关：时间上限放大 1000 倍；沙箱限制测试单独用真实上限的运行器
+let runner: ScriptRunner, strict: ScriptRunner;
+beforeAll(async () => { runner = await createQuickJsRunner({ timeScale: 1000 }); strict = await createQuickJsRunner({ coldRuns: 0 }); });
 const mk = (seed = 1) => { const g = new Game(story, { seed, files, scripts: runner }); g.start(); return g; };
 
 describe("oasis/0.4 实时：星星收集者", () => {
@@ -87,7 +88,7 @@ realtime: { tick_ms: 20, on_tick: s.js#tick }
 ${extra}`;
     const f = filesFromText(y, { "s.js": tick });
     const v = validateFiles(f); if (!v.ok) throw new Error(JSON.stringify(v.issues));
-    const g = new Game(v.story as Story, { files: f, scripts: runner }); g.start(); return g;
+    const g = new Game(v.story as Story, { files: f, scripts: strict }); g.start(); return g;
   };
   it("死循环被时间限制打断，这一帧撤销、循环继续", () => {
     const g = base(`export function tick(api){ api.state.inc("n", 1); if (api.time > 20) { while(true){} } }`);
@@ -95,6 +96,15 @@ ${extra}`;
     const t0 = Date.now(); const r = g.tick(16); expect(Date.now() - t0).toBeLessThan(1000);
     expect(r.ok).toBe(false); expect(g.state.n).toBe(1);
     expect(g.log.some((l) => l.kind === "error")).toBe(true);
+  });
+  it("计时不含宿主 API 耗时，冷启动有宽限", async () => {
+    const cold = await createQuickJsRunner();
+    const slowHost = { call: (m: string) => { const t = Date.now(); while (Date.now() - t < 30); return m === "params" ? {} : null; } };
+    // 宿主每次调用耗时 30ms，超过 tick_ms 20ms，但不计入脚本时间
+    expect(strict.run("a.js", "function f(api){ api.log('x'); api.log('y'); return 1; }", "f", slowHost, { time_ms: 20, memory_mb: 16 })).toBe(1);
+    // 冷启动宽限：前几次调用上限至少 1000ms；死循环仍会被中止
+    expect(() => cold.run("a.js", "function f(){ const t = 0; for(let i=0;i<3e6;i++){} return 1; }", "f", { call: () => ({}) }, { time_ms: 1, memory_mb: 16 })).not.toThrow();
+    expect(() => strict.run("a.js", "function f(){ while(true){} }", "f", { call: () => ({}) }, { time_ms: 5, memory_mb: 16 })).toThrow(/中止/);
   });
   it("内存超限被打断", () => {
     const g = base(`export function tick(api){ const a=[]; for(;;) a.push("x".repeat(1e5)); }`);
