@@ -6,6 +6,7 @@ import { AssetBox } from "./assets";
 import { RealtimeDriver } from "./realtime";
 import { bridge } from "./bridge";
 import { makeLlm } from "./llm";
+import { beginSession, sessionUsage, loadUsage, onUsage, fmtNum, fmtCost, zero } from "./usage";
 import { explainError } from "./providers";
 import { loadSettings, saveSettings, isLocalUrl, type Settings } from "./settings";
 
@@ -82,7 +83,19 @@ export class PlaySession {
     this.sound = new Sound(this.settings);
   }
 
+  private offUsage?: () => void;
+  /** 顶栏的用量小字：本局 / 这个故事累计（只在本机统计） */
+  usageEl() {
+    const se = sessionUsage(); const st = loadUsage().stories[this.storyId] ?? zero();
+    if (!this.story.ai && !st.calls) return null;
+    const est = se.estimatedCalls ? "（估）" : "";
+    const cost = fmtCost(se);
+    return h("span", { id: "usage-line", class: "muted small usage", title: "AI 用量只记在本机，不上传。详情和清零在“设置 → AI 用量”。" },
+      `本局 ${fmtNum(se.input + se.output)} tokens${est}` + (cost && !cost.startsWith("费用") ? ` ${cost}` : "") + ` · 本故事累计 ${fmtNum(st.input + st.output)}`);
+  }
   async init(save?: any) {
+    beginSession(this.storyId, this.story.meta.title);
+    this.offUsage?.(); this.offUsage = onUsage(() => { const el = document.getElementById("usage-line"); const n = this.usageEl(); if (el && n) el.replaceWith(n); });
     try { this.scripts = await createQuickJsRunner(); } catch { /* 没用脚本的故事不需要 */ }
     const s = this.settings;
     if (this.story.ai) {
@@ -293,10 +306,11 @@ export class PlaySession {
     const bg = this.background();
     const end = this.game.ending ? this.story.endings.list.find((e) => e.id === this.game.ending) : undefined;
     const bar = h("div", { class: "topbar" },
-      h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.onExit(); } }, "← 故事库"),
+      h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.offUsage?.(); this.onExit(); } }, "← 故事库"),
       h("b", { class: "title" }, this.story.meta.title),
       h("span", { class: "muted" }, `第 ${this.game.turn} 回合`),
       this.busy ? h("span", { class: "busy" }, "AI 思考中…") : null,
+      this.usageEl(),
       h("span", { class: "spacer" }),
       h("button", { onclick: () => this.savesDialog() }, "存档"),
       h("button", { onclick: () => { this.settings.muted = !this.settings.muted; saveSettings(this.settings); this.sound.music.muted = this.settings.muted; this.render(); } }, this.settings.muted ? "🔇 已静音" : "🔊 声音"),
@@ -307,7 +321,7 @@ export class PlaySession {
       grid,
       this.rt?.controlsEl() ?? null,
       end ? h("div", { class: `ending ${end.kind ?? ""}` }, h("h2", {}, `🏁 ${end.label}`), end.text ? h("p", {}, end.text) : null,
-        h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, "再玩一次"), h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.onExit(); } }, "回故事库"))) : null);
+        h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, "再玩一次"), h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.offUsage?.(); this.onExit(); } }, "回故事库"))) : null);
     const body = h("div", { class: "play-body" }, page, this.debug ? this.debugPanel() : null);
     this.root.replaceChildren(bar, body);
     for (const [k, v] of Object.entries(this.themeVars())) this.root.style.setProperty(k, v);

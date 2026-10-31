@@ -43,7 +43,7 @@ API keys and GitHub tokens live only in the OS secure store (Windows Credential 
 | [Story format spec (full)](docs/ruleset-spec.md) | Detailed description of every field and how the engine executes it |
 | [AI authoring guide](docs/ai-authoring-guide.md) | Older AI prompt with writing advice; reference only |
 | [Overview](docs/overview.md) | What the project is, who it is for, the overall idea |
-| [Architecture](docs/architecture.md) | Client, engine, AI integration and security design |
+| [Architecture](docs/architecture.md) | Client, engine, AI integration and security design, plus local AI token-usage tracking |
 | [Milestones](docs/mvp.md) | Done and planned features |
 | [Server API (on hold)](docs/server-api.md) | Draft API for a future server; no server for now |
 | [Story copyright & license](stories/LICENSE.md) | Copyright and license terms for submitted stories |

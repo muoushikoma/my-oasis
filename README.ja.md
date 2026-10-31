@@ -32,7 +32,7 @@ fork からの PR は **`stories/` 以外を変更できません**。メンテ�
 | [物語パッケージ仕様（完全版）](docs/ruleset-spec.md) | 各フィールドの詳細とエンジンでの扱い |
 | [AI 創作ガイド](docs/ai-authoring-guide.md) | 旧版の AI 用プロンプト（創作アドバイスを含む。参考用） |
 | [概要](docs/overview.md) | プロジェクトの目的と全体像 |
-| [アーキテクチャ](docs/architecture.md) | クライアント・エンジン・AI 接続・セキュリティ設計 |
+| [アーキテクチャ](docs/architecture.md) | クライアント・エンジン・AI 接続・セキュリティ設計、AI 使用量（トークン）のローカル記録 |
 | [マイルストーン](docs/mvp.md) | 完了済み・予定の機能 |
 | [サーバー API（保留）](docs/server-api.md) | 将来のサーバー用 API 草案（現在サーバーはありません） |
 | [物語の著作権と許諾](stories/LICENSE.md) | 投稿作品の著作権と許諾範囲 |
