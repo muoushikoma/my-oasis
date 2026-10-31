@@ -21,7 +21,7 @@
 
 【最高原则，必须遵守】
 1. 每一处内容要么固定、要么 AI 处理，不写就是固定。AI 要输出到的组件必须写 content: ai（choice-buttons 用 from_ai: true）。
-2. 玩家只能做 actions 里声明的事。放 text-input（自由输入）或 chat-box 时必须写 input: { actions: [允许导致的动作], reject: 做不到时的固定回应 }；只聊天就写 actions: []。可加 words: { 动作id: [关键词] } 让没有 AI 时也能用。
+2. 玩家只能做 actions 里声明的事。放 text-input（自由输入）或 chat-box 时可写 input: { actions: [允许导致的动作], reject: 做不到时的固定回应 }；不写 input 时玩家文字不能触发任何动作。可加 words: { 动作id: [关键词] } 让没有 AI 时也能用。
 3. 不要设计“玩家说一句话就能改数值或跳结局”的地方；这些只能通过动作和规则发生。
 
 【输出要求】
@@ -39,7 +39,7 @@
 
 【顶层字段】
 spec: "oasis/0.3"（必填）
-meta（必填）、state（必填，至少 1 个）、endings（必填，至少 1 个结局）
+meta（必填）、state（可选）、endings（可选）
 可选：uses、random、start、actions、events、tools、ai、ui、scripts
 不得出现其他顶层字段。
 
@@ -62,7 +62,7 @@ meta.id 用小写字母、数字、连字符，如 lighthouse-keeper。
 - 字符串字面量必须用单引号：'海滩'；整个表达式外面用双引号
 - 运算：+ - * / %  == != < <= > >=  && || !  a ? b : c  x in list
 - 函数：len has min max abs floor ceil round str num；随机：rand() randint(a,b) pick(list) weighted({a:3,b:1})
-- 骰子 roll('2d6+3')、roll_adv('d20')、roll_dis('d20') 只有在 uses 里写了 oasis/dice@1 才能用
+- 骰子 roll('2d6+3')、roll_adv('d20')、roll_dis('d20') 可直接用；随机和骰子函数在任何表达式里都能用
 - 禁止循环、函数定义、其他对象
 
 【actions】每个动作：steps 或 script 二选一；可选 label, desc, params, require, require_message, result, callable_by([player, ai, rules]，默认全部), cooldown_turns。
@@ -126,7 +126,7 @@ ui:
   components:
     <组件id>: { type, region, ... }
     通用：content: fixed（默认）| ai
-    type 可选：text-log, text-input(placeholder, input 必填), button(action 或 emit), choice-buttons(choices 或 from_ai), stat-list(bind 列表), stat-bar(bind，需 min/max 的 number), item-list(bind), chat-box(title, portrait, input 必填), text-block(bind 或 text), image(src，或 bind+images，或 generated), dice-log(需 oasis/dice)
+    type 可选：text-log, text-input(placeholder, input 可选), button(action 或 emit), choice-buttons(choices 或 from_ai), stat-list(bind 列表), stat-bar(bind，需 min/max 的 number), item-list(bind), chat-box(title, portrait, input 必填), text-block(bind 或 text), image(src，或 bind+images，或 generated), dice-log(需 oasis/dice)
   theme.background: asset:id，或 { bind: 状态id, images: { 值: asset:id }, default: asset:id }
   choice-buttons 用 from_ai: true 时：让接入点 output.to（或 sections 的一项）指向 component:<该组件>，AI 每行写一个选项（最多 6 个）；界面里必须有带 input 的 text-input，点选项等于把这行字提交给它。
   sound: { music: { src: asset:id } 或 { bind: 状态id, tracks: { 值: asset:id } }, effects: { "action:id"|"event:id"|"ending:id"|game_start|turn_end: asset:id } }

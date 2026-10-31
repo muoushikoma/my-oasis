@@ -101,3 +101,12 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
   .md { padding: 6px 14px 14px; overflow-x: auto; } .modal .card { width: 96vw; }
   .toast { bottom: 80px; max-width: 92vw; }
 }
+/* oasis/0.4 实时画布与触摸控件 */
+.comp-canvas { display: flex; justify-content: center; }
+.rt-canvas { width: 100%; max-width: 720px; height: auto; background: #000; border-radius: 6px; touch-action: none; outline: none; }
+.rt-controls { position: absolute; left: 0; right: 0; bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 16px; pointer-events: none; z-index: 5; }
+.rt-joy { width: 120px; height: 120px; border-radius: 50%; background: rgba(127,127,127,.25); border: 2px solid rgba(127,127,127,.5); position: relative; pointer-events: auto; touch-action: none; }
+.rt-joy.right { order: 2; }
+.rt-knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(127,127,127,.7); pointer-events: none; }
+.rt-buttons { display: flex; gap: 10px; pointer-events: auto; margin-left: auto; }
+.rt-btn { width: 64px; height: 64px; border-radius: 50%; font-weight: bold; touch-action: none; user-select: none; }

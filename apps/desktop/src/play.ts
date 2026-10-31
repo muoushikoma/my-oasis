@@ -3,6 +3,7 @@ import { Game, entriesFor, runEntries, parseChoices, createQuickJsRunner, type L
 import type { Story, StoryFiles } from "@my-oasis/schema";
 import { h, toast, fmtVal } from "./dom";
 import { AssetBox } from "./assets";
+import { RealtimeDriver } from "./realtime";
 import { bridge } from "./bridge";
 import { makeLlm } from "./llm";
 import { explainError } from "./providers";
@@ -55,6 +56,24 @@ export class PlaySession {
   llm?: LLM; scripts?: ScriptRunner; assets: AssetBox; sound: Sound; settings: Settings;
   aiChoices: Record<string, string[]> = {}; lastTools: EntryRunResult["toolLog"] = []; root = h("div", { class: "play" });
   aiNotice = "";
+  rt?: RealtimeDriver; private rtEnded = false;
+
+  /** oasis/0.4：有 realtime 的故事启动实时循环 */
+  private startRealtime() {
+    this.rt?.stop(); this.rt = undefined; this.rtEnded = false;
+    if (!this.story.realtime) return;
+    const self = this;
+    this.rt = new RealtimeDriver({
+      get game() { return self.game; }, story: this.story, assets: this.assets, get llm() { return self.llm; },
+      muted: () => this.settings.muted, sfx: () => this.settings.sfx,
+      onFrame: () => {
+        this.flushLog();
+        if (this.game.ending && !this.rtEnded) { this.rtEnded = true; void this.afterOp(false); return; }
+        this.render();
+      },
+      onHooks: (hooks) => { for (const hk of hooks) { this.sound.effect(this.effectUrl(hk)); void this.runAi(entriesFor(this.game, hk), ""); } },
+    });
+  }
 
   constructor(public story: Story, public files: StoryFiles, public storyId: string, private onExit: () => void) {
     this.settings = loadSettings();
@@ -75,16 +94,18 @@ export class PlaySession {
       const r = Game.load(this.story, save, { files: this.files, scripts: this.scripts });
       this.game = r.game; r.warnings.forEach((w) => toast(w, "err"));
       this.feed = (this.game.extra.ui_feed ?? []) as Feed[]; this.seq = this.feed.length + 1; this.shown = this.game.log.length;
-      this.render(); return;
+      this.startRealtime(); this.render(); this.rt?.start(); return;
     }
     this.game = new Game(this.story, { files: this.files, scripts: this.scripts });
     this.game.start();
+    this.startRealtime();
     if (this.story.start?.intro) this.push("log", this.story.start.intro, "rule");
     this.flushLog(); this.sound.effect(this.effectUrl("game_start"));
     this.render();
     const eps = entriesFor(this.game, "game_start");
     const opening = eps.filter((e) => this.game.entry(e).opening);
     for (const e of opening) this.push(this.game.entry(e).card.output.to ?? "log", this.game.entry(e).opening!, "ai");
+    this.rt?.start();
     await this.runAi(eps.filter((e) => !opening.includes(e)), "");
     this.afterOp(false);
   }
@@ -272,7 +293,7 @@ export class PlaySession {
     const bg = this.background();
     const end = this.game.ending ? this.story.endings.list.find((e) => e.id === this.game.ending) : undefined;
     const bar = h("div", { class: "topbar" },
-      h("button", { onclick: () => { this.sound.stop(); this.assets.dispose(); this.onExit(); } }, "← 故事库"),
+      h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.onExit(); } }, "← 故事库"),
       h("b", { class: "title" }, this.story.meta.title),
       h("span", { class: "muted" }, `第 ${this.game.turn} 回合`),
       this.busy ? h("span", { class: "busy" }, "AI 思考中…") : null,
@@ -284,8 +305,9 @@ export class PlaySession {
     const page = h("div", { class: "stage", style: bg ? { backgroundImage: `url("${bg}")` } : {} },
       this.aiNotice ? h("div", { class: "notice" }, this.aiNotice) : null,
       grid,
+      this.rt?.controlsEl() ?? null,
       end ? h("div", { class: `ending ${end.kind ?? ""}` }, h("h2", {}, `🏁 ${end.label}`), end.text ? h("p", {}, end.text) : null,
-        h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, "再玩一次"), h("button", { onclick: () => { this.sound.stop(); this.onExit(); } }, "回故事库"))) : null);
+        h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, "再玩一次"), h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.onExit(); } }, "回故事库"))) : null);
     const body = h("div", { class: "play-body" }, page, this.debug ? this.debugPanel() : null);
     this.root.replaceChildren(bar, body);
     for (const [k, v] of Object.entries(this.themeVars())) this.root.style.setProperty(k, v);
@@ -297,7 +319,7 @@ export class PlaySession {
     if (focusId) this.root.querySelector<HTMLElement>(`input[data-cid="${focusId}"]`)?.focus();
   }
   lastSent = new Set<string>();
-  async restart() { this.sound.stop(); this.feed = []; this.shown = 0; this.aiChoices = {}; await this.init(); }
+  async restart() { this.rt?.stop(); this.sound.stop(); this.feed = []; this.shown = 0; this.aiChoices = {}; await this.init(); }
 
   feedFor(cid: string, c: any): Feed[] {
     const firstLog = Object.entries<any>(this.ui.components).find(([, x]) => x.type === "text-log")?.[0];
@@ -355,6 +377,7 @@ export class PlaySession {
         return box(h("img", { src: u, alt: this.assets.meta(ref)?.alt ?? c.label ?? "", style: { objectFit: c.fit ?? "cover" } }));
       }
       case "dice-log": return box(h("div", { class: "log small", "data-scroll": cid }, ...this.game.log.filter((l) => l.kind === "dice" || l.kind === "random").slice(-20).map((l) => h("div", {}, l.text))));
+      case "canvas": return this.rt ? box(this.rt.canvas(cid, c)) : box(h("p", { class: "muted" }, "（画布需要 realtime 循环）"));
       default: return null;
     }
   }

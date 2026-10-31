@@ -61,5 +61,16 @@ npm ci --prefix tools/stories && node tools/stories/validate.mjs   # 检查 stor
 ```
 API Key、GitHub token 只存在系统安全存储里（Windows 凭据管理器 / 安卓 Keystore），请求由 Rust 端代发。绝不要提交任何 Key 或密码。
 
-## 文档
-[概览](docs/overview.md) · [架构](docs/architecture.md) · [故事包格式规范](docs/ruleset-spec.md) · [JSON Schema](docs/schema/story.schema.json) · [AI 创作指南](docs/ai-authoring-guide.md)
+## 文档索引
+
+| 文档 | 用途 |
+|---|---|
+| ⭐ [故事交付格式](docs/story-format.md) | **写故事只看这一份，可直接交给 AI。** 规定 `.oasis` 故事包的文件结构和字段格式（含 oasis/0.4 实时游戏：循环、定时器、键盘/触摸/摇杆、画布、声音、异步 AI），不限制故事内容 |
+| [JSON Schema](docs/schema/story.schema.json) | 故事主文件的机器可读格式定义，客户端和投稿检查都用它校验 |
+| [故事包格式规范（完整版）](docs/ruleset-spec.md) | 每个字段的详细说明，以及引擎怎么执行它们 |
+| [AI 创作指南](docs/ai-authoring-guide.md) | 旧版的 AI 写故事提示词，内容含创作建议，仅供参考 |
+| [项目说明](docs/overview.md) | 项目是什么、给谁用、整体思路 |
+| [架构](docs/architecture.md) | 客户端、引擎、AI 接入和安全设计 |
+| [里程碑](docs/mvp.md) | 已完成和计划中的功能 |
+| [服务器 API（暂缓）](docs/server-api.md) | 以后做服务器时的接口草案，目前不做服务器 |
+| [故事版权与授权](stories/LICENSE.md) | 投稿故事的版权归属和授权范围 |

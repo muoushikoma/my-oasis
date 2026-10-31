@@ -7,15 +7,30 @@ import { loadSettings, isLocalUrl } from "./settings";
 import { explainError } from "./providers";
 import { submitGuide } from "./online";
 import { submitView } from "./submit";
-import specMd from "../../../docs/ruleset-spec.md?raw";
+import formatMd from "../../../docs/story-format.md?raw";
 import guideMd from "../../../docs/ai-authoring-guide.md?raw";
 import schemaJson from "../../../docs/schema/story.schema.json?raw";
 
 const enc = new TextEncoder(), dec = new TextDecoder();
-export const AUTHOR_PROMPT = (() => { const i = guideMd.indexOf("````text"); const j = guideMd.indexOf("\n````", i + 8); return i >= 0 && j > i ? guideMd.slice(guideMd.indexOf("\n", i) + 1, j).trim() : guideMd; })();
+/** 交给 AI 的说明：只约定交付格式（docs/story-format.md），故事内容完全按用户描述 */
+export const AUTHOR_PROMPT = `你要为「我的绿洲」制作一个故事包。故事的规则、玩法、数值、剧情全部按用户的描述来，不要自行增加、删减或改变用户没提到的设定。
+
+你只需要保证交付文件符合下面的《故事交付格式》。
+
+【输出方式】
+- 只输出文件。每个文件写成：
+  文件：路径（例如 story.yaml、scripts/main.js）
+  \`\`\`（语言）
+  （文件内容）
+  \`\`\`
+- 必须有 story.yaml（或 story.json）。图片、音频这类二进制文件不要输出内容；如果 assets 里登记了它们，最后列出需要准备的文件清单（路径和用途）。
+- YAML 用 2 个空格缩进、UTF-8。
+
+【故事交付格式】
+${formatMd}`;
 const DOCS = [
+  { id: "format", title: "故事交付格式", file: "我的绿洲-故事交付格式.md", text: formatMd, ext: "md" },
   { id: "guide", title: "AI 创作指南", file: "我的绿洲-AI创作指南.md", text: guideMd, ext: "md" },
-  { id: "spec", title: "故事包格式规范", file: "我的绿洲-故事包格式规范.md", text: specMd, ext: "md" },
   { id: "schema", title: "JSON Schema", file: "story.schema.json", text: schemaJson, ext: "json" },
 ];
 
@@ -124,17 +139,17 @@ function writeTab(body: HTMLElement, ctx: Ctx, draftId: string | undefined, back
   const drafts = loadDrafts();
   const d = draftId ? drafts.find((x) => x.id === draftId) : undefined;
   if (!d) {
-    const idea = h("textarea", { rows: 6, placeholder: "例如：一个下雨的夜晚，你是小镇书店的店员，最后一位客人留下了一本会自己写字的日记。三个结局，玩 15 分钟左右，适合所有年龄。" }) as HTMLTextAreaElement;
+    const idea = h("textarea", { rows: 6, placeholder: "描述你的故事：世界、角色、规则、玩法、结局……写什么就做成什么。" }) as HTMLTextAreaElement;
     const s = loadSettings();
     body.replaceChildren(
       h("div", { class: "card" }, h("h3", {}, "说出你的故事想法"),
-        h("p", { class: "small muted" }, `会用你在“设置”里接好的 AI（${s.model || "未设置"}）按《AI 创作指南》生成完整故事包。生成后自动存成草稿，可以检查、修改、试玩、导出。`),
+        h("p", { class: "small muted" }, `会用你在“设置”里接好的 AI（${s.model || "未设置"}）按《故事交付格式》生成完整故事包（内容完全按你的描述）。生成后自动存成草稿，可以检查、修改、试玩、导出。`),
         idea,
         h("div", { class: "row" }, h("button", { class: "primary", onclick: async () => {
           if (!idea.value.trim()) return toast("先写一句故事想法", "err");
           if (!isLocalUrl(s.base_url) && !(await bridge.keyHas(s.provider).catch(() => false))) return toast("还没有接好 AI：请先到“设置”里选服务商并填 Key", "err");
           const nd: Draft = { id: `d${Date.now().toString(36)}`, title: idea.value.trim().slice(0, 20), idea: idea.value.trim(), files: {}, updated: Date.now(), chat: [] };
-          putDraft(nd); open(nd.id); setTimeout(() => document.dispatchEvent(new CustomEvent("oasis-gen", { detail: { id: nd.id, msg: `我的故事想法：\n${nd.idea}\n\n请按要求输出完整的故事包文件。` } })), 50);
+          putDraft(nd); open(nd.id); setTimeout(() => document.dispatchEvent(new CustomEvent("oasis-gen", { detail: { id: nd.id, msg: `我的故事想法：\n${nd.idea}\n\n请严格按我的描述，按交付格式输出完整的故事包文件。` } })), 50);
         } }, "开始生成"))),
       h("h3", {}, "我的草稿"),
       drafts.length ? h("div", { class: "drafts" }, ...drafts.map((x) => h("div", { class: "draft-row" },

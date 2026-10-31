@@ -9,6 +9,9 @@ export const LIMITS = { total: 20 * 1024 * 1024, image: 1024 * 1024, audio: 5 * 
 export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg"];
 export const AUDIO_EXT = [".ogg", ".mp3", ".m4a"];
 export const TEXT_EXT = [".yaml", ".yml", ".json", ".md", ".txt"];
+/** 与客户端一致：脚本和字体也可以放进故事包 */
+export const SCRIPT_EXT = [".js", ".ts", ".lua", ".py"];
+export const FONT_EXT = [".woff2"];
 export const ID_RE = /^[a-z][a-z0-9-]{2,63}$/;
 
 export function storyDirs() {

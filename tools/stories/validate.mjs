@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Ajv2020Mod from "ajv/dist/2020.js";
-import { ROOT, STORIES, LIMITS, IMAGE_EXT, AUDIO_EXT, TEXT_EXT, ID_RE, storyDirs, listFiles, readStory } from "./common.mjs";
+import { ROOT, STORIES, LIMITS, IMAGE_EXT, AUDIO_EXT, TEXT_EXT, SCRIPT_EXT, FONT_EXT, ID_RE, storyDirs, listFiles, readStory } from "./common.mjs";
 
 const Ajv2020 = Ajv2020Mod.default ?? Ajv2020Mod;
 const schema = JSON.parse(fs.readFileSync(path.join(ROOT, "docs/schema/story.schema.json"), "utf8"));
@@ -11,6 +11,7 @@ const check = new Ajv2020({ allErrors: true, strict: false }).compile(schema);
 const only = process.argv.slice(2);
 const ids = only.length ? only : storyDirs();
 let bad = 0;
+const files_ok = (dir) => listFiles(dir).length;
 const fail = (id, msg) => { bad++; console.log(`❌ [${id}] ${msg}`); };
 
 // stories/ 下只允许文件夹（和 .gitkeep）
@@ -36,8 +37,9 @@ for (const id of ids) {
     if (f.rel.split("/").some((p) => p.startsWith("."))) { fail(id, `不允许隐藏文件：${f.rel}`); continue; }
     if (IMAGE_EXT.includes(ext)) { if (f.size > LIMITS.image) fail(id, `图片太大（超过 1 MB）：${f.rel}`); }
     else if (AUDIO_EXT.includes(ext)) { if (f.size > LIMITS.audio) fail(id, `音频太大（超过 5 MB）：${f.rel}`); }
-    else if (TEXT_EXT.includes(ext)) { if (f.size > LIMITS.text) fail(id, `文本文件太大（超过 2 MB）：${f.rel}`); }
-    else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/json/md/txt、webp/png/jpg、ogg/mp3/m4a）`);
+    else if (FONT_EXT.includes(ext)) { /* 只受整包 20 MB 限制 */ }
+    else if (TEXT_EXT.includes(ext) || SCRIPT_EXT.includes(ext)) { if (f.size > LIMITS.text) fail(id, `文本文件太大（超过 2 MB）：${f.rel}`); }
+    else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/yml/json/md/txt、js/ts/lua/py、webp/png/jpg/jpeg、ogg/mp3/m4a、woff2）`);
   }
   if (total > LIMITS.total) fail(id, `整个故事包超过 20 MB（现在 ${(total / 1048576).toFixed(1)} MB）`);
   if (bad === before) console.log(`✅ [${id}] 通过`);

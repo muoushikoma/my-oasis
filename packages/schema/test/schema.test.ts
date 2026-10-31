@@ -74,8 +74,16 @@ describe("大白话报错", () => {
     const r = v(lighthouse.replace("    steps: [ { inc: { oil: -1, day: 1 } } ]\n", "    steps: [ { inc: { oil: -1, day: 1 } } ]\n    callable_by: [player]\n"));
     expect(codes(r)).toContain("not_ai_callable");
   });
-  it("没有骰子模板却用 roll()", () => {
-    expect(codes(v(lighthouse.replace("uses: [oasis/dice@1]\n", "")))).toContain("dice_needs_template");
+  it("不引用骰子模板也能用 roll()，随机函数可写在任何表达式里", () => {
+    expect(v(lighthouse.replace("uses: [oasis/dice@1]\n", "")).ok).toBe(true);
+    const y = "spec: oasis/0.3\nmeta: {id: rnd-story, title: t, version: 1.0.0, summary: s, language: zh-CN, rating: teen}\nstate: {x: {type: number, init: 0}}\nactions: {a: {require: \"randint(1, 6) > 0\", steps: [{set: {x: \"roll('1d6')\"}}]}}\nendings: {list: [{id: e, label: 完, when: \"rand() > 2\"}]}\n";
+    expect(codes(v(y))).toEqual([]);
+  });
+  it("没有 state、没有结局也能通过", () => {
+    const r = v("spec: oasis/0.3\nmeta: {id: bare-story, title: t, version: 1.0.0, summary: s, language: en, rating: all-ages}\n");
+    expect(r.ok).toBe(true);
+    expect(r.story!.state).toEqual({});
+    expect(r.story!.endings.list).toEqual([]);
   });
   it("脚本文件缺失 / 存在", () => {
     const y = lighthouse.replace("    steps: [ { inc: { oil: -1, day: 1 } } ]\n", "    script: scripts/tend.js#run\n");
@@ -153,9 +161,10 @@ describe("最高原则：固定 / AI 处理、玩家边界", () => {
     expect(codes(v(lighthouse.replace("type: text-log, region: main, content: ai", "type: text-log, region: main")))).toContain("ai_into_fixed");
     expect(codes(v(lighthouse.replace("      content: ai\n      input: { actions: []", "      input: { actions: []")))).toContain("ai_into_fixed");
   });
-  it("自由输入必须声明可映射动作和超界回应", () => {
+  it("自由输入不写 input 只提醒（默认不允许任何动作），写了就检查动作存在", () => {
     const y = lighthouse.replace(/      input:\n        actions: \[move[\s\S]*?max_length: 300\n/, "");
-    expect(codes(v(y))).toContain("free_input_unbounded");
+    expect(codes(v(y))).not.toContain("free_input_unbounded");
+    expect(v(y).issues.some((i) => i.code === "free_input_unbounded" && i.level === "warning")).toBe(true);
     expect(codes(v(lighthouse.replace("actions: [move, search, tend_light]", "actions: [move, fly]")))).toContain("unknown_action");
   });
 });
