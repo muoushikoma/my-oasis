@@ -42,6 +42,11 @@ fn save_delete(app: AppHandle, story: String, slot: String) -> R<()> { store(&ap
 #[tauri::command]
 fn export_text(path: String, contents: String) -> R<()> { Ok(std::fs::write(path, contents)?) }
 #[tauri::command]
+fn export_bytes(path: String, base64: String) -> R<()> {
+    let data = base64::engine::general_purpose::STANDARD.decode(base64).map_err(|e| Error::Msg(format!("数据不对：{e}")))?;
+    Ok(std::fs::write(path, data)?)
+}
+#[tauri::command]
 fn import_text(path: String) -> R<String> {
     let m = std::fs::metadata(&path)?;
     if m.len() > 10 * 1024 * 1024 { return Err(Error::Msg("文件太大，不像是存档".into())); }
@@ -74,7 +79,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             read_package, library_list, library_put, library_get, library_delete,
-            save_write, save_read, save_list, save_delete, export_text, import_text,
+            save_write, save_read, save_list, save_delete, export_text, export_bytes, import_text,
             key_set, key_has, key_delete, llm_chat
         ])
         .run(tauri::generate_context!())

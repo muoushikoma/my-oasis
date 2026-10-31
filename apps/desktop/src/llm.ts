@@ -24,7 +24,7 @@ export function makeLlm(s: Settings): LLM {
         } catch (e: any) {
           last = e;
           const msg = String(e?.message ?? e);
-          if (/Key|401|403|404/.test(msg)) break; // 配置问题，重试没用
+          if (/Key|HTTP 40[1-4]/.test(msg)) break; // 配置问题，重试没用
           if (body.response_format && i === 0) delete body.response_format; // 有的服务不支持 JSON 模式
         }
       }

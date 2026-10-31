@@ -25,7 +25,7 @@ M1（エンジン・検証器・CLI）完了、M2（スタンドアロン Window
 pnpm install
 pnpm test
 pnpm oasis validate examples/lighthouse-mini
-pnpm oasis play examples/guess-the-box
+pnpm oasis play tests/fixtures/guess-the-box
 # AI 接続：環境変数 OASIS_API_KEY、OASIS_BASE_URL、OASIS_MODEL
 ```
 API キーは絶対にコミットしないでください（環境変数からのみ読み込みます）。

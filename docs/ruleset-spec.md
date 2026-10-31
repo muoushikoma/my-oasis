@@ -418,7 +418,7 @@ export function run(api) {
 | `text-log` | — | 显示 AI 叙述与规则日志；常作 `output.to` 目标 |
 | `text-input` | `placeholder`；`input`（自由输入时**必填**：`actions`、`reject`、可选 `words` `max_length`）；或 `writes: 状态id`（只填值，如名字，需 `writable_by` 含 ui） | 玩家输入；提交时触发 `player_input` |
 | `button` | `action`（动作 id）或 `emit`（事件名） | 点击：执行动作，或触发事件（可作 AI 接入点触发 `ui:<id>.click`） |
-| `choice-buttons` | `choices: [{ label, action, params }]` 或 `from_ai: true` | 选项按钮 |
+| `choice-buttons` | `choices: [{ label, action, params }]` 或 `from_ai: true`（见下方 choices 约定） | 选项按钮 |
 | `stat-list` / `stat-bar` | `bind: [状态id]` | 显示状态；`stat-bar` 仅 number 且需 min/max |
 | `item-list` | `bind: 状态id`（list/set/map） | 列表显示 |
 | `chat-box` | `title`，`portrait`（素材引用），`input`（**必填**） | 对话框；发送触发 `ui:<id>.send`，`{{input}}` 为发送内容 |
@@ -426,6 +426,29 @@ export function run(api) {
 | `image` | `src`，或 `bind`（一个状态）+ `images: { 值: 素材引用 }`（可再写 `src` 作默认图），或 `generated: 生图点id`；`fit: cover\|contain` | 图片 / 随状态切换 / AI 生图 |
 | `dice-log` | —（需 `oasis/dice`） | 随机结果记录 |
 | `node-map`、`portrait`、`item-grid`、`timer`、`custom` | — | MVP 之后 |
+
+**AI 生成的选项按钮（choices 约定）**
+`choice-buttons` 写 `from_ai: true` 时，选项由 AI 给出：
+1. 让某个接入点的 `output.to` 指向这个组件（`format: text`），或者在 `format: sections` 里让其中一项指向它；
+2. AI 在这段输出里**每行写一个选项**；行首的“1.”“-”等序号会被去掉；最多 6 个，每个最多 40 字；
+3. 玩家点选项时，等同于把这行字打进本页的 `text-input`（必须有，且写了 `input`），所以同样只能落到 `input.actions` 里的动作或得到 `reject` 回应——AI 写的选项不能绕过边界。
+```yaml
+ai:
+  entry_points:
+    narrator:
+      kind: narrate
+      trigger: player_input
+      prompt: 玩家行动：{{input}}
+      card:
+        task: 叙述结果，并给出 2-3 个下一步
+        authority: 1
+        output:
+          format: sections
+          sections: { story: region:main, next: component:options }   # next 每行一个选项
+ui:
+  components:
+    options: { type: choice-buttons, region: input, from_ai: true }
+```
 
 **声音 `ui.sound`**
 ```yaml

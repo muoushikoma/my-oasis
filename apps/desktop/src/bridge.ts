@@ -103,6 +103,16 @@ export const bridge = {
     }
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "application/json" })); a.download = suggested; a.click(); return true;
   },
+  /** 导出任意文件（文档、Schema、.oasis 故事包） */
+  async exportFile(suggested: string, data: string | Uint8Array, ext: string, label: string): Promise<boolean> {
+    const bytes = typeof data === "string" ? enc.encode(data) : data;
+    if (isTauri) {
+      const t = await tauri();
+      const p = await t.dialog.save({ defaultPath: suggested, filters: [{ name: label, extensions: [ext] }] });
+      if (!p) return false; await t.invoke("export_bytes", { path: p, base64: bytesToB64(bytes) }); return true;
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes as BlobPart])); a.download = suggested; a.click(); return true;
+  },
   async importText(): Promise<string | null> {
     if (isTauri) {
       const t = await tauri();
@@ -132,11 +142,12 @@ export const bridge = {
       return t.invoke("llm_chat", { args: { provider_id: provider, config, body, first_token_timeout_ms: 20000 }, onText: ch });
     }
     const key = sessionStorage.getItem("devkey:" + provider);
-    const r = await fetch(config.base_url.replace(/\/+$/, "") + "/chat/completions", {
+    let r: Response;
+    try { r = await fetch(config.base_url.replace(/\/+$/, "") + "/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
       body: JSON.stringify({ ...body, model: config.model, stream: false }),
-    });
-    if (!r.ok) throw new Error(r.status === 401 ? "Key 不对或已失效" : `模型服务返回 ${r.status}`);
+    }); } catch (e: any) { throw new Error(`NETWORK：${e?.message ?? e}`); }
+    if (!r.ok) throw new Error(`HTTP ${r.status}：${(await r.text()).slice(0, 400)}`);
     const j = await r.json(); const m = j.choices?.[0]?.message ?? {};
     if (m.content) onText?.(m.content);
     return { content: m.content ?? null, tool_calls: m.tool_calls ?? [] };

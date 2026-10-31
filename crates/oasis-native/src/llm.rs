@@ -29,16 +29,12 @@ pub async fn chat_stream(cfg: &ProviderConfig, api_key: Option<&str>, mut body: 
     let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
     let mut req = client.post(url).json(&body);
     if let Some(k) = api_key { if !k.is_empty() { req = req.bearer_auth(k); } }
-    let resp = tokio_timeout(first_token_timeout, req.send()).await??;
+    let resp = tokio_timeout(first_token_timeout, req.send()).await?.map_err(|e| crate::Error::Msg(format!("NETWORK：{e}")))?;
     if !resp.status().is_success() {
         let st = resp.status();
         let t = resp.text().await.unwrap_or_default();
-        return msg(match st.as_u16() {
-            401 | 403 => "API Key 不对或没有权限，请在设置里检查".to_string(),
-            404 => format!("找不到模型或地址不对（{}）", t.chars().take(200).collect::<String>()),
-            429 => "请求太频繁或额度用完了，请稍后再试".to_string(),
-            _ => format!("模型服务返回错误 {st}：{}", t.chars().take(300).collect::<String>()),
-        });
+        // 原样带回状态码和服务商的说明，由界面翻译成大白话（见 apps/desktop/src/providers.ts 的 explainError）
+        return msg(format!("HTTP {}：{}", st.as_u16(), t.chars().take(400).collect::<String>()));
     }
     let mut acc = Accumulator::default();
     let mut stream = resp.bytes_stream();

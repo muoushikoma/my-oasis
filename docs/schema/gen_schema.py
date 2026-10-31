@@ -98,7 +98,7 @@ defs={
   "region":ID,"label":{"type":"string"},"hidden_by_default":{"type":"boolean"},"player_can_hide":{"type":"boolean"},
   "placeholder":{"type":"string"},"writes":ID,"action":ID,"emit":ID,"params":{"type":"object"},
   "choices":{"type":"array","items":obj({"label":{"type":"string"},"action":ID,"params":{"type":"object"}},["label","action"])},
-  "from_ai":{"type":"boolean"},"bind":{"oneOf":[ID,{"type":"array","items":ID,"minItems":1}]},
+  "from_ai":{"type":"boolean","description":"choice-buttons：选项由 AI 给出。把某个接入点的 output.to（或 sections 的一项）指向本组件，AI 输出的每一行就是一个选项（最多 6 个，每个最多 40 字），点击后作为玩家文字提交给本页的 text-input"},"bind":{"oneOf":[ID,{"type":"array","items":ID,"minItems":1}]},
   "title":{"type":"string"},"portrait":REF,"text":{"type":"string"},"src":REF,
   "images":{"type":"object","additionalProperties":REF},"fit":{"enum":["cover","contain"]},"generated":ID,
   "content":{"enum":["fixed","ai"],"description":"固定（作者写死）或 AI 处理；不写 = fixed"},

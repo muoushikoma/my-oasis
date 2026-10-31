@@ -25,7 +25,7 @@ M1 (engine, validator, CLI) done; M2 (standalone Windows client) in progress. Se
 pnpm install
 pnpm test                                  # unit tests
 pnpm oasis validate examples/lighthouse-mini
-pnpm oasis play examples/guess-the-box     # text playtest
+pnpm oasis play tests/fixtures/guess-the-box     # text playtest
 # with AI (OpenAI-compatible): set OASIS_API_KEY, OASIS_BASE_URL, OASIS_MODEL
 ```
 Never commit API keys; they are read from environment variables only.

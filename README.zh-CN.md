@@ -25,7 +25,7 @@ M1（引擎、校验器、命令行）已完成；M2（单机 Windows 客户端�
 pnpm install
 pnpm test                                  # 单元测试
 pnpm oasis validate examples/lighthouse-mini
-pnpm oasis play examples/guess-the-box     # 文字版试玩
+pnpm oasis play tests/fixtures/guess-the-box     # 文字版试玩
 # 接 AI（OpenAI 兼容接口）：设置环境变量 OASIS_API_KEY、OASIS_BASE_URL、OASIS_MODEL
 ```
 不要提交任何 API Key，Key 只从环境变量读取。
