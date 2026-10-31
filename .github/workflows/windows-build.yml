@@ -1,4 +1,4 @@
-# Windows 安装包构建（只在本地写好，暂不推送；仓库转为私有后再启用）
+# Windows 安装包构建（手动触发或打 v* 标签）
 name: windows-build
 on:
   workflow_dispatch:
@@ -34,6 +34,9 @@ jobs:
         run: cargo test -p oasis-native
       - name: 构建安装包（NSIS + MSI）
         working-directory: apps/desktop
+        env:
+          # GitHub 登录应用的 Client ID（公开信息，放在仓库 Variables 里，不是 Secret）
+          OASIS_GITHUB_CLIENT_ID: ${{ vars.OASIS_GITHUB_CLIENT_ID }}
         run: pnpm tauri build
       # 试水阶段没有代码签名证书，安装时 Windows 会有 SmartScreen 提示
       - uses: actions/upload-artifact@v4

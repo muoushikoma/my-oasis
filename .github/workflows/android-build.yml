@@ -1,0 +1,56 @@
+# 安卓 APK 构建（手动触发或打 v* 标签）。不提交任何签名密钥：
+# - 默认每次用临时生成的自签名证书签名（能安装；但换证书后需先卸载旧版才能装新版）
+# - 以后想要固定签名：在仓库 Secrets 里放 ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD（keystore 别名 my-oasis）
+name: android-build
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: android-actions/setup-android@v3
+      - name: 安装 NDK
+        run: sdkmanager "ndk;27.2.12479018" "platforms;android-34" "build-tools;34.0.0"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - name: 生成安卓工程并构建 APK
+        working-directory: apps/desktop
+        env:
+          NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.2.12479018
+          OASIS_GITHUB_CLIENT_ID: ${{ vars.OASIS_GITHUB_CLIENT_ID }}
+        run: |
+          pnpm tauri android init --ci
+          pnpm tauri android build --apk --target aarch64 --target armv7 --target x86_64
+      - name: 签名（不提交密钥）
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -e
+          if [ -n "$KS_B64" ]; then echo "$KS_B64" | base64 -d > ks.jks; PASS="$KS_PASS";
+          else PASS=$(openssl rand -hex 16); keytool -genkeypair -keystore ks.jks -storepass "$PASS" -keypass "$PASS" -alias my-oasis -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=My Oasis Test"; fi
+          BT=$ANDROID_SDK_ROOT/build-tools/34.0.0
+          IN=$(find apps/desktop/src-tauri/gen/android -name "*release-unsigned.apk" | head -1)
+          "$BT/zipalign" -f 4 "$IN" aligned.apk
+          "$BT/apksigner" sign --ks ks.jks --ks-pass "pass:$PASS" --ks-key-alias my-oasis --out my-oasis-android.apk aligned.apk
+          rm -f ks.jks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-oasis-android
+          path: my-oasis-android.apk
+          if-no-files-found: error
+          retention-days: 14

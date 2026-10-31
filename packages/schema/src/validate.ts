@@ -609,6 +609,11 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     if (c.type === "text-input" && c.writes !== undefined) { const d = state[c.writes]; if (!d) report("error", "unknown_state", p, `输入框要写入的状态「${c.writes}」不存在。`, undefined, "§13", "writes"); else if (!(d.writable_by ?? []).includes("ui")) report("error", "not_ui_writable", p, `状态「${c.writes}」不允许界面直接写。`, `在状态里加 writable_by: [rules, ui]。`, "§13", "writes"); }
     for (const k of ["src", "portrait"]) checkRef(p, c[k], "image", "组件", k);
     for (const [k, v] of Object.entries(obj(c.images))) checkRef([...p, "images"], v, "image", "组件图片", k);
+    if (c.type === "choice-buttons" && c.from_ai) {
+      const targets = Object.values<any>(entries).flatMap((e) => [e?.card?.output?.to, ...Object.values(obj(e?.card?.output?.sections))]);
+      if (!targets.includes(`component:${id}`)) report("warning", "choices_no_source", p, `「${id}」写了 from_ai: true，但没有任何 AI 接入点输出到它，按钮会一直是空的。`, `在某个接入点的 output 里写 to: component:${id}（或 sections 的一项指向它），让 AI 每行写一个选项。`, "§13", "from_ai");
+      if (!Object.values<any>(comps).some((x) => x?.type === "text-input" && x.input)) report("error", "choices_no_input", p, `「${id}」的 AI 选项点击后要作为玩家文字提交，但界面里没有带 input 的 text-input。`, "加一个 text-input 并写 input（允许的动作、超界回应）；选项和手打的字走同样的边界检查。", "§13", "from_ai");
+    }
     if (c.type === "image" && Array.isArray(c.bind)) report("error", "image_bind", p, "图片组件只能绑定一个状态。", "写成 bind: location（不要用列表）。", "§13", "bind");
     if (c.type === "image" && typeof c.bind === "string" && state[c.bind]?.type === "enum" && c.images) {
       const miss = (state[c.bind].values ?? []).filter((x) => !(x in c.images));

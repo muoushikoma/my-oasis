@@ -4,6 +4,7 @@ pub mod package;
 pub mod store;
 pub mod sse;
 pub mod llm;
+pub mod github;
 #[cfg(feature = "keychain")]
 pub mod secrets;
 

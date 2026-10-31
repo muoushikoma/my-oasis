@@ -1,10 +1,11 @@
 // 游玩页面：按作者的 ui 渲染布局与组件（没写 ui 用简约模板），驱动引擎和 AI。
-import { Game, entriesFor, runEntries, createQuickJsRunner, type LLM, type ScriptRunner, type EntryRunResult } from "@my-oasis/engine";
+import { Game, entriesFor, runEntries, parseChoices, createQuickJsRunner, type LLM, type ScriptRunner, type EntryRunResult } from "@my-oasis/engine";
 import type { Story, StoryFiles } from "@my-oasis/schema";
 import { h, toast, fmtVal } from "./dom";
 import { AssetBox } from "./assets";
 import { bridge } from "./bridge";
 import { makeLlm } from "./llm";
+import { explainError } from "./providers";
 import { loadSettings, saveSettings, isLocalUrl, type Settings } from "./settings";
 
 interface Feed { id: number; to: string; text: string; kind: "ai" | "rule" | "event" | "ending" | "player" | "reject" | "error" | "dice"; who?: string; streaming?: boolean }
@@ -124,14 +125,18 @@ export class PlaySession {
         const ep = this.game.entry(r.entry);
         this.lastTools = r.toolLog;
         this.flushLog();
-        if (r.text) { const f = live[r.entry]; if (f) { f.text = r.text; f.streaming = false; } else if (!r.target.startsWith("state:") && r.target !== "none") this.push(r.target, r.text, "ai", this.whoOf(r.target)); }
-        if (r.sections) for (const [k, v] of Object.entries(r.sections)) { const to = (ep.card.output as any).sections?.[k]; if (v && to && !String(to).startsWith("state:")) this.push(to, v, "ai", this.whoOf(to)); }
-        const ch = (r.json as any)?.choices ?? (r.sections as any)?.choices;
-        if (Array.isArray(ch)) for (const [cid, c] of Object.entries<any>(this.ui.components)) if (c.type === "choice-buttons" && c.from_ai) this.aiChoices[cid] = ch.map(String).slice(0, 6);
+        const isChoice = (to: string) => this.ui.components[to.slice(10)]?.type === "choice-buttons";
+        if (r.text && !isChoice(r.target)) { const f = live[r.entry]; if (f) { f.text = r.text; f.streaming = false; } else if (!r.target.startsWith("state:") && r.target !== "none") this.push(r.target, r.text, "ai", this.whoOf(r.target)); }
+        if (r.sections) for (const [k, v] of Object.entries(r.sections)) { const to = (ep.card.output as any).sections?.[k]; if (v && to && !String(to).startsWith("state:") && !isChoice(String(to))) this.push(to, v, "ai", this.whoOf(to)); }
+        // choices 约定：输出到 from_ai 选项按钮的文字，每一行是一个选项（见规范 §13）
+        const outs: [string, string][] = [];
+        if (r.text) outs.push([r.target, r.text]);
+        for (const [k, v] of Object.entries(r.sections ?? {})) outs.push([String((ep.card.output as any).sections?.[k] ?? ""), v]);
+        for (const [to, v] of outs) { const cid = to.startsWith("component:") ? to.slice(10) : ""; if (this.ui.components[cid]?.type === "choice-buttons") this.aiChoices[cid] = parseChoices(v); }
         if (r.error) this.push("log", `AI：${r.error}`, "error");
       }
     } catch (e: any) {
-      this.push("log", `AI 请求失败：${e?.message ?? e}`, "error");
+      this.push("log", `AI 请求失败：${explainError(e)}`, "error");
       ids.forEach(fallback);
     }
     for (const f of Object.values(live)) f.streaming = false;
@@ -222,7 +227,7 @@ export class PlaySession {
           h("button", { onclick: async () => { const t = await bridge.importText(); if (t) { await this.loadFrom(t); close(); } } }, "导入存档文件"),
           h("button", { onclick: close }, "关闭")),
         h("p", { class: "muted small" }, "存档里不含 API Key。存档带校验码，手动改过的存档会被拒绝读取。")));
-    document.body.append(m);
+    this.root.append(m);
   }
 
   // ---------- 渲染 ----------
@@ -369,7 +374,7 @@ export class PlaySession {
       hidable.length ? h("div", {}, h("p", { class: "muted" }, "隐藏组件"), ...hidable.map(([id, c]) => h("label", { class: "check" }, h("input", { type: "checkbox", checked: hid.includes(id), onchange: () => tog(hid, id) }), c.label ?? c.title ?? id))) : null,
       optional.length ? h("div", {}, h("p", { class: "muted" }, "关闭可选的 AI 功能（关闭后显示作者写的替代文字）"), ...optional.map(([id, e]) => h("label", { class: "check" }, h("input", { type: "checkbox", checked: off.includes(id), onchange: () => tog(off, id) }), e.card.task ?? id))) : null,
       h("div", { class: "row" }, h("button", { class: "primary", onclick: close }, "完成"))));
-    document.body.append(m);
+    this.root.append(m);
   }
 
   debugPanel() {

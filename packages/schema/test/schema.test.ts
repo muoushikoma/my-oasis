@@ -10,7 +10,7 @@ const codes = (r: ReturnType<typeof v>) => r.issues.filter((i) => i.level === "e
 
 describe("示例故事", () => {
   it("两个规范示例都能通过校验", () => {
-    for (const p of ["examples/lighthouse-mini", "examples/guess-the-box"]) {
+    for (const p of ["examples/lighthouse-mini", "tests/fixtures/guess-the-box"]) {
       const r = validateFiles(loadFromPath(root + p));
       expect(r.issues.filter((i) => i.level === "error"), formatIssues(r)).toEqual([]);
       expect(r.ok).toBe(true);
@@ -157,5 +157,12 @@ describe("最高原则：固定 / AI 处理、玩家边界", () => {
     const y = lighthouse.replace(/      input:\n        actions: \[move[\s\S]*?max_length: 300\n/, "");
     expect(codes(v(y))).toContain("free_input_unbounded");
     expect(codes(v(lighthouse.replace("actions: [move, search, tend_light]", "actions: [move, fly]")))).toContain("unknown_action");
+  });
+});
+
+describe("AI 选项按钮", () => {
+  it("from_ai 的选项按钮没有来源时提醒", () => {
+    const y = lighthouse.replace("  components:\n", "  components:\n    opts: { type: choice-buttons, region: input, from_ai: true }\n");
+    expect(v(y).issues.map((i) => i.code)).toContain("choices_no_source");
   });
 });

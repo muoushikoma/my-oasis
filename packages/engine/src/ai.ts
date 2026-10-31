@@ -216,3 +216,8 @@ async function runMerged(game: Game, ids: string[], llm: LLM, input: string, eve
     return r;
   });
 }
+
+/** 每行一个选项，去掉“1.”“-”等序号，最多 6 个、每个最多 40 字 */
+export function parseChoices(t: string): string[] {
+  return t.split(/\r?\n/).map((l) => l.replace(/^\s*(?:[-*•]|\d+[.、)）]|[（(]?\d+[)）])\s*/, "").trim()).filter(Boolean).slice(0, 6).map((l) => l.slice(0, 40));
+}

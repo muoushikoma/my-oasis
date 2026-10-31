@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { validateFiles, filesFromText, type Story } from "@my-oasis/schema";
-import { Game, runEntry, runEntries, createQuickJsRunner, type LLM, type ScriptRunner } from "../src/index.js";
+import { Game, runEntry, runEntries, parseChoices, createQuickJsRunner, type LLM, type ScriptRunner } from "../src/index.js";
 
 const root = new URL("../../../", import.meta.url).pathname;
 const load = (y: string, extra: Record<string, string> = {}) => {
@@ -11,7 +11,7 @@ const load = (y: string, extra: Record<string, string> = {}) => {
   return { story: r.story as Story, files };
 };
 const lighthouseY = readFileSync(root + "examples/lighthouse-mini/story.yaml", "utf8");
-const boxY = readFileSync(root + "examples/guess-the-box/story.yaml", "utf8");
+const boxY = readFileSync(root + "tests/fixtures/guess-the-box/story.yaml", "utf8");
 
 describe("纯规则故事《三个箱子》", () => {
   it("同一个种子结果完全一样", () => {
@@ -305,5 +305,12 @@ ui:
     const rs = await runEntries(g, ["narr", "mood"], llm);
     expect(n).toBe(3);
     expect(rs.map((r) => r.text)).toEqual(["单独", "单独"]);
+  });
+});
+
+describe("AI 选项按钮 choices 约定", () => {
+  it("每行一个选项，去掉序号，最多 6 个", () => {
+    expect(parseChoices("1. 去海滩\n- 搜索仓库\n\n（3）点灯")).toEqual(["去海滩", "搜索仓库", "点灯"]);
+    expect(parseChoices(Array.from({ length: 9 }, (_, i) => `选项${i}`).join("\n")).length).toBe(6);
   });
 });

@@ -1726,7 +1726,8 @@
           }
         },
         "from_ai": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "choice-buttons：选项由 AI 给出。把某个接入点的 output.to（或 sections 的一项）指向本组件，AI 输出的每一行就是一个选项（最多 6 个，每个最多 40 字），点击后作为玩家文字提交给本页的 text-input"
         },
         "bind": {
           "oneOf": [

@@ -2,6 +2,8 @@
 import { filesFromZip, type StoryFiles } from "@my-oasis/schema";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+/** 安卓客户端：系统文件选择器返回的是 content:// 地址，读文件改用网页文件选择 */
+export const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 
 export interface SaveInfo { slot: string; modified_ms?: number; size?: number }
 export interface ProviderCfg { base_url: string; model: string }
@@ -83,7 +85,8 @@ export const bridge = {
   },
   /** 选择故事包：文件（.oasis/.zip/story.yaml）或文件夹 */
   async pickPackage(folder = false): Promise<Picked | null> {
-    if (isTauri) {
+    if (folder && isAndroid) throw new Error("安卓上不能选文件夹，请选 .oasis / .zip 或 story.yaml 文件");
+    if (isTauri && !isAndroid) {
       const t = await tauri();
       const p = await t.dialog.open(folder ? { directory: true } : { filters: [{ name: "故事包", extensions: ["oasis", "zip", "yaml", "yml", "json"] }] });
       if (!p || Array.isArray(p)) return null;
@@ -96,6 +99,7 @@ export const bridge = {
     return { name: f.name, files: filesFromSingle(f.name, new Uint8Array(await f.arrayBuffer())) };
   },
   async exportText(suggested: string, text: string): Promise<boolean> {
+    if (isTauri && isAndroid) throw new Error("安卓版暂不支持导出到文件，请在电脑版导出");
     if (isTauri) {
       const t = await tauri();
       const p = await t.dialog.save({ defaultPath: suggested, filters: [{ name: "存档", extensions: ["json"] }] });
@@ -103,8 +107,19 @@ export const bridge = {
     }
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "application/json" })); a.download = suggested; a.click(); return true;
   },
-  async importText(): Promise<string | null> {
+  /** 导出任意文件（文档、Schema、.oasis 故事包） */
+  async exportFile(suggested: string, data: string | Uint8Array, ext: string, label: string): Promise<boolean> {
+    if (isTauri && isAndroid) throw new Error("安卓版暂不支持导出到文件，请在电脑版导出");
+    const bytes = typeof data === "string" ? enc.encode(data) : data;
     if (isTauri) {
+      const t = await tauri();
+      const p = await t.dialog.save({ defaultPath: suggested, filters: [{ name: label, extensions: [ext] }] });
+      if (!p) return false; await t.invoke("export_bytes", { path: p, base64: bytesToB64(bytes) }); return true;
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([bytes as BlobPart])); a.download = suggested; a.click(); return true;
+  },
+  async importText(): Promise<string | null> {
+    if (isTauri && !isAndroid) {
       const t = await tauri();
       const p = await t.dialog.open({ filters: [{ name: "存档", extensions: ["json"] }] });
       if (!p || Array.isArray(p)) return null; return t.invoke("import_text", { path: p });
@@ -124,6 +139,15 @@ export const bridge = {
     if (isTauri) { const t = await tauri(); return t.invoke("key_delete", { providerId: provider }); }
     sessionStorage.removeItem("devkey:" + provider);
   },
+  // ---------- GitHub 登录与投稿：token 只在 Rust 端和系统安全存储里 ----------
+  async gh<T = any>(cmd: "gh_status" | "gh_device_start" | "gh_device_poll" | "gh_logout" | "gh_submit" | "gh_my_prs", args: Record<string, any> = {}): Promise<T> {
+    if (isTauri) { const t = await tauri(); return t.invoke(cmd, args); }
+    return devGh(cmd, args) as T;
+  },
+  async openUrl(url: string) {
+    if (isTauri) { const o = await import("@tauri-apps/plugin-opener"); return o.openUrl(url); }
+    window.open(url, "_blank");
+  },
   /** 让 Rust 代发模型请求（流式） */
   async chat(provider: string, config: ProviderCfg, body: any, onText?: (s: string) => void): Promise<ChatOut> {
     if (isTauri) {
@@ -132,14 +156,29 @@ export const bridge = {
       return t.invoke("llm_chat", { args: { provider_id: provider, config, body, first_token_timeout_ms: 20000 }, onText: ch });
     }
     const key = sessionStorage.getItem("devkey:" + provider);
-    const r = await fetch(config.base_url.replace(/\/+$/, "") + "/chat/completions", {
+    let r: Response;
+    try { r = await fetch(config.base_url.replace(/\/+$/, "") + "/chat/completions", {
       method: "POST", headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
       body: JSON.stringify({ ...body, model: config.model, stream: false }),
-    });
-    if (!r.ok) throw new Error(r.status === 401 ? "Key 不对或已失效" : `模型服务返回 ${r.status}`);
+    }); } catch (e: any) { throw new Error(`NETWORK：${e?.message ?? e}`); }
+    if (!r.ok) throw new Error(`HTTP ${r.status}：${(await r.text()).slice(0, 400)}`);
     const j = await r.json(); const m = j.choices?.[0]?.message ?? {};
     if (m.content) onText?.(m.content);
     return { content: m.content ?? null, tool_calls: m.tool_calls ?? [] };
   },
 };
 export { enc, dec };
+
+// 浏览器开发模式：模拟 GitHub 登录与投稿，只用于界面自测（?mockgh=1）
+function devGh(cmd: string, args: any): any {
+  const on = new URLSearchParams(location.search).has("mockgh");
+  const st = () => sessionStorage.getItem("mockgh:login");
+  switch (cmd) {
+    case "gh_status": return { configured: on, login: st() };
+    case "gh_device_start": if (!on) throw new Error("GitHub 登录暂未开放（客户端还没配置登录应用）。不登录也可以浏览、下载和游玩。"); return { device_code: "x", user_code: "WDJB-MJHT", verification_uri: "https://github.com/login/device", expires_in: 900, interval: 1 };
+    case "gh_device_poll": sessionStorage.setItem("mockgh:login", "demo-author"); return { status: "ok" };
+    case "gh_logout": sessionStorage.removeItem("mockgh:login"); return null;
+    case "gh_submit": { const l = JSON.parse(sessionStorage.getItem("mockgh:prs") ?? "[]"); const pr = { number: 12 + l.length, url: "https://github.com/muoushikoma/my-oasis/pull/" + (12 + l.length), title: "投稿：" + args.title, state: "open", merged: false, checks: "running", updated_at: new Date().toISOString() }; l.unshift(pr); sessionStorage.setItem("mockgh:prs", JSON.stringify(l)); return pr; }
+    case "gh_my_prs": return [...JSON.parse(sessionStorage.getItem("mockgh:prs") ?? "[]"), { number: 7, url: "https://github.com/muoushikoma/my-oasis/pull/7", title: "投稿：雨夜书店", state: "closed", merged: true, checks: "passed", updated_at: "2026-10-30T10:00:00Z" }];
+  }
+}

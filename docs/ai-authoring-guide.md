@@ -128,6 +128,7 @@ ui:
     通用：content: fixed（默认）| ai
     type 可选：text-log, text-input(placeholder, input 必填), button(action 或 emit), choice-buttons(choices 或 from_ai), stat-list(bind 列表), stat-bar(bind，需 min/max 的 number), item-list(bind), chat-box(title, portrait, input 必填), text-block(bind 或 text), image(src，或 bind+images，或 generated), dice-log(需 oasis/dice)
   theme.background: asset:id，或 { bind: 状态id, images: { 值: asset:id }, default: asset:id }
+  choice-buttons 用 from_ai: true 时：让接入点 output.to（或 sections 的一项）指向 component:<该组件>，AI 每行写一个选项（最多 6 个）；界面里必须有带 input 的 text-input，点选项等于把这行字提交给它。
   sound: { music: { src: asset:id } 或 { bind: 状态id, tracks: { 值: asset:id } }, effects: { "action:id"|"event:id"|"ending:id"|game_start|turn_end: asset:id } }
   AI 的 output.to 要指向存在且标了 content: ai 的组件，或含有这种组件的区域。至少要有一个 text-log 显示叙述（如果有 narrate 接入点）。
 
@@ -160,6 +161,7 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 11. AI 输出到的组件都写了 content: ai；没标的都是固定内容
 12. 每个 text-input（不带 writes 的）和 chat-box 都写了 input（actions + reject），actions 里的动作都存在
 13. 所有 asset:id 都在 assets 里登记，图片处用图片、音乐处用音频；每个生图点写了 fallback
+14. from_ai 的 choice-buttons 有接入点输出到它，且界面里有带 input 的 text-input
 11. 事件用 hook 不用 on；没有用 Tab
 
 【我的故事想法】
