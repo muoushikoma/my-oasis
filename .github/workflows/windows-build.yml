@@ -31,7 +31,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
+      # Rust 编译缓存：Cargo 工作区在仓库根目录（src-tauri 是其成员，产物在 ./target）
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          shared-key: windows
+          cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - name: Rust 单元测试（含钥匙串之外的本地逻辑）
         run: cargo test -p oasis-native
