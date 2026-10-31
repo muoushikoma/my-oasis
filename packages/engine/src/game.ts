@@ -1,4 +1,4 @@
-import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type EntryPointDef, type WriteLimit } from "@my-oasis/schema";
+import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit } from "@my-oasis/schema";
 import { Rng, rollDice } from "./rng.js";
 import { FAIL_MARK, ScriptError, type ScriptRunner } from "./script.js";
 
@@ -37,7 +37,10 @@ export function storyHash(story: Story): string {
 }
 const clone = <T>(x: T): T => (x === undefined ? x : JSON.parse(JSON.stringify(x)));
 
-interface Ctx { params: Record<string, any>; locals: Record<string, any>; out?: any; event?: any; depth: number; caller: Caller; changed: Set<string> }
+interface Ctx { params: Record<string, any>; locals: Record<string, any>; out?: any; event?: any; depth: number; caller: Caller; changed: Set<string>; render?: boolean }
+/** 实时模式产生的副作用：声音、异步 AI 请求（客户端取走后执行，不阻塞循环） */
+export interface Effects { sounds: { op: "play" | "stop"; id: string | null; volume?: number; loop?: boolean }[]; ai: { req: number; entry: string; input: string; data: any }[] }
+export type DrawCmd = any[];
 
 export class Game {
   state: Record<string, any> = {};
@@ -122,6 +125,11 @@ export class Game {
       case "map": {
         if (!value || typeof value !== "object" || Array.isArray(value)) throw new StepFail(`「${key}」应该是 map`);
         return Object.fromEntries(Object.entries(value).map(([k, x]) => [k, this.coerceBasic(key, d.of!, x)]));
+      }
+      case "json": {
+        const t = JSON.stringify(value ?? null);
+        if (t.length > 1_000_000) throw new StepFail(`「${key}」太大（超过 1 MB）`);
+        return JSON.parse(t);
       }
       case "record": {
         if (!value || typeof value !== "object") throw new StepFail(`「${key}」应该是 record`);
@@ -301,12 +309,12 @@ export class Game {
   takeNotices(): string[] { const n = this.extra.notices ?? []; this.extra.notices = []; return n; }
 
   // ---------- 脚本 ----------
-  private runScript(ref: string, params: Record<string, any>, ctx: Ctx): any {
+  private runScript(ref: string, params: Record<string, any>, ctx: Ctx, limits?: { time_ms: number; memory_mb: number }): any {
     const [file, fn] = ref.split("#");
     if (!this.opts.scripts) throw new StepFail("没有可用的脚本运行环境");
     const src = this.opts.files ? textFile(this.opts.files, file) : undefined;
     if (src === undefined) throw new StepFail(`找不到脚本文件「${file}」`);
-    const lim = { time_ms: this.story.scripts?.limits?.time_ms ?? 50, memory_mb: this.story.scripts?.limits?.memory_mb ?? 16 };
+    const lim = limits ?? { time_ms: this.story.scripts?.limits?.time_ms ?? 50, memory_mb: this.story.scripts?.limits?.memory_mb ?? 16 };
     const host = {
       call: (m: string, a: any[]) => {
         switch (m) {
@@ -325,12 +333,97 @@ export class Game {
           case "end": this.setEnding(a[0]); return null;
           case "fail": throw new Error(FAIL_MARK + a[0]);
           case "log": this.log.push({ turn: this.turn, kind: "rule", text: String(a[0]) }); return null;
+          case "input": return clone(this.input);
+          case "time": return [this.rtDt, this.rtTime];
+          case "draw.commit": if (!ctx.render) throw new Error("api.draw 只能在画布的 render 函数里用"); this.drawBuf = a[0]; return null;
+          case "sound.play": case "sound.stop": {
+            if (ctx.render) throw new Error("render 函数里不能播放声音");
+            const id = a[0]; if (id !== null && !this.story.assets?.[id]) throw new Error(`素材「${id}」没有登记`);
+            if (this.effects.sounds.length < 32) this.effects.sounds.push(m === "sound.play" ? { op: "play", id, volume: a[1]?.volume, loop: a[1]?.loop } : { op: "stop", id });
+            return null;
+          }
+          case "ai.request": {
+            if (ctx.render) throw new Error("render 函数里不能请求 AI");
+            const ep = this.story.ai?.entry_points?.[a[0]];
+            if (!ep) throw new Error(`AI 接入点「${a[0]}」不存在`);
+            if (ep.trigger !== "script") throw new Error(`AI 接入点「${a[0]}」的 trigger 不是 script，脚本不能调用它`);
+            if (this.aiInFlight >= 4) return null; // 同时最多 4 个，超出直接放弃（返回 null）
+            this.aiInFlight++;
+            const req = ++this.aiSeq; this.effects.ai.push({ req, entry: a[0], input: a[1] ?? "", data: a[2] ?? {} }); return req;
+          }
         }
         throw new Error(`未知的 API：${m}`);
       },
     };
     try { return this.opts.scripts.run(file, src, fn, host, lim); }
     catch (e: any) { if (e instanceof ScriptError) throw new StepFail(e.kind === "fail" ? e.message : `${file}：${e.message}`); throw e; }
+  }
+
+  // ---------- 实时（oasis/0.4） ----------
+  input: InputState = { held: {}, pressed: {}, joystick: { x: 0, y: 0 }, pointer: { x: 0, y: 0, down: false } };
+  effects: Effects = { sounds: [], ai: [] };
+  private rtDt = 0; private drawBuf: DrawCmd[] = []; private aiSeq = 0; private aiInFlight = 0; private lastRtError = "";
+  get rtTime(): number { return this.extra.rt_time ?? 0; }
+  get isRealtime() { return !!this.story.realtime; }
+  private rtLimits() { return { time_ms: this.story.realtime?.tick_ms ?? 16, memory_mb: this.story.scripts?.limits?.memory_mb ?? 16 }; }
+  private rtError(where: string, e: any) {
+    const text = `${where}出错：${e?.message ?? e}`;
+    if (text !== this.lastRtError) this.log.push({ turn: this.turn, kind: "error", text });
+    this.lastRtError = text;
+  }
+  /** 推进一帧：先触发到点的定时器，再调用 on_tick。出错时撤销这一帧的改动、记一条错误、循环继续。 */
+  tick(dtMs: number, input?: Partial<InputState>): { ok: boolean; error?: string } {
+    const rt = this.story.realtime;
+    if (!rt || this.ending) return { ok: true };
+    if (input) this.input = { ...this.input, ...clone(input) };
+    const dt = Math.max(0, Math.min(250, Number(dtMs) || 0));
+    const s = this.snap(); const tBefore = this.rtTime, timersBefore = { ...(this.extra.rt_timers ?? {}) };
+    const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
+    const hooks: { hook: string; data?: any }[] = [];
+    this.rtDt = dt; this.extra.rt_time = tBefore + dt;
+    try {
+      const next: Record<string, number> = (this.extra.rt_timers ??= {});
+      for (const [id, t] of Object.entries(rt.timers ?? {})) {
+        if (next[id] === undefined) next[id] = tBefore + (t.after_ms ?? t.every_ms ?? 0);
+        let n = 0;
+        while (next[id] !== -1 && this.rtTime >= next[id] && n++ < 4) {
+          if (t.action) { const r = this.execAction(t.action, t.params ?? {}, "rules", 1, ctx.changed); if (!r.ok) throw new StepFail(r.error ?? `定时器「${id}」的动作失败`); }
+          if (t.emit) hooks.push({ hook: t.emit, data: { timer: id } });
+          if (t.script) this.runScript(t.script, { timer: id }, ctx, this.rtLimits());
+          next[id] = t.every_ms ? next[id] + t.every_ms : -1;
+        }
+        if (next[id] !== -1 && this.rtTime >= next[id]) next[id] = this.rtTime + (t.every_ms ?? 0); // 落后太多时不追帧
+      }
+      if (rt.on_tick) this.runScript(rt.on_tick, {}, ctx, this.rtLimits());
+    } catch (e: any) {
+      this.restore(s); this.extra.rt_time = tBefore + dt; this.extra.rt_timers = timersBefore;
+      this.rtError("实时循环", e); this.input = { ...this.input, pressed: {} };
+      return { ok: false, error: e.message };
+    }
+    this.input = { ...this.input, pressed: {} };
+    this.dispatch(ctx.changed, hooks);
+    this.checkEndings();
+    return { ok: true };
+  }
+  /** 画布组件取绘制指令：调用组件的 render 函数；render 里对状态的任何改动都会被撤销 */
+  renderCanvas(cid: string): DrawCmd[] {
+    const c: any = this.story.ui?.components?.[cid];
+    if (!c?.render) return [];
+    const s = this.snap(); this.drawBuf = [];
+    try { this.runScript(c.render, { width: c.width ?? 320, height: c.height ?? 240 }, { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set(), render: true }, this.rtLimits()); }
+    catch (e: any) { this.restore(s); this.rtError(`画布「${cid}」`, e); return []; }
+    this.restore(s);
+    return this.drawBuf;
+  }
+  takeEffects(): Effects { const e = this.effects; this.effects = { sounds: [], ai: [] }; return e; }
+  /** 异步 AI 结果回来后调用：交给 realtime.on_ai（params: request, entry, data, text, error） */
+  deliverAi(res: { req: number; entry: string; data?: any; text?: string; error?: string }) {
+    this.aiInFlight = Math.max(0, this.aiInFlight - 1);
+    const on = this.story.realtime?.on_ai; if (!on || this.ending) return;
+    const s = this.snap(); const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
+    try { this.runScript(on, { request: res.req, entry: res.entry, data: res.data ?? null, text: res.text ?? "", error: res.error ?? null }, ctx, this.rtLimits()); }
+    catch (e: any) { this.restore(s); this.rtError("on_ai", e); return; }
+    this.dispatch(ctx.changed); this.checkEndings();
   }
 
   // ---------- 可见状态 ----------

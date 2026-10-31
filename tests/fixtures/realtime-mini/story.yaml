@@ -1,0 +1,56 @@
+spec: oasis/0.4
+meta:
+  id: realtime-mini
+  title: 星星收集者
+  version: 1.0.0
+  summary: 用方向键 / WASD / 虚拟摇杆移动，60 秒内收集 10 颗星星。实时示例（oasis/0.4）。
+  language: zh-CN
+  rating: all-ages
+assets:
+  tiles:  { type: image, path: assets/tiles.png, use: other, alt: 草地和墙的图块 }
+  pickup: { type: audio, path: assets/pickup.ogg, use: sfx, volume: 0.6 }
+start:
+  intro: 方向键 / WASD / 摇杆移动，按住空格或“冲”加速。
+state:
+  hero:      { type: json, init: { x: 40, y: 40 }, visible: none }
+  stars:     { type: json, init: [], visible: none }
+  score:     { type: number, init: 0, min: 0, integer: true, label: 星星 }
+  time_left: { type: number, init: 60, min: 0, integer: true, label: 剩余秒数 }
+  comment:   { type: string, init: "", label: 解说 }
+actions:
+  spawn_star:  { script: scripts/game.js#spawn }
+  count_down:  { steps: [ { inc: { time_left: -1 } } ] }
+realtime:
+  tick_hz: 30
+  tick_ms: 20
+  on_tick: scripts/game.js#tick
+  on_ai: scripts/game.js#onAi
+  timers:
+    spawn: { every_ms: 1500, after_ms: 200, action: spawn_star }
+    clock: { every_ms: 1000, action: count_down }
+input:
+  keys: { ArrowLeft: left, ArrowRight: right, ArrowUp: up, ArrowDown: down, KeyA: left, KeyD: right, KeyW: up, KeyS: down, Space: dash }
+  joystick: true
+  buttons: [ { id: dash, label: 冲 } ]
+  pointer: true
+endings:
+  list:
+    - { id: win, label: 收集完成, kind: good, when: "state.score >= 10" }
+    - { id: timeout, label: 时间到, kind: bad, when: "state.time_left <= 0" }
+ai:
+  entry_points:
+    cheer:
+      kind: generate
+      trigger: script
+      prompt: 玩家刚收集到第 {{state.score}} 颗星星，用一句不超过 15 字的话给他打气。
+      fallback: 干得漂亮，继续！
+      card:
+        task: 给玩家一句简短的打气
+        authority: 0
+        output: { format: json, schema: { line: string } }
+ui:
+  layout: { template: simple }
+  components:
+    stats:   { type: stat-list, region: status, bind: [score, time_left] }
+    say:     { type: text-block, region: status, bind: comment }
+    screen:  { type: canvas, region: main, width: 320, height: 240, render: scripts/game.js#draw, pixelated: true }

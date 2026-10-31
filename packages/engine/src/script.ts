@@ -21,15 +21,43 @@ const api = {
   end: (id) => __c("end", [id]),
   fail: (msg) => __c("fail", [String(msg)]),
   log: (msg) => __c("log", [String(msg)]),
+  // ---- oasis/0.4 实时 ----
+  sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id) => __c("sound.stop", [id == null ? null : String(id)]) },
+  ai: { request: (id, input, data) => __c("ai.request", [String(id), input == null ? "" : String(input), data || {}]) },
+  draw: {
+    clear: (color) => __d(["clear", color || null]),
+    rect: (x, y, w, h, color, o) => __d(["rect", x, y, w, h, color || "#fff", o || {}]),
+    circle: (x, y, r, color, o) => __d(["circle", x, y, r, color || "#fff", o || {}]),
+    line: (x1, y1, x2, y2, color, width) => __d(["line", x1, y1, x2, y2, color || "#fff", width || 1]),
+    text: (s, x, y, o) => __d(["text", String(s), x, y, o || {}]),
+    image: (id, x, y, w, h, o) => __d(["image", String(id), x, y, w == null ? null : w, h == null ? null : h, o || {}]),
+    tilemap: (o) => __d(["tilemap", o || {}]),
+    camera: (x, y, zoom) => __d(["camera", x || 0, y || 0, zoom || 1]),
+  },
 };
+const __draw = [];
+function __d(c) { if (__draw.length >= 5000) throw new Error("一帧最多 5000 条绘制指令"); __draw.push(c); }
+Object.defineProperty(api, "input", { get: () => __c("input", []) });
+Object.defineProperty(api, "dt", { get: () => __c("time", [])[0] });
+Object.defineProperty(api, "time", { get: () => __c("time", [])[1] });
 Math.random = () => { throw new Error("脚本里不能用 Math.random，请用 api.random"); };
 Date.now = () => { throw new Error("脚本里不能读取时间"); };
 `;
 
 /** 用 quickjs-emscripten 实现的 JS 沙箱：无网络、无文件；限时、限内存 */
-export async function createQuickJsRunner(opts: { transpileTs?: (src: string) => string } = {}): Promise<ScriptRunner> {
-  const { getQuickJS, shouldInterruptAfterDeadline } = await import("quickjs-emscripten");
+/**
+ * 计时只算脚本自己在沙箱里执行的时间：不含创建沙箱、不含宿主 API（state.get 等）耗时。
+ * 冷启动（WASM 刚加载、尚未优化）的前几次调用，时间上限至少 COLD_MS，避免慢机器上误杀。
+ * timeScale：把所有时间上限乘以这个倍数（测试里用来消除机器速度的影响）。
+ */
+const COLD_RUNS = 8, COLD_MS = 1000;
+export async function createQuickJsRunner(opts: { transpileTs?: (src: string) => string; timeScale?: number; coldRuns?: number } = {}): Promise<ScriptRunner> {
+  const { getQuickJS } = await import("quickjs-emscripten");
   const QuickJS = await getQuickJS();
+  const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+  let runs = 0;
+  // 预热一次，让 WASM 编译和初始化发生在游戏开始之前
+  try { const r = QuickJS.newRuntime(); const v = r.newContext(); const x = v.evalCode(PRELUDE.replace(/__c\("params", \[\]\)/, "{}") + ";1"); x.error ? x.error.dispose() : x.value.dispose(); v.dispose(); r.dispose(); } catch { /* 预热失败不影响正常运行 */ }
   return {
     run(file, source, fn, host, limits) {
       if (/\.(lua|py)$/.test(file)) throw new ScriptError(`暂不支持 ${file.endsWith(".py") ? "Python（计划 M9）" : "Lua（计划 M8）"} 脚本`, "error");
@@ -39,16 +67,20 @@ export async function createQuickJsRunner(opts: { transpileTs?: (src: string) =>
       const rt = QuickJS.newRuntime();
       rt.setMemoryLimit(limits.memory_mb * 1024 * 1024);
       rt.setMaxStackSize(256 * 1024);
-      rt.setInterruptHandler(shouldInterruptAfterDeadline(Date.now() + limits.time_ms));
+      const budget = Math.max(limits.time_ms, runs++ < (opts.coldRuns ?? COLD_RUNS) ? COLD_MS : 0) * (opts.timeScale ?? 1);
+      let start = Infinity, hostMs = 0;
+      rt.setInterruptHandler(() => now() - start - hostMs > budget);
       const vm = rt.newContext();
       try {
         const h = vm.newFunction("__host", (mH, aH) => {
           const m = vm.getString(mH), a = JSON.parse(vm.getString(aH));
-          const r = host.call(m, a); // 抛出的错误会变成脚本里的异常
+          const t0 = now();
+          try { var r = host.call(m, a); } finally { hostMs += now() - t0; } // 抛出的错误会变成脚本里的异常
           return vm.newString(JSON.stringify(r === undefined ? null : r));
         });
         vm.setProp(vm.global, "__host", h); h.dispose();
-        const code = `${PRELUDE}\n${src}\n;if (typeof ${fn} !== "function") throw new Error("脚本里没有函数 ${fn}");\nJSON.stringify(${fn}(api) ?? null);`;
+        const code = `${PRELUDE}\n${src}\n;if (typeof ${fn} !== "function") throw new Error("脚本里没有函数 ${fn}");\n(() => { const __r = ${fn}(api); if (__draw.length) __c("draw.commit", [__draw]); return JSON.stringify(__r ?? null); })();`;
+        start = now();
         const res = vm.evalCode(code, file);
         if (res.error) {
           const e = vm.dump(res.error); res.error.dispose();
