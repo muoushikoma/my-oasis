@@ -32,15 +32,7 @@
   ```
 - 必须输出 story.yaml；需要时可另外输出 setting.md、prompts/*.md、scripts/*.js。不要输出图片或音频文件本身；如需素材，在 assets 里登记路径，并在最后列出“需要准备的素材清单”（文件名、内容描述、建议尺寸）。
 - YAML 用 2 个空格缩进，不用 Tab；UTF-8。
-- 输出后附一段“自检结果”，逐条确认下面【实时与接管整个页面】（oasis/0.4，可省略；完整说明见 docs/story-format.md 第 10 节）
-realtime: { tick_hz: 30, tick_ms: 16(1-50), on_tick: 文件#函数, on_ai, on_resize, timers: {...} }
-input: { keys: { ArrowLeft: left, ... }, joystick: true, buttons: [...], pointer: true }
-画布组件：{ type: canvas, region, render: 文件#函数, width/height（固定）或 size: fill（铺满，跟着窗口/转屏变化）, hidpi: true, pixelated }
-ui.takeover: true → 客户端不显示顶栏，整个窗口/手机屏幕交给故事（安卓沉浸全屏）。脚本读 api.screen { width, height, dpr, takeover }；render 的 api.params.width/height 是画布当前尺寸；坐标最好按比例存。
-玩家始终可以打开暂停菜单（按住 Esc 1 秒 / 安卓返回键 / 右上角 ⋯），故事关不掉；不要把右上角那一小块当成必须点的位置，也不要依赖“长按 Esc”。
-示例：tests/fixtures/takeover-mini/
-
-【自检清单】。
+- 输出后附一段“自检结果”，逐条确认下面【自检清单】。
 
 【核心理念】
 平台没有内置玩法。你要定义：状态（数值等）、动作（能做的事）、事件（何时发生什么）、结局、给 AI 用的工具、AI 接入点与任务卡（AI 在哪里出现、能管多少）、界面。引擎会强制执行规则，AI 只能通过工具在任务卡允许的范围内改状态。
@@ -159,12 +151,16 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 可用：api.state.get/set/inc/add/remove、api.params、api.random.int/float/pick/weighted、api.actions.call、api.events.emit、api.end、api.fail、api.log。禁止 Math.random、网络、文件、时间。
 
 【实时与接管整个页面】（oasis/0.4，可省略；完整说明见 docs/story-format.md 第 10 节）
-realtime: { tick_hz: 30, tick_ms: 16(1-50), on_tick: 文件#函数, on_ai, on_resize, timers: {...} }
+realtime: { tick_hz: 30, tick_ms: 16(1-50), on_tick: 文件#函数, on_ai, on_resize, interpolate: false, timers: {...} }
 input: { keys: { ArrowLeft: left, ... }, joystick: true, buttons: [...], pointer: true }
 画布组件：{ type: canvas, region, render: 文件#函数, width/height（固定）或 size: fill（铺满，跟着窗口/转屏变化）, hidpi: true, pixelated }
 ui.takeover: true → 客户端不显示顶栏，整个窗口/手机屏幕交给故事（安卓沉浸全屏）。脚本读 api.screen { width, height, dpr, takeover }；render 的 api.params.width/height 是画布当前尺寸；坐标最好按比例存。
 玩家始终可以打开暂停菜单（按住 Esc 1 秒 / 安卓返回键 / 右上角 ⋯），故事关不掉；不要把右上角那一小块当成必须点的位置，也不要依赖“长按 Esc”。
 示例：tests/fixtures/takeover-mini/
+render 只读状态，用 api.draw.*：clear、camera、rect、circle、line、text、image、tilemap、sprite（精灵表帧动画：frame_w/frame_h + frame 或 fps）、particles（粒子：rate/burst/life_ms/speed/angle/spread/gravity/size/end_size/color/end_color/blend）。
+通用效果选项：alpha、rotation（弧度）、scale/scale_x/scale_y、anchor_x/anchor_y（0.5 = 以中心定位）、flip_x/flip_y、tint、blend（normal/add/multiply/screen）、glow（circle/text）、outline（text）、fixed（不受相机影响）。
+声音：api.sound.play(id, { volume, loop, channel: "music", fade_ms, rate, pan })；同一 channel 换曲自动交叉淡化；api.sound.stop(id?, { fade_ms })。
+想要 60fps 平滑移动：realtime.interpolate: true，render 里按 api.alpha 在上一步和这一步的位置之间插值。粒子和精灵动画由客户端自动按屏幕刷新率播放，不必开 interpolate。
 
 【自检清单】
 1. spec 是 "oasis/0.3" 或 "oasis/0.4"；meta 六个必填字段齐全；投稿时 rating 是 all-ages，title/summary 中英双语，tags 正好 3 个且中英双语

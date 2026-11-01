@@ -631,6 +631,10 @@
           "minimum": 1,
           "maximum": 50
         },
+        "interpolate": {
+          "type": "boolean",
+          "description": "true：画布的 render 每个显示帧都调用（可达 60fps 以上），api.alpha 给出距下一次 tick 的进度（0~1），作者可用来平滑插值；默认 false：只在 tick 之后调用 render"
+        },
         "on_tick": {
           "type": "string",
           "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"

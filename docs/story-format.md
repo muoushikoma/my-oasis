@@ -287,6 +287,7 @@ meta: { id: my-story, title: 示例, version: 1.0.0, summary: 简介, language: 
 realtime:
   tick_hz: 30                      # 每秒推进几次，1–60，默认 30
   tick_ms: 16                      # 每次脚本调用的时间上限（毫秒），1–50，默认 16
+  interpolate: false               # true：render 每个显示帧都调用（见 10.3 “画面帧率”），默认 false
   on_tick: scripts/game.js#tick    # 每次推进时调用（可选）
   on_ai: scripts/game.js#onAi      # 脚本发起的 AI 请求返回时调用（可选）
   on_resize: scripts/game.js#resize # 可用区域尺寸变化（窗口缩放、手机转屏）后、下一步开头调用（可选），见 10.8
@@ -347,6 +348,28 @@ ui:
 | `api.draw.text(文字, x, y, { size?, color?, align?, bold?, font?, alpha?, fixed? })` | 文字，`align` 为 left/center/right |
 | `api.draw.image(素材id, x, y, w?, h?, { sx?, sy?, sw?, sh?, flip_x?, alpha?, fixed? })` | 图片；`sx/sy/sw/sh` 从图里裁一块，适合精灵图 |
 | `api.draw.tilemap({ tileset?, tile_size, columns, map, x?, y?, colors? })` | 图块地图，见下 |
+| `api.draw.sprite(素材id, x, y, { frame_w, frame_h, frame?, fps?, frames?, start?, loop?, w?, h?, … })` | 精灵表帧动画，见下 |
+| `api.draw.particles(发射器名, x, y, { rate?, burst?, seq?, … })` | 粒子效果，见下 |
+
+**所有图形通用的可选效果**（不写就是原来的样子）：
+
+| 选项 | 说明 |
+|---|---|
+| `alpha` | 透明度 0–1 |
+| `rotation` | 旋转角度（弧度），绕锚点旋转（rect、image、sprite、text、circle） |
+| `scale`、`scale_x`、`scale_y` | 缩放倍数 |
+| `anchor_x`、`anchor_y` | 锚点，0–1；默认 0（左上角），`0.5` 表示 (x, y) 是中心 |
+| `flip_x`、`flip_y` | 水平/竖直翻转（image、sprite） |
+| `tint` | 给图片染色，例如 `"#ff8080"`（image、sprite、粒子图片） |
+| `blend` | 混合模式：`normal`（默认）、`add`（叠加发光）、`multiply`（变暗）、`screen`（变亮） |
+| `glow` | 发光：`true` 或 `{ color?, size? }`（circle、text） |
+| `outline` | 文字描边：`true` 或 `{ color?, width? }`（text） |
+
+- **精灵表**：图片按 `frame_w × frame_h` 切成格子，从左到右、从上到下编号（从 0 开始）。写 `frame` 指定显示第几帧；不写 `frame` 而写 `fps`，就按这个速度自动播放（`start` 起始帧、`frames` 帧数、`loop: false` 播完停在最后一帧）。自动播放由客户端按屏幕刷新率推进，不占脚本时间，也不影响状态。`api.draw.image` 也接受 `frame_w`/`frame_h`/`frame`/`fps`。
+- **粒子**：同一个发射器名在每次 render 里都出现，它就持续发射；不再出现后，剩下的粒子自然消失。选项：`rate`（每秒发射数）、`burst`（一次性喷出的数量，`seq` 变化时再喷一次）、`life_ms`（寿命，默认 800）、`speed`（像素/秒，默认 60）、`angle`（方向角度，默认 -90 即向上）、`spread`（散开角度，默认 360）、`gravity`（像素/秒²）、`drag`、`size`/`end_size`、`color`/`end_color`、`radius`（发射区域半径）、`image`（用图片当粒子）、`spin`、`max`（最多粒子数，默认 500，上限 3000）、`blend`（默认 `add`）、`soft: false`（实心圆点）。粒子完全在客户端模拟，纯视觉，不进状态、不影响结果。
+- **画面帧率**：客户端用显卡（WebGL）合批绘制，设备不支持时自动改用 Canvas2D（此时 `tint` 不生效）。画面按屏幕刷新率（通常 60fps 以上）绘制，跟 `tick_hz` 无关；默认只在每次推进后调用一次 `render`，中间帧重放同一组指令（动画和粒子照样流畅）。如果希望移动本身也按 60fps 平滑，写 `realtime.interpolate: true`：render 每个显示帧都调用，`api.alpha`（0–1）是离下一次推进的进度，作者可以在状态里存上一步的位置，按 `上一步 + (这一步 − 上一步) × api.alpha` 画。这样更顺滑，但 render 调用次数会变多。
+- 高分屏会自动按屏幕像素密度提高清晰度（最多 2 倍），作者仍然用 `width × height` 的坐标作画。
+- **调试**：玩的时候按 F3，右上角显示帧率、每帧耗时、tick/render 脚本耗时、绘制数量和渲染器类型。
 
 - `fixed: true` 表示这条指令不受相机影响，用来画分数等界面元素。
 - 图块地图：`tileset` 是图片素材 id，图里的图块按 `tile_size` 切成格子、每行 `columns` 个，从 0 开始编号。`map` 是二维数组（或字符串数组，每个字符一格），每个值是图块编号；`-1`、`null`、`.`、空格表示空。`colors: { 值: 颜色 }` 可以不用图片、直接用纯色方块画。
@@ -354,7 +377,12 @@ ui:
 
 ### 10.4 声音
 
-`api.sound.play(素材id, { volume?, loop? })` 播放一段已登记的音频素材；`api.sound.stop(素材id?)` 停止循环播放的声音，不填 id 就全部停止。每步最多 32 个声音指令。玩家的静音和音效音量设置会生效。
+`api.sound.play(素材id, { volume?, loop?, channel?, fade_ms?, rate?, pan? })` 播放一段已登记的音频素材；`api.sound.stop(素材id?, { fade_ms? })` 停止声音，不填 id 就全部停止。每步最多 32 个声音指令。玩家的静音和音效音量设置会生效。
+
+- 多个声音可以同时播放（客户端用 WebAudio 混音，最多同时 48 个）。
+- `channel`：声道名，例如 `"music"`。同一声道同时只放一个，换曲时旧的淡出、新的淡入（交叉淡化，时长 `fade_ms`，声道默认 600 毫秒）。
+- `rate` 播放速度（0.25–4，会变调），`pan` 左右声像（-1 到 1）。
+- 开始游玩前，客户端会预加载并解码所有登记的图片和音频，显示加载进度，之后播放没有延迟。
 
 ### 10.5 AI（异步、结构化）
 
@@ -365,11 +393,12 @@ ui:
 
 ### 10.6 脚本 API 补充与沙箱
 
-- 实时脚本还可以读取：`api.dt`（这一步的毫秒数）、`api.time`（游戏开始后的毫秒数）、`api.input`、`api.screen`（`{ width, height, dpr, takeover }`，客户端可用区域的 CSS 像素尺寸，见 10.8）。
+- 实时脚本还可以读取：`api.dt`（这一步的毫秒数）、`api.time`（游戏开始后的毫秒数）、`api.input`、`api.screen`（`{ width, height, dpr, takeover }`，客户端可用区域的 CSS 像素尺寸，见 10.8）；render 里还可以读 `api.alpha`（见 10.3 “画面帧率”，不开 `interpolate` 时总是 0）。
 - 任何脚本都可以读 `api.lang`：玩家选的语言，`"zh"` 或 `"en"`（见第 11 节）。
 - 脚本在沙箱里运行：不能联网、不能读写文件、不能读取真实时间，也不能用 `Math.random`，随机数请用 `api.random`。
 - 每次调用受 `realtime.tick_ms` 的时间上限和 `scripts.limits.memory_mb` 的内存上限约束（默认 16 MB），超出会被中止。
-- 脚本文件每次调用都会重新执行，顶层常量可以随便用；需要保存的数据请写进状态（`json` 类型最方便）。
+- 脚本文件每次调用都会重新执行，顶层常量可以随便用；需要保存的数据请写进状态（`json` 类型最方便）。脚本里的变量、新建的全局变量都不会留到下一次调用，`api` 对象不能修改。
+- 沙箱是常驻的（每个脚本文件一个，只在第一次调用时创建），所以每次调用的固定开销很小（约 0.02 毫秒），时间上限几乎都留给作者的代码。
 
 ### 10.7 实时示例
 
