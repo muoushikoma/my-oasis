@@ -2,6 +2,22 @@
 
 ## 未发布
 
+### 新增
+- **2D 游戏运行时**：自定义组件写 `runtime: game` 后，沙箱里会注入 `window.oasis.game`，故事包能做横版动作、平台跳跃等大多数 2D 引擎级游戏（规范 §13.6，作者版 story-format 10.10，设计见 `docs/DESIGN.md`）：
+  - 固定步长循环（顿帧、暂停、场景切换）、实体、素材预加载（图片、网格/atlas 图集、声音、JSON、字体）、WebAudio 声音；
+  - PixiJS 8 渲染：精灵、图集动画、九宫格 UI、文字、粒子、镜头跟随/死区/边界/震动/缩放，像素风整数缩放；
+  - Rapier 2D 物理（随客户端打包，不走 CDN）：刚体、碰撞体、传感器、碰撞事件、射线、形状查询、角色控制器、碰撞层；
+  - JSON 动画状态机：状态、带条件的切换（安全表达式，不执行代码）、触发器、播完切换、最短停留、帧事件；
+  - 统一输入：键盘、手柄（客户端转发）、触屏；动作可改键；虚拟按键需作者声明才出现，默认不显示摇杆；按住 Esc 仍能打开暂停菜单；
+  - 异步 AI 辅助 `game.ai.ask` / `game.ai.action` / `game.ai.waitState`：在实时循环之外请求 AI，失败用备用文字。
+- 自定义组件新字段 `runtime`（`game`）和 `files`（交给组件的包内文件/文件夹，作为 `window.oasis.files`）；`size: fill` 用于自定义组件。游戏组件大小上限 24 MB（普通组件仍为 8 MB）。校验器检查 `files` 是否存在，游戏组件没写 `size: fill` 时给提示。
+- 演示故事 `examples/ember-corridor/`《余烬回廊》：像素风横版动作，接管模式，AI 写开场、波次间旁白和侦察短句；美术和音效由 `tools/demo-art/ember-corridor.mjs` 程序生成。
+- `AGENTS.md`（给 AI 编程助手的仓库说明）和 `docs/DESIGN.md`（设计说明）。
+
+### 变更
+- 自定义组件文档的 CSP 增加 `'wasm-unsafe-eval'`（只允许编译 WebAssembly，仍不允许 `eval`），桌面/安卓 `oasisui:` 协议同步；组件文档上限提高到 48 MB 以容纳游戏素材。
+- 叙述写进状态（`output.to: state:…`）的 AI 接入点不再要求界面里有 `text-log`。
+
 ## 0.1.2（2026-11-01）
 
 ### 修复

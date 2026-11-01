@@ -1,0 +1,130 @@
+spec: oasis/0.4
+meta:
+  id: ember-corridor
+  title: { zh: 余烬回廊, en: Ember Corridor }
+  version: 0.1.0
+  summary:
+    zh: 横版动作小游戏：守火骑士在倒塌的回廊里挡住三波魔物。AI 为每一波写开场、敌人情报和战后独白。
+    en: A side-scrolling action mini-game. A fire-warden knight holds a ruined corridor against three waves; the AI narrates each wave.
+  languages: [zh, en]
+  ai_role:
+    zh: AI 是回廊的说书人：写开场白、每波敌人的情报和每波之后的独白；战斗本身由客户端的游戏运行时实时处理。
+    en: The AI is the corridor's storyteller, writing the opening, enemy scouting notes and post-wave lines. Combat runs in real time on the client.
+  est_minutes: 8
+  est_tokens_per_min: 900
+  rating: all-ages
+  content_warnings: [卡通战斗]
+  authors: [我的绿洲]
+  tags:
+    - { zh: 动作, en: Action }
+    - { zh: 像素, en: Pixel Art }
+    - { zh: 示例, en: Demo }
+  description:
+    zh: |
+      # 玩法
+      守火骑士要在余烬回廊里撑过三波魔物：会跳着扑过来的史莱姆、会俯冲的蝙蝠，最后还有一只大史莱姆。
+      - 移动：← → 或 A D；手柄左摇杆 / 十字键
+      - 跳跃：空格 / K / 手柄 A（按住跳得更高）
+      - 攻击：J / X / 手柄 X
+      - 手机上会出现虚拟按键
+      # AI 做什么
+      开场白、每一波的敌人情报、每波结束后的独白都由 AI 现写；AI 不参与实时战斗，不会让游戏卡顿。没有 AI 回复时会显示作者写好的文字。
+      # 技术示例
+      这是游戏运行时（规范 §13.6）的示例：PixiJS 渲染、Rapier 物理、JSON 动画状态机、顿帧和镜头震动、统一输入。
+    en: |
+      # How to play
+      Hold the Ember Corridor through three waves: hopping slimes, diving bats and a big slime at the end.
+      - Move: Left/Right or A/D, gamepad stick or d-pad
+      - Jump: Space / K / gamepad A (hold to jump higher)
+      - Attack: J / X / gamepad X
+      - Touch screens get on-screen buttons
+      # What the AI does
+      The opening, enemy scouting notes and post-wave lines are written live by the AI. It never runs inside the real-time loop. Author-written fallbacks are used if there is no reply.
+      # Tech demo
+      Demonstrates the game runtime (spec §13.6): PixiJS rendering, Rapier physics, JSON animation state machines, hit-stop, screen shake and unified input.
+
+state:
+  wave:      { type: number, init: 1, min: 1, max: 4, integer: true, label: { zh: 波次, en: Wave }, visible: both }
+  narration: { type: string, init: "", max_length: 400, writable_by: [rules, ai], visible: both, desc: AI 写的独白，游戏里用像素对话框显示 }
+  flavor:    { type: string, init: "", max_length: 200, writable_by: [rules, ai], visible: both, desc: AI 写的本波敌人情报 }
+  falls:     { type: number, init: 0, min: 0, integer: true, visible: both, label: { zh: 倒下次数, en: Falls } }
+
+actions:
+  clear_wave:
+    label: { zh: 守住一波, en: Wave cleared }
+    require: "state.wave <= 3"
+    steps: [ { inc: { wave: 1 } } ]
+    callable_by: [player]
+  fall:
+    label: { zh: 倒下, en: Fall }
+    steps: [ { inc: { falls: 1 } }, { set: { wave: 1 } } ]
+    callable_by: [player]
+  finish:
+    label: { zh: 守住回廊, en: Hold the corridor }
+    require: "state.wave >= 4"
+    steps: [ { end: victory } ]
+    callable_by: [player]
+
+endings:
+  check_on: manual
+  list:
+    - id: victory
+      label: { zh: 回廊的火还在, en: The flame still burns }
+      kind: good
+      text: { zh: 三波魔物都被挡在了回廊外。, en: All three waves were held back. }
+
+ai:
+  model_hint: { tier: light, note: 短文本，轻量模型就够 }
+  system: |
+    你是像素动作游戏《余烬回廊》的说书人。主角是一名守火骑士，守着倒塌回廊尽头最后一盆火。
+    文字要短、有画面感、适合放进游戏里的小对话框；不写血腥细节，不写任何成人内容。用玩家当前的语言回答。
+  rules:
+    max_authority: 0
+    forbid: [血腥描写, 成人内容, 超过要求的字数]
+  entry_points:
+    intro:
+      kind: narrate
+      trigger: game_start
+      prompt: 为游戏写一段开场白（两三句），交代守火骑士为什么要守住回廊。
+      fallback: { zh: 回廊尽头只剩最后一盆火。魔物闻着热气来了——守住它。, en: Only one brazier still burns at the corridor's end. The monsters can smell its heat. Hold it. }
+      card: { task: 写开场白, authority: 0, output: { format: text, max_chars: 160, to: "state:narration" } }
+    scout:
+      kind: generate
+      trigger: "ui:arena.scout"
+      prompt: |
+        第 {{state.wave}} 波即将来袭，敌人：{{input}}。
+        用一句话（不超过 40 字）写这波敌人的情报，像侦察兵的提醒，带一点个性。
+      fallback: { zh: 侦察：它们来了，数量不少。, en: "Scout: here they come, and plenty of them." }
+      card: { task: 写一句敌人情报, authority: 0, output: { format: text, max_chars: 80, to: "state:flavor" } }
+      context: { history_turns: 0 }
+    interlude:
+      kind: narrate
+      trigger: "action:clear_wave"
+      prompt: |
+        守火骑士刚守住了一波魔物（现在 state.wave 表示下一波的编号；如果它是 4，说明三波都守住了，写一段胜利的尾声）。
+        写两句独白或旁白，承上启下。
+      fallback: { zh: 火光晃了晃，又稳住了。下一波还在路上。, en: The flame flickers, then steadies. The next wave is coming. }
+      card: { task: 写波次之间的独白, authority: 0, output: { format: text, max_chars: 160, to: "state:narration" } }
+    fallen:
+      kind: narrate
+      trigger: "action:fall"
+      prompt: 守火骑士倒下了（这是第 {{state.falls}} 次）。用一两句话鼓励他重新站起来。
+      fallback: { zh: 火还没灭。站起来，再来一次。, en: The flame is not out yet. Get up and try again. }
+      card: { task: 鼓励玩家重来, authority: 0, output: { format: text, max_chars: 120, to: "state:narration" } }
+
+ui:
+  takeover: true
+  layout: { template: custom, grid: ["screen"] }
+  components:
+    arena:
+      type: custom
+      region: screen
+      label: { zh: 回廊, en: Corridor }
+      src: game/main.html
+      runtime: game
+      size: fill
+      files: [game/art/, game/sfx/, game/data/]
+      actions: [clear_wave, fall, finish]
+      emits: [scout]
+      player_can_hide: false
+      fallback: { zh: 这个故事是动作游戏，需要打开设置里的“自定义组件”。, en: This story is an action game. Turn on custom components in Settings. }

@@ -166,3 +166,10 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .story-card .brief { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .story-detail { width: min(640px, 94vw) !important; } .story-detail .cover { width: 100%; max-height: 260px; object-fit: cover; border-radius: 8px; }
 .story-desc p { white-space: pre-wrap; } .story-desc h4 { margin: 10px 0 4px; }
+/* 自定义组件 size: fill（游戏运行时常用）：铺满所在区域；接管模式下去掉面板外观 */
+.comp-custom:has(.custom-slot.fill) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.custom-slot.fill, .custom-host.fill { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.custom-frame.fill { flex: 1; width: 100%; height: 100%; min-height: 60vh; }
+.play.takeover .custom-frame.fill { min-height: 0; }
+.play.takeover .comp-custom:has(.custom-slot.fill) { padding: 0; background: none; border-radius: 0; box-shadow: none; backdrop-filter: none; }
+.play.takeover .comp-custom:has(.custom-slot.fill) > .comp-label { display: none; }

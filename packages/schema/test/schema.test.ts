@@ -12,7 +12,7 @@ const codes = (r: ReturnType<typeof v>) => r.issues.filter((i) => i.level === "e
 
 describe("示例故事", () => {
   it("两个规范示例都能通过校验", () => {
-    for (const p of ["examples/lighthouse-mini", "tests/fixtures/guess-the-box", "tests/fixtures/custom-ui-mini"]) {
+    for (const p of ["examples/lighthouse-mini", "tests/fixtures/guess-the-box", "tests/fixtures/custom-ui-mini", "examples/ember-corridor"]) {
       const r = validateFiles(loadFromPath(root + p));
       expect(r.issues.filter((i) => i.level === "error"), formatIssues(r)).toEqual([]);
       expect(r.ok).toBe(true);
@@ -285,5 +285,26 @@ ui:
   it("引用外网资源给警告", () => {
     const r = v(base, { "ui/m.html": `<script src="https://x.example/a.js"></script>` });
     expect(r.issues.map((i) => i.code)).toContain("custom_network");
+  });
+});
+
+describe("游戏运行时组件（§13.6）", () => {
+  const base = readFileSync(root + "tests/fixtures/custom-ui-mini/story.yaml", "utf8");
+  const map = "<html><body><script>window.oasis.ready.then(()=>{})</script></body></html>";
+  const game = (extra: string) => base.replace("      height: 90\n", `      runtime: game\n${extra}`);
+  it("runtime: game + files + size: fill 可以通过", () => {
+    const r = validateFiles(filesFromText(game("      size: fill\n      files: [ui/art/]\n"), { "ui/map.html": map, "ui/art/a.png": "PNG" }));
+    expect(r.issues.filter((i) => i.level === "error"), formatIssues(r)).toEqual([]);
+    expect(r.issues.some((i) => i.code === "game_not_fill")).toBe(false);
+  });
+  it("files 里列了不存在的文件或空文件夹会报错", () => {
+    const r = validateFiles(filesFromText(game("      size: fill\n      files: [ui/art/, ui/none.png]\n"), { "ui/map.html": map }));
+    expect(r.issues.filter((i) => i.code === "missing_file").length).toBe(2);
+  });
+  it("游戏组件没写 size: fill 给出提示；runtime 只能是 game", () => {
+    const r = validateFiles(filesFromText(game(""), { "ui/map.html": map }));
+    expect(r.issues.some((i) => i.code === "game_not_fill")).toBe(true);
+    const bad = validateFiles(filesFromText(base.replace("      height: 90\n", "      runtime: unity\n"), { "ui/map.html": map }));
+    expect(bad.ok).toBe(false);
   });
 });

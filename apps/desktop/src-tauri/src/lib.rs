@@ -115,10 +115,10 @@ async fn gh_like(issue: u64, on: bool) -> R<u64> { Gh::new()?.like(&gh_token()?,
 #[derive(Default)]
 struct UiFrames(std::sync::Mutex<std::collections::VecDeque<(String, String)>>);
 const UI_FRAMES_MAX: usize = 64;
-const UI_FRAME_CSP: &str = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; media-src data:; font-src data:; sandbox allow-scripts";
+const UI_FRAME_CSP: &str = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data:; media-src data:; font-src data:; sandbox allow-scripts";
 #[tauri::command]
 fn ui_frame_put(frames: tauri::State<'_, UiFrames>, html: String) -> R<String> {
-    if html.len() > 16 * 1024 * 1024 { return Err(Error::Msg("自定义组件太大".into())); }
+    if html.len() > 48 * 1024 * 1024 { return Err(Error::Msg("自定义组件太大".into())); }
     let mut b = [0u8; 16];
     getrandom_fill(&mut b);
     let token: String = b.iter().map(|x| format!("{x:02x}")).collect();

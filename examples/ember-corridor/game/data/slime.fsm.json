@@ -1,0 +1,17 @@
+{
+  "initial": "idle",
+  "params": { "grounded": true, "hurt": "trigger", "dead": false },
+  "states": {
+    "idle": { "anim": "idle" },
+    "hop":  { "anim": "hop" },
+    "hurt": { "anim": "hurt", "loop": false },
+    "die":  { "anim": "die", "loop": false, "events": { "1": "gone" } }
+  },
+  "transitions": [
+    { "from": "*", "to": "die", "when": "dead" },
+    { "from": ["idle", "hop"], "to": "hurt", "when": "hurt" },
+    { "from": "hurt", "to": "idle", "on_end": true },
+    { "from": "idle", "to": "hop", "when": "!grounded" },
+    { "from": "hop", "to": "idle", "when": "grounded" }
+  ]
+}
