@@ -9,7 +9,7 @@ import { makeLlm } from "./llm";
 import { beginSession, sessionUsage, loadUsage, onUsage, fmtNum, fmtCost, zero } from "./usage";
 import { explainError } from "./providers";
 import { storyStorage } from "./story-storage";
-import { loadSettings, saveSettings, isLocalUrl, type Settings, t2 } from "./settings";
+import { loadSettings, saveSettings, isLocalUrl, type Settings } from "./settings";
 import { enterTakeover, setFullscreen, isFullscreen } from "./takeover";
 import { providerSetup } from "./setup";
 import { usageCard } from "./usage-card";
@@ -33,7 +33,7 @@ function defaultUi(story: Story): any {
   const vis = Object.entries(story.state).filter(([, d]: any) => (d.visible ?? "both") === "both" || d.visible === "player").map(([k]) => k);
   if (vis.length) comps.stats = { type: "stat-list", region: "status", bind: vis };
   if (Object.values(story.ai?.entry_points ?? {}).some((e: any) => e.trigger === "player_input"))
-    comps.input = { type: "text-input", region: "input", placeholder: t2("你要做什么？", "What do you do?"), input: { actions: Object.keys(story.actions ?? {}), reject: t2("这里做不到这件事。", "You can't do that here.") } };
+    comps.input = { type: "text-input", region: "input", placeholder: "你要做什么？", input: { actions: Object.keys(story.actions ?? {}), reject: "这里做不到这件事。" } };
   const btns = Object.entries(story.actions ?? {}).filter(([, a]: any) => (a.callable_by ?? ["player", "ai", "rules"]).includes("player") && !Object.keys(a.params ?? {}).length);
   btns.forEach(([id, a]: any, i) => (comps[`btn_${i}`] = { type: "button", region: "input", label: a.label ?? id, action: id }));
   return { layout: { template: "simple" }, components: comps };
@@ -107,19 +107,19 @@ export class PlaySession {
       h("h3", {}, `⏸ ${String(this.story.meta.title)}`),
       this.usageEl() ?? h("span", {}),
       h("div", { class: "pause-list" },
-        h("button", { class: "primary", onclick: close }, t2("▶ 继续", "▶ Resume")),
-        h("button", { onclick: () => this.savesDialog() }, t2("存档 / 读档", "Save / Load")),
-        h("button", { onclick: () => { this.settings.muted = !this.settings.muted; saveSettings(this.settings); this.sound.music.muted = this.settings.muted; main(); } }, this.settings.muted ? t2("🔇 已静音（点击取消）", "🔇 Muted (click to unmute)") : t2("🔊 声音开着（点击静音）", "🔊 Sound on (click to mute)")),
-        h("button", { onclick: () => this.viewDialog() }, t2("外观", "Appearance")),
-        h("button", { onclick: () => settingsView() }, t2("⚙️ 设置（AI 与用量）", "⚙️ Settings (AI & usage)")),
-        h("button", { onclick: async () => { await setFullscreen(!(await isFullscreen())); } }, t2("⛶ 切换全屏（F11）", "⛶ Toggle fullscreen (F11)")),
-        h("button", { onclick: () => { if (confirm(t2("重新开始这个故事？", "Restart this story?"))) { close(); void this.restart(); } } }, t2("重新开始", "Restart")),
-        h("button", { onclick: () => this.leave() }, t2("← 回故事库", "← Back to library"))),
-      h("p", { class: "small muted" }, t2("随时打开这个菜单：按住 Esc 1 秒、安卓返回键，或点右上角的 ⋯。故事关不掉这个出口。", "Open this menu any time: hold Esc for 1 second, press Android Back, or tap ⋯ in the corner. Stories can't block this exit.")));
+        h("button", { class: "primary", onclick: close }, "▶ 继续"),
+        h("button", { onclick: () => this.savesDialog() }, "存档 / 读档"),
+        h("button", { onclick: () => { this.settings.muted = !this.settings.muted; saveSettings(this.settings); this.sound.music.muted = this.settings.muted; main(); } }, this.settings.muted ? "🔇 已静音（点击取消）" : "🔊 声音开着（点击静音）"),
+        h("button", { onclick: () => this.viewDialog() }, "外观"),
+        h("button", { onclick: () => settingsView() }, "⚙️ 设置（AI 与用量）"),
+        h("button", { onclick: async () => { await setFullscreen(!(await isFullscreen())); } }, "⛶ 切换全屏（F11）"),
+        h("button", { onclick: () => { if (confirm("重新开始这个故事？")) { close(); void this.restart(); } } }, "重新开始"),
+        h("button", { onclick: () => this.leave() }, "← 回故事库")),
+      h("p", { class: "small muted" }, "随时打开这个菜单：按住 Esc 1 秒、安卓返回键，或点右上角的 ⋯。故事关不掉这个出口。"));
     const settingsView = () => body.replaceChildren(
-      h("h3", {}, t2("设置", "Settings")), providerSetup(), usageCard(settingsView),
-      h("p", { class: "small muted" }, t2("改了 AI 设置后，重新开始故事才会生效。", "AI setting changes take effect when you restart the story.")),
-      h("div", { class: "row" }, h("button", { class: "primary", onclick: main }, t2("返回", "Back"))));
+      h("h3", {}, "设置"), providerSetup(), usageCard(settingsView),
+      h("p", { class: "small muted" }, "改了 AI 设置后，重新开始故事才会生效。"),
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: main }, "返回")));
     main();
     const m = h("div", { class: "modal pause", onclick: (e: Event) => e.target === m && close() }, body);
     this.menu = m; this.root.append(m);
@@ -128,10 +128,10 @@ export class PlaySession {
   usageEl() {
     const se = sessionUsage(); const st = loadUsage().stories[this.storyId] ?? zero();
     if (!this.story.ai && !st.calls) return null;
-    const est = se.estimatedCalls ? t2("（估）", " (est.)") : "";
+    const est = se.estimatedCalls ? "（估）" : "";
     const cost = fmtCost(se);
-    return h("span", { id: "usage-line", class: "muted small usage", title: t2("AI 用量只记在本机，不上传。详情和清零在“设置 → AI 用量”。", "AI usage is stored only on this device. Details and reset: Settings → AI usage.") },
-      `${t2("本局", "This run")} ${fmtNum(se.input + se.output)} tokens${est}` + (cost && !cost.startsWith("费用") ? ` ${cost}` : "") + ` · ${t2("本故事累计", "Story total")} ${fmtNum(st.input + st.output)}`);
+    return h("span", { id: "usage-line", class: "muted small usage", title: "AI 用量只记在本机，不上传。详情和清零在“设置 → AI 用量”。" },
+      `本局 ${fmtNum(se.input + se.output)} tokens${est}` + (cost && !cost.startsWith("费用") ? ` ${cost}` : "") + ` · 本故事累计 ${fmtNum(st.input + st.output)}`);
   }
   async init(save?: any) {
     beginSession(this.storyId, String(this.story.meta.title));
@@ -141,7 +141,7 @@ export class PlaySession {
     if (this.story.ai) {
       const local = isLocalUrl(s.base_url);
       if (local || (await bridge.keyHas(s.provider).catch(() => false))) this.llm = makeLlm(s);
-      else this.aiNotice = t2("还没有填写 API Key：AI 部分会跳过（显示作者写的替代文字）。去“设置”填写后重新开始即可。", "No API key yet: AI parts will be skipped (the author's fallback text is shown). Add one in Settings, then restart.");
+      else this.aiNotice = "还没有填写 API Key：AI 部分会跳过（显示作者写的替代文字）。去“设置”填写后重新开始即可。";
     }
     if (save) {
       const r = Game.load(this.raw, save, { lang: this.settings.lang, files: this.files, scripts: this.scripts, storage: storyStorage(this.storyId) });
@@ -169,8 +169,7 @@ export class PlaySession {
   }
   flushLog() {
     for (const l of this.game.log.slice(this.shown)) {
-      // 结局由 afterOp 统一写一条（带结局文字），这里不再重复
-      if (l.kind === "rule" || l.kind === "event" || l.kind === "error" || l.kind === "dice") this.push("log", l.text, l.kind as any);
+      if (l.kind === "rule" || l.kind === "event" || l.kind === "ending" || l.kind === "error" || l.kind === "dice") this.push("log", l.text, l.kind as any);
     }
     this.shown = this.game.log.length;
   }
@@ -208,10 +207,10 @@ export class PlaySession {
         if (r.text) outs.push([r.target, r.text]);
         for (const [k, v] of Object.entries(r.sections ?? {})) outs.push([String((ep.card.output as any).sections?.[k] ?? ""), v]);
         for (const [to, v] of outs) { const cid = to.startsWith("component:") ? to.slice(10) : ""; if (this.ui.components[cid]?.type === "choice-buttons") this.aiChoices[cid] = parseChoices(v); }
-        if (r.error) this.push("log", `AI: ${r.error}`, "error");
+        if (r.error) this.push("log", `AI：${r.error}`, "error");
       }
     } catch (e: any) {
-      this.push("log", `${t2("AI 请求失败：", "AI request failed: ")}${explainError(e)}`, "error");
+      this.push("log", `AI 请求失败：${explainError(e)}`, "error");
       ids.forEach(fallback);
     }
     for (const f of Object.values(live)) f.streaming = false;
@@ -223,7 +222,7 @@ export class PlaySession {
     if (this.busy || this.game.ending) return;
     this.busy = true; this.render();
     try { const acted = await f(); if (acted !== false) await this.afterOp(true); }
-    catch (e: any) { this.push("log", `${t2("出错了：", "Error: ")}${e?.message ?? e}`, "error"); }
+    catch (e: any) { this.push("log", `出错了：${e?.message ?? e}`, "error"); }
     finally { this.busy = false; this.render(); }
   }
   async afterAction(action: string) {
@@ -244,7 +243,7 @@ export class PlaySession {
       const end = this.story.endings.list.find((e) => e.id === this.game.ending);
       this.sound.effect(this.effectUrl(`ending:${this.game.ending}`) ?? this.effectUrl("game_end"));
       await this.runAi(entriesFor(this.game, "game_end"), "");
-      this.push("log", `${t2("结局：", "Ending: ")}${end?.label ?? this.game.ending}${end?.text ? `\n${end.text}` : ""}`, "ending");
+      this.push("log", `结局：${end?.label ?? this.game.ending}${end?.text ? `\n${end.text}` : ""}`, "ending");
     }
     await this.autosave();
     this.render();
@@ -252,7 +251,7 @@ export class PlaySession {
   doAction(id: string, params: any = {}) {
     return this.op(async () => {
       const r = this.game.doAction(id, params, "player");
-      if (!r.ok) { this.push("log", r.error ?? t2("做不到", "Can't do that"), "reject"); return false; }
+      if (!r.ok) { this.push("log", r.error ?? "做不到", "reject"); return false; }
       await this.afterAction(id);
     });
   }
@@ -261,7 +260,7 @@ export class PlaySession {
     if (!text.trim()) return;
     return this.op(async () => {
       if (c.type === "text-input" && c.writes) { const r = this.game.uiWrite(cid, text); if (!r.ok) this.push("log", r.error!, "reject"); return r.ok; }
-      this.push(c.type === "chat-box" ? `component:${cid}` : "log", text, "player", t2("你", "You"));
+      this.push(c.type === "chat-box" ? `component:${cid}` : "log", text, "player", "你");
       const r = this.game.playerInput(cid, text, { aiAvailable: !!this.llm });
       if (r.kind === "rejected") { this.push(c.type === "chat-box" ? `component:${cid}` : "log", r.text, "reject", c.title); return false; }
       if (r.kind === "action") { await this.afterAction(r.action!); return; }
@@ -277,13 +276,13 @@ export class PlaySession {
   // ---------- 存档 ----------
   snapshot() { this.game.extra.ui_feed = this.feed.slice(-300).map(({ streaming, ...f }) => f); return this.game.save(); }
   async autosave() { try { await bridge.saveWrite(this.storyId, "auto", JSON.stringify(this.snapshot())); } catch { /* 自动存档失败不打断游戏 */ } }
-  async saveTo(slot: string) { await bridge.saveWrite(this.storyId, slot, JSON.stringify(this.snapshot())); toast(t2(`已存到「${slotName(slot)}」`, `Saved to "${slotName(slot)}"`)); }
+  async saveTo(slot: string) { await bridge.saveWrite(this.storyId, slot, JSON.stringify(this.snapshot())); toast(`已存到「${slotName(slot)}」`); }
   async loadFrom(json: string) {
-    let data: any; try { data = JSON.parse(json); } catch { toast(t2("这不是有效的存档文件", "This isn't a valid save file"), "err"); return; }
+    let data: any; try { data = JSON.parse(json); } catch { toast("这不是有效的存档文件", "err"); return; }
     try {
       const r = Game.load(this.raw, data, { lang: this.settings.lang, files: this.files, scripts: this.scripts, storage: storyStorage(this.storyId) });
       this.game = r.game; this.feed = (r.game.extra.ui_feed ?? []) as Feed[]; this.seq = this.feed.length + 1; this.shown = r.game.log.length; this.aiChoices = {};
-      r.warnings.forEach((w) => toast(w, "err")); toast(t2("已读档", "Loaded")); this.render();
+      r.warnings.forEach((w) => toast(w, "err")); toast("已读档"); this.render();
     } catch (e: any) { toast(e.message, "err"); }
   }
   async savesDialog() {
@@ -293,17 +292,17 @@ export class PlaySession {
     const row = (slot: string) => {
       const info = has(slot);
       return h("div", { class: "save-row" },
-        h("b", {}, slotName(slot)), h("span", { class: "muted" }, info?.modified_ms ? new Date(info.modified_ms).toLocaleString(t2("zh-CN", "en-US")) : t2("空", "Empty")),
-        slot !== "auto" ? h("button", { onclick: async () => { await this.saveTo(slot); close(); } }, t2("存到这里", "Save here")) : null,
-        info ? h("button", { onclick: async () => { await this.loadFrom(await bridge.saveRead(this.storyId, slot)); close(); } }, t2("读取", "Load")) : null);
+        h("b", {}, slotName(slot)), h("span", { class: "muted" }, info?.modified_ms ? new Date(info.modified_ms).toLocaleString("zh-CN") : "空"),
+        slot !== "auto" ? h("button", { onclick: async () => { await this.saveTo(slot); close(); } }, "存到这里") : null,
+        info ? h("button", { onclick: async () => { await this.loadFrom(await bridge.saveRead(this.storyId, slot)); close(); } }, "读取") : null);
     };
     const m = h("div", { class: "modal", onclick: (e: Event) => e.target === m && close() },
-      h("div", { class: "card" }, h("h3", {}, t2("存档", "Saves")), ...["auto", "1", "2", "3"].map(row),
+      h("div", { class: "card" }, h("h3", {}, "存档"), ...["auto", "1", "2", "3"].map(row),
         h("div", { class: "row" },
-          h("button", { onclick: async () => { if (await bridge.exportText(`${this.storyId}-${t2("存档", "save")}.json`, JSON.stringify(this.snapshot(), null, 1))) toast(t2("已导出", "Exported")); } }, t2("导出存档文件", "Export save file")),
-          h("button", { onclick: async () => { const t = await bridge.importText(); if (t) { await this.loadFrom(t); close(); } } }, t2("导入存档文件", "Import save file")),
-          h("button", { onclick: close }, t2("关闭", "Close"))),
-        h("p", { class: "muted small" }, t2("存档里不含 API Key。存档带校验码，手动改过的存档会被拒绝读取。", "Saves never contain your API key. They carry a checksum; edited saves are rejected."))));
+          h("button", { onclick: async () => { if (await bridge.exportText(`${this.storyId}-存档.json`, JSON.stringify(this.snapshot(), null, 1))) toast("已导出"); } }, "导出存档文件"),
+          h("button", { onclick: async () => { const t = await bridge.importText(); if (t) { await this.loadFrom(t); close(); } } }, "导入存档文件"),
+          h("button", { onclick: close }, "关闭")),
+        h("p", { class: "muted small" }, "存档里不含 API Key。存档带校验码，手动改过的存档会被拒绝读取。")));
     this.root.append(m);
   }
 
@@ -349,22 +348,22 @@ export class PlaySession {
     const bg = this.background();
     const end = this.game.ending ? this.story.endings.list.find((e) => e.id === this.game.ending) : undefined;
     const bar = h("div", { class: "topbar" },
-      h("button", { onclick: () => this.leave() }, t2("← 故事库", "← Library")),
+      h("button", { onclick: () => this.leave() }, "← 故事库"),
       h("b", { class: "title" }, String(this.story.meta.title)),
-      h("span", { class: "muted" }, t2(`第 ${this.game.turn} 回合`, `Turn ${this.game.turn}`)),
-      this.busy ? h("span", { class: "busy" }, t2("AI 思考中…", "AI thinking…")) : null,
+      h("span", { class: "muted" }, `第 ${this.game.turn} 回合`),
+      this.busy ? h("span", { class: "busy" }, "AI 思考中…") : null,
       this.usageEl(),
       h("span", { class: "spacer" }),
-      h("button", { onclick: () => this.savesDialog() }, t2("存档", "Save")),
-      h("button", { onclick: () => { this.settings.muted = !this.settings.muted; saveSettings(this.settings); this.sound.music.muted = this.settings.muted; this.render(); } }, this.settings.muted ? t2("🔇 已静音", "🔇 Muted") : t2("🔊 声音", "🔊 Sound")),
-      h("button", { onclick: () => this.viewDialog() }, t2("外观", "Appearance")),
-      h("button", { onclick: () => { this.debug = !this.debug; this.render(); } }, this.debug ? t2("关闭调试", "Close debug") : t2("调试", "Debug")));
+      h("button", { onclick: () => this.savesDialog() }, "存档"),
+      h("button", { onclick: () => { this.settings.muted = !this.settings.muted; saveSettings(this.settings); this.sound.music.muted = this.settings.muted; this.render(); } }, this.settings.muted ? "🔇 已静音" : "🔊 声音"),
+      h("button", { onclick: () => this.viewDialog() }, "外观"),
+      h("button", { onclick: () => { this.debug = !this.debug; this.render(); } }, this.debug ? "关闭调试" : "调试"));
     const page = h("div", { class: "stage", style: bg ? { backgroundImage: `url("${bg}")` } : {} },
       this.aiNotice ? h("div", { class: "notice" }, this.aiNotice) : null,
       grid,
       this.rt?.controlsEl() ?? null,
       end ? h("div", { class: `ending ${end.kind ?? ""}` }, h("h2", {}, `🏁 ${end.label}`), end.text ? h("p", {}, end.text) : null,
-        h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, t2("再玩一次", "Play again")), h("button", { onclick: () => this.leave() }, t2("回故事库", "Back to library")))) : null);
+        h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, "再玩一次"), h("button", { onclick: () => this.leave() }, "回故事库"))) : null);
     const modals = [...this.root.querySelectorAll(":scope > .modal")]; // 打开着的对话框不要被每帧刷新冲掉
     if (this.takeover) {
       // 接管：没有顶栏和调试栏，页面整个交给故事；只留出口按钮和暂停菜单（在最上层）
@@ -400,16 +399,16 @@ export class PlaySession {
       const i = h("input", { "data-cid": cid, placeholder: ph, maxlength: c.input?.max_length ?? 500, disabled }) as HTMLInputElement;
       const send = () => { const v = i.value; i.value = ""; this.lastSent.add(cid); this.sendText(cid, v); };
       i.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) send(); };
-      return h("div", { class: "input-row" }, i, h("button", { class: "primary", onclick: send, disabled }, t2("发送", "Send")));
+      return h("div", { class: "input-row" }, i, h("button", { class: "primary", onclick: send, disabled }, "发送"));
     };
-    const feedEl = (f: Feed) => h("div", { class: `feed feed-${f.kind}`, id: `feed-${f.id}` }, f.who && f.kind !== "rule" ? h("b", {}, `${f.who}${t2("：", ": ")}`) : null, f.text);
+    const feedEl = (f: Feed) => h("div", { class: `feed feed-${f.kind}`, id: `feed-${f.id}` }, f.who && f.kind !== "rule" ? h("b", {}, `${f.who}：`) : null, f.text);
     switch (c.type) {
       case "text-log": return box(h("div", { class: "log", "data-scroll": cid }, ...this.feedFor(cid, c).map(feedEl)));
-      case "text-input": return box(inputRow(c.placeholder ?? t2("你要做什么？", "What do you do?")));
+      case "text-input": return box(inputRow(c.placeholder ?? "你要做什么？"));
       case "chat-box": {
         const p = this.assets.url(c.portrait);
         return box(h("div", { class: "chat-head" }, p ? h("img", { src: p, class: "portrait", alt: c.title ?? "" }) : null, h("b", {}, c.title ?? "")),
-          h("div", { class: "log chat", "data-scroll": cid }, ...this.feedFor(cid, c).map(feedEl)), inputRow(t2("说点什么…", "Say something…")));
+          h("div", { class: "log chat", "data-scroll": cid }, ...this.feedFor(cid, c).map(feedEl)), inputRow("说点什么…"));
       }
       case "button": return h("button", { class: "comp comp-button", disabled, onclick: () => this.click(cid) }, c.label ?? cid);
       case "choice-buttons": {
@@ -427,7 +426,7 @@ export class PlaySession {
       case "item-list": {
         const k = Array.isArray(c.bind) ? c.bind[0] : c.bind, v = vis[k];
         const items = Array.isArray(v) ? v.map(String) : v && typeof v === "object" ? Object.entries(v).map(([a, b]) => `${a} × ${b}`) : [];
-        return box(h("div", { class: "comp-label" }, c.label ?? label(k)), items.length ? h("ul", {}, ...items.map((t) => h("li", {}, t))) : h("p", { class: "muted" }, t2("（空）", "(empty)")));
+        return box(h("div", { class: "comp-label" }, c.label ?? label(k)), items.length ? h("ul", {}, ...items.map((t) => h("li", {}, t))) : h("p", { class: "muted" }, "（空）"));
       }
       case "text-block": {
         const k = Array.isArray(c.bind) ? c.bind[0] : c.bind;
@@ -442,7 +441,7 @@ export class PlaySession {
         return box(h("img", { src: u, alt: this.assets.meta(ref)?.alt ?? c.label ?? "", style: { objectFit: c.fit ?? "cover" } }));
       }
       case "dice-log": return box(h("div", { class: "log small", "data-scroll": cid }, ...this.game.log.filter((l) => l.kind === "dice" || l.kind === "random").slice(-20).map((l) => h("div", {}, l.text))));
-      case "canvas": return this.rt ? box(this.rt.canvas(cid, c)) : box(h("p", { class: "muted" }, t2("（画布需要 realtime 循环）", "(Canvas needs a realtime loop)")));
+      case "canvas": return this.rt ? box(this.rt.canvas(cid, c)) : box(h("p", { class: "muted" }, "（画布需要 realtime 循环）"));
       default: return null;
     }
   }
@@ -454,25 +453,25 @@ export class PlaySession {
     const hid = (s.hidden[this.storyId] ??= []), off = (s.disabledEntries[this.storyId] ??= []);
     const tog = (arr: string[], id: string) => { const i = arr.indexOf(id); i >= 0 ? arr.splice(i, 1) : arr.push(id); };
     const m = h("div", { class: "modal", onclick: (e: Event) => e.target === m && close() }, h("div", { class: "card" },
-      h("h3", {}, t2("外观（只影响你自己，不会改变故事规则）", "Appearance (only for you; it never changes the story's rules)")),
-      h("label", {}, t2("主题 ", "Theme "), h("select", { onchange: (e: any) => (s.theme = e.target.value) }, ...[["story", t2("跟随故事", "Story default")], ["light", t2("浅色", "Light")], ["dark", t2("深色", "Dark")], ["sepia", t2("复古纸张", "Sepia")]].map(([v, t]) => h("option", { value: v, selected: s.theme === v }, t)))),
-      h("label", {}, t2("字号 ", "Font size "), h("input", { type: "range", min: 12, max: 24, value: s.fontSize, oninput: (e: any) => (s.fontSize = Number(e.target.value)) })),
-      h("label", {}, t2("音乐音量 ", "Music volume "), h("input", { type: "range", min: 0, max: 1, step: 0.05, value: s.music, oninput: (e: any) => (s.music = Number(e.target.value)) })),
-      h("label", {}, t2("音效音量 ", "Effects volume "), h("input", { type: "range", min: 0, max: 1, step: 0.05, value: s.sfx, oninput: (e: any) => (s.sfx = Number(e.target.value)) })),
-      hidable.length ? h("div", {}, h("p", { class: "muted" }, t2("隐藏组件", "Hide components")), ...hidable.map(([id, c]) => h("label", { class: "check" }, h("input", { type: "checkbox", checked: hid.includes(id), onchange: () => tog(hid, id) }), c.label ?? c.title ?? id))) : null,
-      optional.length ? h("div", {}, h("p", { class: "muted" }, t2("关闭可选的 AI 功能（关闭后显示作者写的替代文字）", "Turn off optional AI features (the author's fallback text is shown instead)")), ...optional.map(([id, e]) => h("label", { class: "check" }, h("input", { type: "checkbox", checked: off.includes(id), onchange: () => tog(off, id) }), e.card.task ?? id))) : null,
-      h("div", { class: "row" }, h("button", { class: "primary", onclick: close }, t2("完成", "Done")))));
+      h("h3", {}, "外观（只影响你自己，不会改变故事规则）"),
+      h("label", {}, "主题 ", h("select", { onchange: (e: any) => (s.theme = e.target.value) }, ...[["story", "跟随故事"], ["light", "浅色"], ["dark", "深色"], ["sepia", "复古纸张"]].map(([v, t]) => h("option", { value: v, selected: s.theme === v }, t)))),
+      h("label", {}, "字号 ", h("input", { type: "range", min: 12, max: 24, value: s.fontSize, oninput: (e: any) => (s.fontSize = Number(e.target.value)) })),
+      h("label", {}, "音乐音量 ", h("input", { type: "range", min: 0, max: 1, step: 0.05, value: s.music, oninput: (e: any) => (s.music = Number(e.target.value)) })),
+      h("label", {}, "音效音量 ", h("input", { type: "range", min: 0, max: 1, step: 0.05, value: s.sfx, oninput: (e: any) => (s.sfx = Number(e.target.value)) })),
+      hidable.length ? h("div", {}, h("p", { class: "muted" }, "隐藏组件"), ...hidable.map(([id, c]) => h("label", { class: "check" }, h("input", { type: "checkbox", checked: hid.includes(id), onchange: () => tog(hid, id) }), c.label ?? c.title ?? id))) : null,
+      optional.length ? h("div", {}, h("p", { class: "muted" }, "关闭可选的 AI 功能（关闭后显示作者写的替代文字）"), ...optional.map(([id, e]) => h("label", { class: "check" }, h("input", { type: "checkbox", checked: off.includes(id), onchange: () => tog(off, id) }), e.card.task ?? id))) : null,
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: close }, "完成"))));
     this.root.append(m);
   }
 
   debugPanel() {
     return h("aside", { class: "debug" },
-      h("h4", {}, t2("调试面板（试玩用）", "Debug panel (playtesting)")),
-      h("p", { class: "small muted" }, t2(`随机种子 ${this.game.seed} · 回合 ${this.game.turn}${this.llm ? ` · 模型 ${this.settings.model}` : " · 未接 AI"}`, `Seed ${this.game.seed} · turn ${this.game.turn}${this.llm ? ` · model ${this.settings.model}` : " · no AI"}`)),
-      h("h5", {}, t2("全部状态（含隐藏）", "All state (incl. hidden)")), h("pre", {}, JSON.stringify(this.game.state, null, 1)),
-      h("h5", {}, t2("最近一次 AI 工具调用", "Last AI tool calls")), h("pre", {}, this.lastTools.length ? this.lastTools.map((t) => `${t.tool}(${JSON.stringify(t.args)}) → ${t.result.ok ? t2("成功", "ok") : t.result.error}`).join("\n") : t2("（无）", "(none)")),
-      h("h5", {}, t2(`越权记录（${this.game.violations.length}）`, `Violations (${this.game.violations.length})`)), h("pre", {}, this.game.violations.slice(-10).map((v) => t2(`第${v.turn}回合 ${v.entry}/${v.tool}：${v.reason}`, `Turn ${v.turn} ${v.entry}/${v.tool}: ${v.reason}`)).join("\n") || t2("（无）", "(none)")),
-      h("h5", {}, t2("规则日志", "Rule log")), h("pre", {}, this.game.log.slice(-15).map((l) => `[${l.turn}] ${l.kind}: ${l.text}`).join("\n")));
+      h("h4", {}, "调试面板（试玩用）"),
+      h("p", { class: "small muted" }, `随机种子 ${this.game.seed} · 回合 ${this.game.turn}${this.llm ? ` · 模型 ${this.settings.model}` : " · 未接 AI"}`),
+      h("h5", {}, "全部状态（含隐藏）"), h("pre", {}, JSON.stringify(this.game.state, null, 1)),
+      h("h5", {}, "最近一次 AI 工具调用"), h("pre", {}, this.lastTools.length ? this.lastTools.map((t) => `${t.tool}(${JSON.stringify(t.args)}) → ${t.result.ok ? "成功" : t.result.error}`).join("\n") : "（无）"),
+      h("h5", {}, `越权记录（${this.game.violations.length}）`), h("pre", {}, this.game.violations.slice(-10).map((v) => `第${v.turn}回合 ${v.entry}/${v.tool}：${v.reason}`).join("\n") || "（无）"),
+      h("h5", {}, "规则日志"), h("pre", {}, this.game.log.slice(-15).map((l) => `[${l.turn}] ${l.kind}: ${l.text}`).join("\n")));
   }
 }
-const slotName = (s: string) => (s === "auto" ? t2("自动存档", "Autosave") : t2(`存档 ${s}`, `Slot ${s}`));
+const slotName = (s: string) => (s === "auto" ? "自动存档" : `存档 ${s}`);
