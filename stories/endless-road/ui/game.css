@@ -113,6 +113,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .slot2:hover .tip { display: flex; flex-direction: column; gap: 2px; }
 .tip small { color: #c5b392; } .tip .cur, .toast .cur { color: #ff9a7a; } .tip i { color: #b8a888; }
 .toast { position: absolute; left: 50%; top: 24%; transform: translateX(-50%); width: min(420px, 88vw); text-align: center; z-index: 7; animation: rise .35s ease-out; pointer-events: none; }
+.toast .eff, .tip span, .slot small, .opt .tags .tag { white-space: pre-line; }
+.card .abil { margin: 4px 0 2px; font-size: 12.5px; color: #5a2a5a; line-height: 1.45; }
+.banner .omen { margin-top: 3px; font-size: 13px; color: #ffc8a0; max-width: min(620px, 46vw); } .banner .omen b { color: #ff9a6a; }
 .toast small { color: #e8d6b0; letter-spacing: 1px; } .toast h3 { margin: 4px 0; font-size: 26px; color: #fff1c8; } .toast .eff { color: #b8f0a0; font-weight: 700; } .toast p { margin: 6px 0 0; font-style: italic; color: #e2d2b0; }
 
 /* 底部中间：行动按钮 */

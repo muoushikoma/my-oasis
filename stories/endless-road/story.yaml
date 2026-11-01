@@ -8,8 +8,8 @@ meta:
     en: An endless road where AI invents every monster, trap and wonder (AI required). Light D&D rules — manage supplies, upgrade gear, see how far you get.
   languages: [zh, en]
   ai_role:
-    zh: AI 是这个世界的造物者：每局发明新的道具、怪物和招式、旅途感悟，写下每个事件、结果旁白和一条旅途主线；规则按效果语法执行并计算数值。
-    en: The AI invents new items, monsters, signature moves and insights each run, and writes every event and the story thread; rules enforce the numbers.
+    zh: AI 是这个世界的造物者：用机制语言设计新道具、怪物招式、地区异象和旅途感悟，并写下每个事件与旅途主线；规则执行机制，只负责配平强度。
+    en: The AI designs new item mechanics, monster moves, regional omens and insights, and writes every event and the thread; rules run them and balance power.
   est_tokens_per_min: 7000
   platforms: [desktop, mobile]
   description:
@@ -23,7 +23,7 @@ meta:
       - 管好口粮、药水和金币；收集铁料和魔晶，在行商那里强化武器、护甲、背包和营具。
       - 最多带 3 件遗物；接下委托，几里后回来领取丰厚报酬。
 
-      AI 是这个世界的造物者：每一局它都会发明新的道具（会真的生效，带诅咒的更强）、这片地区特有的怪物和它们的招牌招式、升级时的“旅途感悟”，还有行商的独特货品。见过的造物会记进跨局的图鉴。
+      AI 是这个世界的造物者：每一局它都会像游戏设计师一样设计新东西——带条件、连锁、代价和成长的道具，有专属招式和被动的怪物，改变一片土地规则的地区异象，以及升级时的“旅途感悟”。规则读懂这些机制并执行，只负责把总强度配平。见过的造物会记进跨局的图鉴。
 
       每张事件卡都由 AI 写成，平均每走一里调用一次，另外每几里发明一批新东西。
     en: |
@@ -36,7 +36,7 @@ meta:
       - Manage rations, potions and gold; gather iron and essence to upgrade weapon, armor, pack and camp kit at peddlers.
       - Carry up to 3 relics; accept errands and come back a few miles later for big rewards.
 
-      The AI is this world's maker: every run it invents new items (that really work — cursed ones are stronger), regional monsters with signature moves, level-up insights and unique peddler wares. Everything you meet goes into a codex that lasts across runs.
+      The AI is this world's maker: every run it designs new things like a game designer — items with conditions, chains, costs and growth; monsters with their own moves and passives; omens that rewrite a region's rules; and level-up insights. The rules run these mechanics and only balance their overall power. Everything you meet goes into a codex that lasts across runs.
 
       The AI writes every event card — about one call per mile walked — plus a batch of new inventions every few miles.
   rating: all-ages
@@ -153,6 +153,10 @@ state:
   codex_n:   { type: number, init: 0, integer: true, visible: player, desc: 图鉴里一共记录了多少 AI 造物（跨局） }
   toast:     { type: json, init: {}, visible: player, desc: 获得新道具时的提示 }
   riposte:   { type: number, init: 0, integer: true, visible: none }
+  buff:      { type: json, init: {}, visible: player, desc: 本场战斗里的临时加成 }
+  defer:     { type: json, init: [], visible: none }
+  omen:      { type: json, init: {}, visible: ai, desc: 当前地区的异象（AI 写的这片土地的法则） }
+  omen_ui:   { type: json, init: {}, visible: player, desc: 地区异象的显示内容 }
   # 世界
   biome:
     type: enum
@@ -455,78 +459,54 @@ ai:
       kind: generate
       trigger: script
       prompt: |
-        你是这个世界的造物者。请为这次冒险发明新的东西，让每一局都和别的局不一样。规则会执行你选的效果，并按稀有度算出数值，所以只挑效果、不写数字。
-        当前：第 {{event.mile}} 里，{{event.biome}}，走在{{event.path}}上。冒险者：{{event.hero}}，{{event.level}} 级，处境：{{event.need}}。
+        你是这个世界的造物者。为这次冒险设计全新的道具、能力、怪物和地区法则——不是从清单里挑，而是像游戏设计师一样设计机制。
+        规则会读懂你写的机制并执行；具体数值由规则按“这个设计有多强”自动配平：条件越苛刻、触发越少、代价越重，效果就越猛。所以大胆设计，不用担心数字。
+        当前：第 {{event.mile}} 里，{{event.biome}}（下一片地区：{{event.next_biome}}），走在{{event.path}}上。
+        冒险者：{{event.hero}}，{{event.level}} 级，技能 {{event.skills}}，处境：{{event.need}}，带着：{{event.inv}}。
         旅途主线：{{event.thread}}
-        本局已经发明过：{{event.made}}（不要重复）。以前的冒险里出现过：{{event.codex}}（也尽量别重复）。
+        本局已经设计过：{{event.made}}（不要重复）。以前的冒险里出现过：{{event.codex}}（尽量别重复）。
 
-        请发明：
-        1) 三件道具 i1_ / i2_ / i3_：
-           - name：有个性的名字（不超过 8 个字），desc：一句来历或用法的描写（不超过 30 字，不写数值）。名字和描写要和效果对得上。
-           - kind：trinket 随身饰品（一直生效） / consumable 消耗品（用一次或几次）。三件里至少一件 consumable。
-           - trig（trinket 用）：passive 常驻 / battle_start 战斗开始时 / on_hit 命中时 / on_hurt 受伤时 / on_kill 击败敌人时 / on_mile 每走一里 / on_camp 扎营时。
-           - eff：heal 回血 / block 格挡 / damage 伤害敌人 / poison 毒敌人 / stun 眩晕敌人 / resource 职业资源 / gold 金币 / ration 口粮 / ac 护甲 / luck d20 加成 / maxhp 最大生命 / fatigue 减疲劳 / xp 经验。
-             合理搭配：ac、luck、maxhp 只能 passive；gold、ration、xp 适合 on_kill、on_mile；poison、stun、damage 适合 battle_start、on_hit。
-           - curse（只 trinket，可选）：none / frail 虚弱 / clumsy 笨拙 / weary 沉重 / hungry 饥饿。带诅咒的道具会更强——适合“被诅咒的宝物”。
-           道具要贴合当前地区、主线和冒险者的处境（比如缺口粮就发明和食物有关的东西）。
-        2) 一条旅途感悟 p_：冒险者从这段旅程里领悟到的能力，name（不超过 8 个字）、desc（一句话，呼应主线或之前的经历）、trig、eff（规则同上）。
-        3) 两种这片地区特有的新怪物 f1_ / f2_：
-           - name（不超过 8 个字）、desc（一句外貌描写）、sprite 外形（wolf 野兽 / spider 虫 / bandit 人形 / skeleton 亡灵 / troll 大块头 / drake 飞龙 / ooze 软泥 / wisp 元素幽魂）、tint 染色、trait 特性。
-           - move：招牌招式的名字（不超过 6 个字），kind：breath 必中猛击 / drain 吸血 / venom 剧毒 / hex 诅咒 / rob 抢钱 / frenzy 三连击 / harden 硬化回血 / roar 怒吼增伤。
-           - line：开打时的台词或动静；end：被打败时的描写。
+        ## 机制语言
+        一条规则 = {"when": 时机, "if": 条件（可选）, "every": N（可选，每第 N 次才触发）, "chance": 百分比（可选）, "do": [效果, ...]}
+        效果 = {"act": 效果名, "n": 1~5（相对强弱，同一条规则里多个效果之间的比重）}
+        - 时机 when：passive 常驻 / battle_start 战斗开始 / turn_start 每回合开始 / on_attack 每次出手 / on_hit 命中 / on_crit 暴击 / on_miss 落空 / on_hurt 受伤 / on_block 完全挡住攻击 / low_hp 每场第一次跌破 30% 生命 / on_kill 击败敌人 / on_skill 使用技能 / on_potion 喝药水 / on_mile 每走一里 / on_camp 扎营 / on_level 升级 / use 消耗品被使用
+        - 条件 if：{"k": "hp_below", "v": 50} / hp_above / foe_trait（v 填 armored swift venomous brute regenerating arcane undead thief）/ foe_boss / biome（v 填 plains forest hills swamp mountains ashlands）/ night / no_rations / gold_above / fatigue_above / first_turn / foe_charging 敌人蓄力时 / has_block / foe_poisoned
+        - 效果 act：heal 回血 / block 格挡 / damage 伤害敌人 / damage_pct 按敌人最大生命比例伤害 / poison 毒敌人 / stun 眩晕敌人 / weaken 本场削弱敌人伤害 / expose 本场降低敌人护甲 / resource 职业资源 / gold / ration 口粮 / potion 药水 / xp / fatigue 减疲劳 / cleanse 解毒解咒 / bless 祝福 / luck_fight 本场 d20 加成 / ac_fight 本场护甲 / extra_attack 立刻再攻击一次 / double_next 下一击翻倍 / reflect 反弹下一次伤害
+          常驻效果（只能 passive）：ac / luck / maxhp / res_max
+          代价（只放在 flaws 里）：self_hurt 自伤 / lose_gold / hunger 多吃口粮 / tire 加疲劳 / foe_heal 敌人回血 / curse_self 诅咒自己 / frail 最大生命降低（passive）
+        - 成长 grow（可选）：{"on": 时机, "need": 3~15, "name": "觉醒后的名字", "desc": "觉醒后的描写"}——达到次数后觉醒，变得更强。
+
+        ## 要设计的东西（只输出一个 JSON 对象，不要别的文字）
+        {
+          "items": [三件道具，每件 {"name": 不超过 8 个字, "desc": 一句来历或用法（不写数字）, "kind": "trinket" 随身饰品 或 "consumable" 消耗品, "rules": [1~3 条规则], "flaws": [0~2 条代价规则], "grow": 可选}],
+          "insight": {一条旅途感悟：冒险者从这段经历里领悟的能力，"name", "desc"（呼应主线或之前的经历）, "rules": [1~2 条规则]},
+          "foes": [两种这片地区特有的新怪物，每种 {"name", "desc": 一句外貌, "sprite": wolf/spider/bandit/skeleton/troll/drake/ooze/wisp 选最像的外形, "tint": none/red/green/blue/gold/shadow/pale/purple, "trait": 特性（同上，或 none）,
+             "moves": [1~2 个招式 {"name": 不超过 6 个字, "hits": 1~3 段, "windup": 是否要先蓄力一回合（会被预告，更痛）, "unblockable": 是否无视格挡, "then": [0~2 个附带效果]}],
+             "passive": 可选 {"when": battle_start/turn_end/on_hurt 被击中时/low_hp 生命低于 40% 时, "do": [1~2 个效果]},
+             "line": 开打时的台词或动静, "end": 被打败时的描写}],
+          "omen": {下一片地区（{{event.next_biome}}）的异象——这片土地的特殊法则，"name", "desc": 一句描写, "rules": [0~2 条对冒险者生效的规则], "flaws": [0~1 条代价], "foes": {"dmg": -2~3 敌人伤害变化, "hp": -30~60 敌人生命百分比变化}}
+        }
+        怪物的效果 act：poison / curse / weaken 削弱你的伤害 / expose 降低你的护甲 / steal 偷金币 / drain 吸血 / burn_rations 烧口粮 / tire 加疲劳 / drain_res 吸走职业资源 / heal_self / block_self / enrage 增伤 / harden 加护甲 / regen 持续再生；n 取 1~4。
+
+        ## 设计要点
+        - 机制要有想法、有取舍、彼此能配合：比如“每第 3 次命中时引爆毒素”“生命低于一半时每次出手都吸血”“击败亡灵 5 次后觉醒”“喝药水时反而充能”。
+        - 名字、描写和机制要对得上；贴合地区、主线和冒险者的职业与技能，照顾他缺什么。
+        - 三件道具里至少一件 consumable；至少一件带 flaws 或 grow。
+        - 怪物的招式要有个性，并能被玩家读招应对（蓄力的大招、无视格挡的偷袭、越打越硬……）。
       card:
-        task: 为这次冒险发明新的道具、感悟和怪物（用规则给定的效果语法组合）。
+        task: 像游戏设计师一样，用机制语言为这次冒险设计新的道具、感悟、怪物和地区异象。
         authority: 0
+        must:
+          - 这次要输出的“文字”就是提示里描述的那一个 JSON 对象：从 { 开始到 } 结束，不要代码块，不要 JSON 以外的任何文字
         output:
-          format: json
+          format: text
           to: none
-          max_chars: 3000
-          schema:
-            i1_name: string
-            i1_desc: string
-            i1_kind: "enum:[trinket,consumable]"
-            i1_trig: "enum:[battle_start,passive,on_hit,on_hurt,on_kill,on_mile,on_camp]"
-            i1_eff: "enum:[heal,block,damage,poison,stun,resource,gold,ration,ac,luck,maxhp,fatigue,xp]"
-            i1_curse: "enum:[none,frail,clumsy,weary,hungry]"
-            i2_name: string
-            i2_desc: string
-            i2_kind: "enum:[trinket,consumable]"
-            i2_trig: "enum:[battle_start,passive,on_hit,on_hurt,on_kill,on_mile,on_camp]"
-            i2_eff: "enum:[heal,block,damage,poison,stun,resource,gold,ration,ac,luck,maxhp,fatigue,xp]"
-            i2_curse: "enum:[none,frail,clumsy,weary,hungry]"
-            i3_name: string
-            i3_desc: string
-            i3_kind: "enum:[consumable,trinket]"
-            i3_trig: "enum:[battle_start,passive,on_hit,on_hurt,on_kill,on_mile,on_camp]"
-            i3_eff: "enum:[heal,block,damage,poison,stun,resource,gold,ration,ac,luck,maxhp,fatigue,xp]"
-            i3_curse: "enum:[none,frail,clumsy,weary,hungry]"
-            p_name: string
-            p_desc: string
-            p_trig: "enum:[battle_start,passive,on_hit,on_hurt,on_kill,on_mile,on_camp]"
-            p_eff: "enum:[heal,block,damage,poison,stun,resource,gold,ration,ac,luck,maxhp,fatigue,xp]"
-            f1_name: string
-            f1_desc: string
-            f1_sprite: "enum:[bandit,wolf,spider,skeleton,troll,drake,ooze,wisp]"
-            f1_tint: "enum:[none,red,green,blue,gold,shadow,pale,purple]"
-            f1_trait: "enum:[none,armored,swift,venomous,brute,regenerating,arcane,undead,thief]"
-            f1_move: string
-            f1_kind: "enum:[breath,drain,venom,hex,rob,frenzy,harden,roar]"
-            f1_line: string
-            f1_end: string
-            f2_name: string
-            f2_desc: string
-            f2_sprite: "enum:[wolf,bandit,spider,skeleton,troll,drake,ooze,wisp]"
-            f2_tint: "enum:[none,red,green,blue,gold,shadow,pale,purple]"
-            f2_trait: "enum:[none,armored,swift,venomous,brute,regenerating,arcane,undead,thief]"
-            f2_move: string
-            f2_kind: "enum:[breath,drain,venom,hex,rob,frenzy,harden,roar]"
-            f2_line: string
-            f2_end: string
+          max_chars: 6000
       context:
-        state: [distance, hero_class, level, hp, max_hp, rations, gold, items, relics, thread, biome]
-        history_turns: 2
+        state: [distance, hero_class, level, hp, max_hp, rations, gold, relics, thread, biome]
+        history_turns: 1
         setting: false
-      temperature: 1.1
+      temperature: 1.0
     epitaph:
       kind: generate
       trigger: game_end

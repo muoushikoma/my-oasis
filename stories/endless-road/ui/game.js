@@ -200,6 +200,7 @@ function banner(s) {
   return h("div", { class: "banner" },
     h("div", { class: "region serif out" }, T(...(BIOME[s.biome] || BIOME.plains))),
     h("div", { class: "mile out" }, icon("flag"), T(`第 ${s.distance || 0} 里`, `Mile ${s.distance || 0}`), h("span", { class: "path " + (s.path || "road") }, { road: T("大路", "Highway"), wilds: T("荒野", "Wilds"), shortcut: T("捷径", "Shortcut") }[s.path || "road"]), s.phase === "none" ? h("span", { class: "ready" + (s.next_ready ? "" : " wait") }, s.next_ready ? T("· 前方已备好", "· ready") : T("· AI 准备中…", "· AI preparing…")) : null),
+    s.omen_ui && s.omen_ui.name ? h("div", { class: "omen out", title: `${s.omen_ui.desc}\n${s.omen_ui.text}` }, h("b", {}, `✦ ${s.omen_ui.name}`), " ", h("span", {}, (s.omen_ui.text || "").split("\n")[0])) : null,
     s.thread ? h("div", { class: "thread out", title: T("旅途主线：AI 一路写下、一路推进的故事线", "The journey's thread: a storyline the AI keeps weaving as you go") }, h("b", {}, "✦ "), s.thread) : null);
 }
 const tags = (list) => h("div", { class: "tags" }, (list || []).map((t) => h("span", { class: `tag ${t.k}` }, t.t)));
@@ -209,9 +210,10 @@ function card(s) {
     return h("div", { class: "paper card battle", key: "battle" }, h("span", { class: "kind" }, icon(f.boss ? "skull" : "sword"), f.boss ? T("守关者", "Warden") : T("战斗", "Battle")),
       h("h2", { class: "serif" }, f.name, f.trait ? h("span", { class: "trait", title: f.trait_desc }, f.trait) : null),
       f.trait_desc ? h("div", { class: "tdesc" }, f.trait_desc) : null,
+      f.abil && f.abil.length ? h("div", { class: "abil" }, f.abil.map((a) => h("div", {}, a))) : null,
       h("div", { class: "bar hp foehp" }, h("i", { style: { width: `calc(${pct}% - 4px)` } }), h("b", { class: "out" }, `${f.hp} / ${f.max}`)),
       h("div", { class: "foemeta" }, h("span", {}, icon("shield"), `AC ${f.ac}`), f.block ? h("span", { class: "chip2 def" }, T(`格挡 ${f.block}`, `Block ${f.block}`)) : null,
-        f.poison ? h("span", { class: "chip2 poi" }, T(`中毒 ${f.poison}`, `Poison ${f.poison}`)) : null, f.stun ? h("span", { class: "chip2 stun" }, T("眩晕", "Stunned")) : null),
+        f.poison ? h("span", { class: "chip2 poi" }, T(`中毒 ${f.poison}`, `Poison ${f.poison}`)) : null, f.stun ? h("span", { class: "chip2 stun" }, T("眩晕", "Stunned")) : null, f.weak ? h("span", { class: "chip2 def" }, T(`被削弱 -${f.weak}`, `Weakened -${f.weak}`)) : null),
       h("div", { class: `intent ${it.k || "atk"}` }, h("small", {}, T("它的下一步", "Its next move")), h("div", {}, icon(it.icon || "sword", true), h("b", {}, it.text || ""))),
       h("div", { class: "mine" }, B.block ? h("span", { class: "chip2 def" }, icon("shield"), T(`你的格挡 ${B.block}`, `Your block ${B.block}`)) : null, B.evade ? h("span", { class: "chip2 def" }, icon("boot"), T("准备闪避", "Evading")) : null),
       h("div", { class: "hint" }, T("根据它的下一步决定：趁它防御时蓄资源，它蓄力时防御或打断。", "Read its next move: build resources while it guards, block or interrupt when it charges.")));
@@ -318,9 +320,9 @@ let lastCardKey = "", toastSeen = null, toastUntil = 0;
 function toastEl(s) {
   const t = s.toast || {}; if (!t.n) return null;
   if (toastSeen === null) { toastSeen = t.n; return null; }   // 读档时不弹旧提示
-  if (t.n !== toastSeen) { toastSeen = t.n; toastUntil = Date.now() + 4200; setTimeout(render, 4300); }
+  if (t.n !== toastSeen) { toastSeen = t.n; toastUntil = Date.now() + 5200; setTimeout(render, 5300); }
   if (Date.now() > toastUntil) return null;
-  return h("div", { class: "toast wood", style: { borderColor: RK[t.rk] } }, h("small", {}, T("✦ AI 发明的新道具", "✦ A new item, invented by the AI"), " · ", h("b", { style: { color: RK[t.rk] } }, t.rarity)),
+  return h("div", { class: "toast wood", style: { borderColor: RK[t.rk] } }, h("small", {}, t.head || T("✦ AI 发明的新道具", "✦ A new item, invented by the AI"), " · ", h("b", { style: { color: RK[t.rk] } }, t.rarity)),
     h("h3", { class: "serif" }, t.title), h("div", { class: "eff" }, t.eff), t.curse ? h("div", { class: "cur" }, t.curse) : null, t.desc ? h("p", {}, t.desc) : null);
 }
 function render() {
