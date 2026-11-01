@@ -124,6 +124,8 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .play.takeover .region { gap: 0; }
 .play.takeover .comp-canvas { flex: 1; min-height: 0; display: flex; }
 .rt-canvas.rt-fill { width: 100%; height: 100%; display: block; flex: 1; min-height: 0; touch-action: none; }
+.rt-canvas.rt-fill { max-width: none; border-radius: 0; }
+.play.takeover .comp-canvas { padding: 0; background: none; border-radius: 0; box-shadow: none; backdrop-filter: none; }
 .comp-canvas:has(.rt-fill) { flex: 1; min-height: 0; display: flex; }
 .takeover-exit { position: fixed; top: calc(6px + env(safe-area-inset-top)); right: calc(6px + env(safe-area-inset-right)); z-index: 2147483000;
   width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid #fff4; background: #0007; color: #fff; font-size: 18px; line-height: 1;
