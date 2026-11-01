@@ -3,10 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json && tsc -p apps/desktop/tsconfig.json",
-    "oasis": "tsx packages/cli/src/index.ts"
+    "oasis": "tsx packages/cli/src/index.ts",
+    "bench": "tsx tools/bench/sandbox-bench.ts"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

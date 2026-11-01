@@ -1,0 +1,29 @@
+import { describe, it, expect, beforeAll } from "vitest";
+import { createQuickJsRunner, ScriptError, type ScriptRunner } from "../src/index.js";
+
+let r: ScriptRunner;
+beforeAll(async () => { r = await createQuickJsRunner({ timeScale: 1000 }); });
+const host = (calls: string[] = []) => ({ call: (m: string, a: any[]) => { calls.push(m); return m === "params" ? { p: 1 } : null; } });
+const lim = { time_ms: 50, memory_mb: 16 };
+
+describe("常驻沙箱：性能优化后隔离保证不变", () => {
+  it("脚本变量、隐式全局变量不跨调用保留", () => {
+    const src = `let n = 0; function f(api){ n++; leaked = (typeof leaked === "number" ? leaked : 0) + 1; return [n, leaked]; }`;
+    expect(r.run("a.js", src, "f", host(), lim)).toEqual([1, 1]);
+    expect(r.run("a.js", src, "f", host(), lim)).toEqual([1, 1]);
+  });
+  it("api 被冻结，改不了；params 每次调用重新读取", () => {
+    const src = `function f(api){ api.state = null; api.extra = 1; return [typeof api.state.get, api.extra === undefined, api.params.p]; }`;
+    expect(r.run("b.js", src, "f", host(), lim)).toEqual(["function", true, 1]);
+  });
+  it("超时后沙箱重建，下一次调用正常", async () => {
+    const strict = await createQuickJsRunner({ coldRuns: 0 });
+    const src = `function loop(){ while(true){} } function ok(){ return 7 }`;
+    expect(() => strict.run("c.js", src, "loop", host(), { time_ms: 20, memory_mb: 16 })).toThrow(ScriptError);
+    expect(strict.run("c.js", src, "ok", host(), lim)).toBe(7);
+  });
+  it("脚本内容变了会重新编译", () => {
+    expect(r.run("d.js", `function f(){ return 1 }`, "f", host(), lim)).toBe(1);
+    expect(r.run("d.js", `function f(){ return 2 }`, "f", host(), lim)).toBe(2);
+  });
+});
