@@ -3,7 +3,9 @@ import { parseDocument, LineCounter, isMap, isSeq, isPair, isScalar, type Docume
 import storyValidate from "./story.validate.generated.js";
 import { strFromU8 } from "fflate";
 import { parseExpr, collectRefs, ExprError, BUILTIN_FUNCS, RANDOM_FUNCS, DICE_FUNCS } from "./expr.js";
-import { ALLOWED_EXT, IMAGE_EXT, AUDIO_EXT, FONT_EXT, VIDEO_EXT, LIMITS, type StoryFiles } from "./files.js";
+import { ALLOWED_EXT, IMAGE_EXT, AUDIO_EXT, FONT_EXT, VIDEO_EXT, SHADER_EXT, MAP_EXT, LIMITS, textFile, type StoryFiles } from "./files.js";
+import { buildShader } from "./shader.js";
+import { parseTiled } from "./tiled.js";
 import { DEFAULT_MAX_AUTHORITY, KNOWN_TEMPLATES, regionsOf, type Story, type Step, type StateDef } from "./types.js";
 
 export type Level = "error" | "warning" | "info";
@@ -253,6 +255,20 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     if (a.type === "audio" && !AUDIO_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为音频，但「${a.path}」不是 OGG/MP3/M4A/WAV/FLAC/OPUS。`, undefined, "§13.5", "path");
     if (a.type === "font" && !FONT_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为字体，但「${a.path}」不是 WOFF2/WOFF/TTF/OTF。`, undefined, "§13.5", "path");
     if (a.type === "video" && !VIDEO_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为视频，但「${a.path}」不是 WebM/MP4。`, undefined, "§13.5", "path");
+    if (a.type === "shader") {
+      if (!SHADER_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为着色器，但「${a.path}」不是 .frag/.glsl。`, undefined, "§10.11", "path");
+      else { const r = buildShader(textFile(files, a.path) ?? "", a.uniforms ?? {}); for (const e of r.errors) report("error", "shader_check", p, `着色器「${id}」：${e}`, "只写 vec4 effect(vec4 color, vec2 uv) 函数，uniform 在素材的 uniforms 里声明。", "§10.11", "path"); }
+    }
+    if (a.type === "map") {
+      if (!MAP_EXT.includes(ext) && ext !== ".json") report("error", "asset_format", p, `素材「${id}」标为 Tiled 地图，但「${a.path}」不是 .tmj。`, undefined, "§10.14", "path");
+      else {
+        const byPath = new Map<string, string>(); for (const [k, v] of Object.entries<any>(assets)) if (typeof v?.path === "string") byPath.set(v.path, k);
+        try {
+          const m = parseTiled(JSON.parse(textFile(files, a.path) ?? ""), a.path, (q) => byPath.get(q), (q) => textFile(files, q));
+          for (const L of m.layers) for (const t of L.tilemaps) if (!t.tileset) report("error", "map_tileset", p, `地图「${id}」的图层「${L.name}」用到的图块集图片没有登记成 image 素材。`, "把图块集图片放进故事包，并在 assets 里登记（路径要和 .tmj 里写的一致）。", "§10.14", "path");
+        } catch (e: any) { report("error", "map_parse", p, `地图「${id}」读不了：${e.message}`, undefined, "§10.14", "path"); }
+      }
+    }
     if ((a.use === "music" || a.use === "sfx") && a.type !== "audio") report("error", "asset_use", p, `素材「${id}」用途是 ${a.use}，类型应为 audio。`, undefined, "§13.5", "use");
     if (["background", "portrait", "illustration", "icon"].includes(a.use) && a.type !== "image") report("error", "asset_use", p, `素材「${id}」用途是 ${a.use}，类型应为 image。`, undefined, "§13.5", "use");
   }
@@ -726,11 +742,31 @@ function realtimeChecks(s: Story, files: StoryFiles, report: Report) {
     if (c?.type !== "canvas") continue;
     const p = ["ui", "components", id];
     need04(p, "画布组件 canvas ");
-    if (!c.render) report("error", "canvas_no_render", p, `画布「${id}」没有 render 函数，不知道画什么。`, "写 render: scripts/game.js#draw。", "§14");
+    if (c.scenes && !(s as any).scenes) report("error", "canvas_no_scenes", p, `画布「${id}」写了 scenes: true，但故事没有声明 scenes。`, undefined, "§10.16");
+    if (!c.render && !c.scenes) report("error", "canvas_no_render", p, `画布「${id}」没有 render 函数，不知道画什么。`, "写 render: scripts/game.js#draw。", "§14");
     ref(p, "render", c.render);
     if (c.size === "fill" && (c.width || c.height)) report("warning", "canvas_fill_size", p, `画布「${id}」是 size: fill，写的 width/height 不会生效。`, "铺满时用 render 里的 api.params.width / height。", "§10.8");
     if (c.hidpi && c.size !== "fill") report("warning", "canvas_hidpi", p, `画布「${id}」的 hidpi 只在 size: fill 时生效。`, undefined, "§10.8");
   }
+  // 场景
+  const scenes = obj((s as any).scenes);
+  if ((s as any).scenes) {
+    need04(["scenes"], "场景 scenes ");
+    if (!s.realtime) report("error", "scenes_realtime", ["scenes"], "场景需要实时循环。", "加上 realtime: { tick_hz: 30 }。", "§10.16");
+    if (!Object.values<any>(comps).some((c) => c?.type === "canvas" && c.scenes)) report("warning", "scenes_no_canvas", ["scenes"], "声明了场景，但没有画布显示它们。", "在 ui.components 里加一个 type: canvas、scenes: true 的画布。", "§10.16");
+    for (const [id, sc] of Object.entries<any>(scenes)) for (const k of ["render", "on_enter", "on_exit", "on_tick", "on_resize"]) ref(["scenes", id], k, sc?.[k]);
+    const st = (s.realtime as any)?.start_scene; if (st && !(st in scenes)) report("error", "unknown_scene", ["realtime"], `start_scene「${st}」不在 scenes 里。`, undefined, "§10.16", "start_scene");
+    const sd: any = (s.state as any)?.scene; if (sd && sd.type !== "string" && sd.type !== "enum") report("error", "scene_state_type", ["state", "scene"], "和 scenes 一起用时，state.scene 要是 string 或 enum。", undefined, "§10.16");
+  } else if ((s.realtime as any)?.start_scene) report("warning", "start_scene_unused", ["realtime"], "写了 start_scene 但没有 scenes。", undefined, "§10.16", "start_scene");
+  // 触摸按键
+  const touch: any[] = Array.isArray((s.input as any)?.touch) ? (s.input as any).touch : [];
+  const tids = new Set<string>(); const assetsAll = obj((s as any).assets);
+  touch.forEach((t, i) => {
+    const p = ["input", "touch", i];
+    if (tids.has(t?.id)) report("error", "touch_dup", p, `触摸按键 id「${t.id}」重复了。`, undefined, "§10.17"); tids.add(t?.id);
+    for (const k of ["image", "image_pressed"]) if (t?.[k] && assetsAll[t[k]]?.type !== "image") report("error", "unknown_asset", p, `触摸按键「${t.id}」的 ${k}「${t[k]}」不是已登记的图片素材。`, undefined, "§10.17", k);
+    if (t?.anchor === "top_right" || (t?.anchor === "top" && typeof t?.x === "number" && t.x > 0)) report("warning", "touch_corner", p, `触摸按键「${t.id}」放在右上角附近：那里是客户端的“⋯”暂停按钮，按键会被它盖住。`, "换个位置（客户端出口永远在最上层）。", "§10.17");
+  });
   for (const [id, e] of Object.entries<any>(entries)) if (e?.trigger === "script") need04(["ai", "entry_points", id], "由脚本调用的 AI 接入点（trigger: script）");
   for (const [id, d] of Object.entries<any>(obj(s.state))) if (d?.type === "json") need04(["state", id], "json 类型的状态");
 }

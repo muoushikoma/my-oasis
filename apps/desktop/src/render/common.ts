@@ -95,7 +95,16 @@ export class ParticleField {
 }
 export const lerpColor = (a: RGBA, b: RGBA, t: number): RGBA => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t];
 
+/** 渲染器从客户端拿的资源：视频、Tiled 地图、后期着色器；warn 把问题记进故事日志（作者调试用） */
+export interface RendererResources {
+  video?(id: string, o: any): HTMLVideoElement | undefined;
+  tiled?(id: string): any;
+  shader?(id: string): { fragment: string; uniforms: Record<string, string> } | undefined;
+  warn?(msg: string): void;
+}
 export interface Renderer {
+  /** 设置资源（视频、地图、着色器） */
+  res: RendererResources;
   readonly kind: "webgl" | "canvas2d";
   /** 画一帧：cmds 是 render 函数最近一次给出的指令；timeMs 是显示时钟（驱动精灵动画） */
   draw(cmds: any[], timeMs: number, dtMs: number): { drawn: number };

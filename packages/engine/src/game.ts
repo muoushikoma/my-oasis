@@ -1,6 +1,8 @@
-import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit, localizeStory, type Lang } from "@my-oasis/schema";
+import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit, localizeStory, type Lang, parseTiled, type TiledMap } from "@my-oasis/schema";
 import { Rng, rollDice } from "./rng.js";
 import { FAIL_MARK, ScriptError, type ScriptRunner } from "./script.js";
+import { createWorld, addBody, setBody, getBody, removeBody, bodyView, addJoint, removeJoint, stepWorld, queryPoint, raycast, PHYS_LIMITS, type World } from "./physics.js";
+const SOUND_NUM = ["volume", "fade_ms", "rate", "pan", "lowpass", "highpass", "q", "reverb", "reverb_s", "delay_ms", "delay_feedback", "delay_mix", "x", "y", "ref_distance", "max_distance", "rolloff"] as const;
 
 export type Caller = "player" | "ai" | "rules";
 export interface LogEntry { turn: number; kind: "rule" | "random" | "dice" | "event" | "ending" | "error" | "violation" | "action" | "rejected"; text: string; data?: any }
@@ -42,6 +44,13 @@ export function sanitizeOverlay(spec: any): any {
     if (typeof o.font === "string") r.font = o.font.slice(0, 60).replace(/[^\w\s-]/g, "");
     for (const k of ["bold", "italic", "scroll"]) if (typeof o[k] === "boolean") r[k] = o[k];
     if (["left", "center", "right"].includes(o.align)) r.align = o.align;
+    // 九宫格背景图：bg_image（图片素材 id）+ bg_slice（原图里边框的像素：数字或 [上, 右, 下, 左]）+ bg_border（显示的边框宽度，默认同 bg_slice）
+    if (typeof o.bg_image === "string" && /^[a-z][a-z0-9_]{0,39}$/.test(o.bg_image)) {
+      r.bg_image = o.bg_image;
+      const four = (v: any) => { const a = (Array.isArray(v) ? v : [v, v, v, v]).slice(0, 4).map((x: any) => Math.max(0, Math.min(2000, Math.floor(Number(x) || 0)))); while (a.length < 4) a.push(a[0] ?? 0); return a; };
+      if (o.bg_slice !== undefined) r.bg_slice = four(o.bg_slice);
+      if (o.bg_border !== undefined) r.bg_border = four(o.bg_border);
+    }
     return r;
   };
   const node = (x: any, depth: number): any => {
@@ -81,7 +90,13 @@ const clone = <T>(x: T): T => (x === undefined ? x : JSON.parse(JSON.stringify(x
 
 interface Ctx { params: Record<string, any>; locals: Record<string, any>; out?: any; event?: any; depth: number; caller: Caller; changed: Set<string>; render?: boolean }
 /** 实时模式产生的副作用：声音、异步 AI 请求（客户端取走后执行，不阻塞循环） */
-export interface SoundEffect { op: "play" | "stop"; id: string | null; volume?: number; loop?: boolean; channel?: string; fade_ms?: number; rate?: number; pan?: number }
+export interface SoundEffect {
+  op: "play" | "stop" | "listener" | "move"; id: string | null; volume?: number; loop?: boolean; channel?: string; fade_ms?: number; rate?: number; pan?: number;
+  /** 音效：低通/高通（Hz）、混响（0~1 湿声比例，reverb_s 秒）、回声（delay_ms、delay_feedback 0~0.9、delay_mix 0~1） */
+  lowpass?: number; highpass?: number; q?: number; reverb?: number; reverb_s?: number; delay_ms?: number; delay_feedback?: number; delay_mix?: number;
+  /** 空间音效：声源位置（和画面坐标同一单位）；listener/move 也用 x、y */
+  x?: number; y?: number; spatial?: boolean; ref_distance?: number; max_distance?: number; rolloff?: number;
+}
 /** 客户端原生界面请求：文字输入框（支持中文输入法/安卓软键盘）、全屏视频 */
 export type UiEffect =
   | { op: "text.open"; req: number; id: string; title?: any; placeholder?: any; value?: string; multiline?: boolean; max_length: number; ok?: any; cancel?: any }
@@ -95,7 +110,8 @@ export type UiEffect =
   | { op: "vibrate"; pattern: number[] }
   | { op: "copy"; text: string }
   | { op: "save"; label: string }
-  | { op: "filter"; css: string };
+  | { op: "filter"; css: string }
+  | { op: "touch.set"; id: string; visible?: boolean; label?: any; disabled?: boolean };
 export interface Effects { sounds: SoundEffect[]; ai: { req: number; entry: string; input: string; data: any }[]; ui: UiEffect[] }
 export type DrawCmd = any[];
 
@@ -215,8 +231,12 @@ export class Game {
   private read(key: string) { const [sid, f] = key.split("."); return f ? this.state[sid]?.[f] : this.state[sid]; }
 
   // ---------- 事务 ----------
-  private snap() { return { state: clone(this.state), rng: this.rng.s, fired: [...this.fired], ending: this.ending, cooldowns: { ...this.cooldowns }, log: this.log.length, pending: this.pending.length }; }
-  private restore(s: ReturnType<Game["snap"]>) { this.state = s.state; this.rng.s = s.rng; this.fired = new Set(s.fired); this.ending = s.ending; this.cooldowns = s.cooldowns; this.log.length = s.log; this.pending.length = s.pending; }
+  private snap() { return { state: clone(this.state), rng: this.rng.s, fired: [...this.fired], ending: this.ending, cooldowns: { ...this.cooldowns }, log: this.log.length, pending: this.pending.length, ex: clone({ physics: this.extra.physics, scene: this.extra.scene, scene_entered: this.extra.scene_entered }) }; }
+  private restore(s: ReturnType<Game["snap"]>) {
+    this.state = s.state; this.rng.s = s.rng; this.fired = new Set(s.fired); this.ending = s.ending; this.cooldowns = s.cooldowns; this.log.length = s.log; this.pending.length = s.pending;
+    // 物理世界和场景也跟着撤销（出错的一帧不留痕迹）
+    for (const k of ["physics", "scene", "scene_entered"] as const) { if (s.ex?.[k] === undefined) delete this.extra[k]; else this.extra[k] = s.ex[k]; }
+  }
   private diff(before: Record<string, any>): Change[] {
     return Object.keys(this.state).filter((k) => !deepEq(before[k], this.state[k])).map((k) => ({ key: k, before: before[k], after: clone(this.state[k]) }));
   }
@@ -403,11 +423,31 @@ export class Game {
             if (ctx.render) throw new Error("render 函数里不能播放声音");
             const id = a[0]; if (id !== null && !this.story.assets?.[id]) throw new Error(`素材「${id}」没有登记`);
             const o = a[1] && typeof a[1] === "object" ? a[1] : {};
-            const pick: any = {}; for (const k of ["volume", "fade_ms", "rate", "pan"]) if (typeof o[k] === "number" && isFinite(o[k])) pick[k] = o[k];
-            if (typeof o.loop === "boolean") pick.loop = o.loop; if (typeof o.channel === "string") pick.channel = o.channel.slice(0, 40);
+            const pick: any = {}; for (const k of SOUND_NUM) if (typeof o[k] === "number" && isFinite(o[k])) pick[k] = o[k];
+            if (typeof o.loop === "boolean") pick.loop = o.loop; if (typeof o.spatial === "boolean") pick.spatial = o.spatial; if (typeof o.channel === "string") pick.channel = o.channel.slice(0, 40);
             if (this.effects.sounds.length < 32) this.effects.sounds.push(m === "sound.play" ? { op: "play", id, ...pick } : { op: "stop", id, ...(pick.fade_ms !== undefined ? { fade_ms: pick.fade_ms } : {}) });
             return null;
           }
+          case "sound.listener": case "sound.move": {
+            if (ctx.render) throw new Error("render 函数里不能改声音");
+            const e: SoundEffect = m === "sound.listener" ? { op: "listener", id: null, x: Number(a[0]) || 0, y: Number(a[1]) || 0 } : { op: "move", id: String(a[0]).slice(0, 40), x: Number(a[1]) || 0, y: Number(a[2]) || 0 };
+            this.effects.sounds = this.effects.sounds.filter((x) => !(x.op === e.op && x.id === e.id)); // 同一帧只留最后一次位置
+            if (this.effects.sounds.length < 48) this.effects.sounds.push(e);
+            return null;
+          }
+          case "tiled.load": return this.tiledMap(String(a[0]));
+          case "touch.set": {
+            if (ctx.render) throw new Error("render 函数里不能改触摸按键");
+            const id = String(a[0]).slice(0, 40), o = a[1] && typeof a[1] === "object" ? a[1] : {};
+            if (!((this.story.input as any)?.touch ?? []).some((t: any) => t?.id === id)) throw new Error(`触摸按键「${id}」没有在 input.touch 里声明`);
+            const e: any = { op: "touch.set", id }; if (typeof o.visible === "boolean") e.visible = o.visible; if (typeof o.disabled === "boolean") e.disabled = o.disabled;
+            if (typeof o.label === "string" || (o.label && typeof o.label === "object")) e.label = typeof o.label === "string" ? o.label.slice(0, 12) : { zh: String(o.label.zh ?? "").slice(0, 12), en: String(o.label.en ?? "").slice(0, 12) };
+            this.effects.ui.push(e); return null;
+          }
+          case "scene.current": return this.currentScene ?? null;
+          default: if (m.startsWith("physics.")) return this.physicsCall(m.slice(8), a, ctx);
+        }
+        switch (m) {
           case "textinput.open": {
             if (ctx.render) throw new Error("render 函数里不能打开输入框");
             const o = a[0] && typeof a[0] === "object" ? a[0] : {};
@@ -437,8 +477,16 @@ export class Game {
           case "overlay.hide": if (ctx.render) throw new Error("render 函数里不能改界面"); this.effects.ui.push({ op: "overlay.hide", id: a[0] }); return null;
           case "scene.go": {
             if (ctx.render) throw new Error("render 函数里不能切换场景");
-            if (!this.story.state?.scene) throw new Error("要用 api.scene.go，先在 state 里声明 scene（比如 type: string）");
-            this.write("scene", a[0], ctx);
+            const scenes: any = (this.story as any).scenes;
+            if (scenes) {
+              if (!scenes[a[0]]) throw new Error(`场景「${a[0]}」没有在 scenes 里声明`);
+              const old = this.currentScene;
+              if (old && scenes[old]?.on_exit && this.extra.scene_entered === old) this.runScript(scenes[old].on_exit, { to: a[0] }, ctx, this.rtLimits());
+              if (this.story.state?.scene) this.write("scene", a[0], ctx); else this.extra.scene = a[0];
+            } else {
+              if (!this.story.state?.scene) throw new Error("要用 api.scene.go，先在 state 里声明 scene（比如 type: string），或者用 scenes 声明场景");
+              this.write("scene", a[0], ctx);
+            }
             const o = a[1] || {}; const ms = Math.max(0, Math.min(5000, Number(o.fade_ms ?? 400) || 0));
             if (ms) this.effects.ui.push({ op: "fade", color: typeof o.color === "string" ? o.color.slice(0, 30) : "#000", out_ms: 0, in_ms: ms, hold_ms: 0 });
             return null;
@@ -498,7 +546,69 @@ export class Game {
   screen: ScreenInfo = { width: 0, height: 0, dpr: 1, takeover: false };
   /** “铺满”画布当前的像素尺寸（客户端每次尺寸变化时告诉引擎） */
   canvasSizes: Record<string, { width: number; height: number }> = {};
-  private lastResize = "";
+  private lastResize = ""; private lastSceneResize = "";
+  private tiledCache = new Map<string, any>();
+  /** 当前场景：state.scene（声明了的话），否则引擎自己记的；默认 realtime.start_scene 或第一个场景 */
+  get currentScene(): string | undefined {
+    const scenes: any = (this.story as any).scenes; if (!scenes) return typeof this.state.scene === "string" ? this.state.scene : undefined;
+    const v = this.story.state?.scene ? this.state.scene : this.extra.scene;
+    if (typeof v === "string" && scenes[v]) return v;
+    const st = (this.story.realtime as any)?.start_scene; return st && scenes[st] ? st : Object.keys(scenes)[0];
+  }
+  /** 画布实际用的配置：显示场景的画布（scenes: true）用当前场景的 canvas 设置 */
+  canvasConfig(cid: string): any {
+    const c: any = this.story.ui?.components?.[cid] ?? {};
+    const scenes: any = (this.story as any).scenes, cur = this.currentScene;
+    if (c.scenes && scenes && cur) return { ...c, ...(scenes[cur].canvas ?? {}), size: c.size, hidpi: c.hidpi, render: scenes[cur].render, scene: cur };
+    return c;
+  }
+  /** Tiled 地图：解析一次后缓存（地图文件不会变），每次返回一份拷贝 */
+  tiledMap(id: string): TiledMap {
+    let m = this.tiledCache.get(id);
+    if (!m) {
+      const as: any = this.story.assets?.[id]; if (!as) throw new Error(`素材「${id}」没有登记`);
+      if (!/\.(tmj|json)$/i.test(String(as.path ?? ""))) throw new Error(`素材「${id}」不是 Tiled 地图（.tmj）`);
+      const files = this.opts.files; const txt = files ? textFile(files, as.path) : undefined; if (txt === undefined) throw new Error(`找不到地图文件「${as.path}」`);
+      let json: any; try { json = JSON.parse(txt); } catch { throw new Error(`地图「${as.path}」不是合法的 JSON`); }
+      const byPath = new Map<string, string>(); for (const [k, v] of Object.entries<any>(this.story.assets ?? {})) if (typeof v?.path === "string") byPath.set(v.path, k);
+      m = parseTiled(json, as.path, (p) => byPath.get(p), (p) => (files ? textFile(files, p) : undefined));
+      this.tiledCache.set(id, m);
+    }
+    return clone(m);
+  }
+  /** 物理 API（世界存在 extra.physics：会进存档，出错的一帧会撤销） */
+  private physicsCall(op: string, a: any[], ctx: Ctx): any {
+    const write = !["get", "bodies", "query", "raycast"].includes(op);
+    if (write && ctx.render) throw new Error("render 函数里只能读物理世界（get / bodies / query / raycast）");
+    if (op === "world") { this.extra.physics = createWorld(a[0]); return null; }
+    const w: World | undefined = this.extra.physics;
+    if (!w) throw new Error("先调用 api.physics.world({ gravity: [0, 980] }) 创建物理世界");
+    const body = (id: any) => { const b = getBody(w, Number(id)); if (!b) throw new Error(`物理物体 ${id} 不存在`); return b; };
+    switch (op) {
+      case "add": return addBody(w, a[0]);
+      case "add_map": {
+        const o = a[1] || {}; const ids: number[] = [];
+        for (const r of (Array.isArray(a[0]) ? a[0] : []).slice(0, PHYS_LIMITS.bodies)) ids.push(addBody(w, { type: "static", friction: o.friction, restitution: o.restitution, tag: o.tag ?? "wall", x: Number(r.x) + Number(r.w) / 2, y: Number(r.y) + Number(r.h) / 2, shape: { type: "box", w: r.w, h: r.h } }));
+        return ids;
+      }
+      case "remove": removeBody(w, Number(a[0])); return null;
+      case "get": { const b = getBody(w, Number(a[0])); return b ? bodyView(b) : null; }
+      case "set": setBody(w, body(a[0]), a[1] ?? {}); return null;
+      case "impulse": {
+        const b = body(a[0]); if (b.type !== "dynamic") return null;
+        const ix = Number(a[1]) || 0, iy = Number(a[2]) || 0; b.vx += ix * b.im; b.vy += iy * b.im;
+        if (a[3] != null && a[4] != null) b.av += ((Number(a[3]) - b.x) * iy - (Number(a[4]) - b.y) * ix) * b.ii;
+        return null;
+      }
+      case "joint": return addJoint(w, a[0]);
+      case "unjoint": removeJoint(w, Number(a[0])); return null;
+      case "step": return stepWorld(w, a[0] == null ? this.rtDt : Number(a[0]));
+      case "bodies": return w.bodies.filter((b) => a[0] == null || b.tag === a[0]).map(bodyView);
+      case "query": return queryPoint(w, Number(a[0]), Number(a[1]));
+      case "raycast": return raycast(w, Number(a[0]), Number(a[1]), Number(a[2]), Number(a[3]));
+    }
+    throw new Error(`未知的物理 API：${op}`);
+  }
   /** 客户端在窗口大小/旋转变化时调用；下一帧开头会调用 realtime.on_resize */
   setScreen(sc: Partial<ScreenInfo>) {
     const n = (v: any, d: number) => (typeof v === "number" && isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : d);
@@ -507,13 +617,16 @@ export class Game {
   setCanvasSize(cid: string, width: number, height: number) { this.canvasSizes[cid] = { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) }; }
   /** 画布 render 拿到的宽高：铺满模式用实际尺寸，否则用作者写的固定尺寸 */
   canvasSize(cid: string): { width: number; height: number } {
-    const c: any = this.story.ui?.components?.[cid] ?? {};
+    const c: any = this.canvasConfig(cid);
     if (c.size === "fill") return this.canvasSizes[cid] ?? { width: this.screen.width || 320, height: this.screen.height || 240 };
     return { width: c.width ?? 320, height: c.height ?? 240 };
   }
   get rtTime(): number { return this.extra.rt_time ?? 0; }
   get isRealtime() { return !!this.story.realtime; }
   private rtLimits() { return { time_ms: this.story.realtime?.tick_ms ?? 16, memory_mb: this.story.scripts?.limits?.memory_mb ?? 16 }; }
+  /** 客户端报告的作者问题（着色器编译失败、视频解码失败等），记进日志，同样的只记一次 */
+  private warned = new Set<string>();
+  clientWarn(text: string) { const t = String(text).slice(0, 500); if (this.warned.has(t) || this.warned.size > 100) return; this.warned.add(t); this.log.push({ turn: this.turn, kind: "error", text: t }); }
   private rtError(where: string, e: any) {
     const text = `${where}出错：${e?.message ?? e}`;
     if (text !== this.lastRtError) this.log.push({ turn: this.turn, kind: "error", text });
@@ -545,6 +658,18 @@ export class Game {
       const sig = `${this.screen.width}x${this.screen.height}@${this.screen.dpr}`;
       if (rt.on_resize && this.screen.width && sig !== this.lastResize) { this.lastResize = sig; this.runScript(rt.on_resize, { ...this.screen }, ctx, this.rtLimits()); }
       if (rt.on_tick) this.runScript(rt.on_tick, {}, ctx, this.rtLimits());
+      // 场景：刚进入时调用 on_enter（之后补一次 on_resize），每帧调用当前场景的 on_tick
+      const scenes: any = (this.story as any).scenes, cur = this.currentScene;
+      if (scenes && cur && scenes[cur]) {
+        const sc = scenes[cur];
+        if (this.extra.scene_entered !== cur) {
+          const from = this.extra.scene_entered ?? null; this.extra.scene_entered = cur;
+          if (sc.on_enter) this.runScript(sc.on_enter, { from, ...this.screen }, ctx, this.rtLimits());
+          if (sc.on_resize && this.screen.width) this.runScript(sc.on_resize, { ...this.screen }, ctx, this.rtLimits());
+        } else if (sc.on_resize && this.screen.width && sig !== this.lastSceneResize) this.runScript(sc.on_resize, { ...this.screen }, ctx, this.rtLimits());
+        this.lastSceneResize = sig;
+        if (sc.on_tick && this.currentScene === cur) this.runScript(sc.on_tick, {}, ctx, this.rtLimits());
+      }
     } catch (e: any) {
       this.restore(s); this.extra.rt_time = tBefore + dt; this.extra.rt_timers = timersBefore;
       this.rtError("实时循环", e); this.input = { ...this.input, pressed: {} };
@@ -558,7 +683,7 @@ export class Game {
   /** 画布组件取绘制指令：调用组件的 render 函数；render 里对状态的任何改动都会被撤销 */
   renderCanvas(cid: string, alpha = 0): DrawCmd[] {
     this.rtAlpha = Math.max(0, Math.min(1, Number(alpha) || 0));
-    const c: any = this.story.ui?.components?.[cid];
+    const c: any = this.canvasConfig(cid);
     if (!c?.render) return [];
     const s = this.snap(); this.drawBuf = [];
     try { this.runScript(c.render, { ...this.canvasSize(cid), dpr: this.screen.dpr }, { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set(), render: true }, this.rtLimits()); }

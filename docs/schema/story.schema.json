@@ -699,6 +699,11 @@
           "type": "string",
           "description": "原生界面结果（api.textinput 输入框提交/取消、api.video 播放结束/跳过）交给这个脚本函数",
           "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "start_scene": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$",
+          "description": "声明了 scenes 时一开始进入的场景（默认第一个）"
         }
       }
     },
@@ -779,6 +784,195 @@
         },
         "pointer": {
           "type": "boolean"
+        },
+        "touch": {
+          "type": "array",
+          "maxItems": 16,
+          "description": "故事自定义的屏幕触摸按键（按钮 / 摇杆 / 十字键），位置相对屏幕的角或边",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "type": {
+                "enum": [
+                  "button",
+                  "stick",
+                  "dpad"
+                ]
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$",
+                "description": "button：按下时 input.held/pressed 里的名字（默认等于 id）"
+              },
+              "keys": {
+                "type": "object",
+                "description": "dpad：四个方向对应的名字",
+                "additionalProperties": false,
+                "properties": {
+                  "up": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "down": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "left": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  },
+                  "right": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{0,39}$"
+                  }
+                }
+              },
+              "anchor": {
+                "enum": [
+                  "bottom_left",
+                  "bottom_right",
+                  "top_left",
+                  "top_right",
+                  "bottom",
+                  "top",
+                  "left",
+                  "right",
+                  "center"
+                ]
+              },
+              "x": {
+                "type": "number",
+                "minimum": -2000,
+                "maximum": 2000
+              },
+              "y": {
+                "type": "number",
+                "minimum": -2000,
+                "maximum": 2000
+              },
+              "size": {
+                "type": "number",
+                "minimum": 24,
+                "maximum": 400
+              },
+              "label": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 12
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "zh": {
+                        "type": "string",
+                        "maxLength": 12
+                      },
+                      "en": {
+                        "type": "string",
+                        "maxLength": 12
+                      }
+                    },
+                    "additionalProperties": false,
+                    "minProperties": 1
+                  }
+                ]
+              },
+              "image": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "image_pressed": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "opacity": {
+                "type": "number",
+                "minimum": 0.05,
+                "maximum": 1
+              },
+              "color": {
+                "type": "string",
+                "maxLength": 30
+              },
+              "show": {
+                "enum": [
+                  "touch",
+                  "always"
+                ]
+              },
+              "visible": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "scenes": {
+      "type": "object",
+      "description": "oasis/0.4：场景。每个场景有自己的画布设置和脚本；ui 里的画布写 scenes: true 来显示当前场景",
+      "maxProperties": 100,
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,39}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "$ref": "#/$defs/text"
+          },
+          "canvas": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "width": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 4096
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 4096
+              },
+              "pixelated": {
+                "type": "boolean"
+              }
+            }
+          },
+          "render": {
+            "type": "string",
+            "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "on_enter": {
+            "type": "string",
+            "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "on_exit": {
+            "type": "string",
+            "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "on_tick": {
+            "type": "string",
+            "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "on_resize": {
+            "type": "string",
+            "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+          }
         }
       }
     }
@@ -1799,7 +1993,9 @@
             "image",
             "audio",
             "font",
-            "video"
+            "video",
+            "shader",
+            "map"
           ]
         },
         "path": {
@@ -1847,6 +2043,24 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "uniforms": {
+          "type": "object",
+          "description": "着色器（type: shader）的 uniform：名字 → float/vec2/vec3/vec4/texture",
+          "maxProperties": 16,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,23}$"
+          },
+          "additionalProperties": {
+            "enum": [
+              "float",
+              "vec2",
+              "vec3",
+              "vec4",
+              "texture"
+            ]
+          }
         }
       },
       "additionalProperties": false,
@@ -2153,6 +2367,10 @@
         "hidpi": {
           "type": "boolean",
           "description": "canvas 铺满时按设备像素比放大像素（更清晰，render 拿到的宽高也更大）"
+        },
+        "scenes": {
+          "type": "boolean",
+          "description": "canvas：显示当前场景（用场景的 render 和画布设置）"
         }
       },
       "additionalProperties": false

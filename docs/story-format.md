@@ -17,7 +17,7 @@ my-story.oasis
 
 - 主文件为 `story.yaml`，也可以用 `story.json`，但两者只能有一个。
 - 包里的路径一律写相对路径，不能以 `/` 开头，也不能含 `..`。
-- 允许的扩展名：`.yaml .yml .json .md .txt .js .ts .lua .py .webp .png .jpg .jpeg .woff2 .ogg .mp3 .m4a`
+- 允许的扩展名：`.yaml .yml .json .md .txt .js .ts .lua .py .frag .glsl .tmj .tsj .webp .png .jpg .jpeg .gif .avif .ogg .mp3 .m4a .wav .flac .opus .woff2 .woff .ttf .otf .webm .mp4`（`.frag/.glsl` 着色器、`.tmj/.tsj` Tiled 地图按文本文件计，单个最多 2 MB）
 - 大小限制：
   - 单张图片不超过 10 MB
   - 单个音频不超过 30 MB
@@ -478,7 +478,7 @@ api.overlay.hide("menu");            // hide() 不带参数 = 全部关掉
 - 精灵表动画、图块地图、粒子：见 10.3（`sprite`、`tilemap`、`particles`）。
 - 特效：`api.fx.shake(强度像素, 毫秒)` 震屏；`api.fx.fade({ color, out_ms, hold_ms, in_ms })` 转场；`api.fx.filter({ blur, grayscale, sepia, hue, brightness, contrast, saturate, invert })` 整个画面的滤镜（`{}` 取消）。都是纯视觉，不影响逻辑。
 
-**场景切换** `api.scene.go("forest", { fade_ms: 400, color: "#000" })`：先在 `state` 里声明 `scene`（例如 `{ type: string, init: title, visible: none }`）。它把 `scene` 改成新名字并播放转场；render 和 on_tick 里按 `api.state.get("scene")` 画不同的场景。场景跟着存档走。
+**场景切换** `api.scene.go("forest", { fade_ms: 400, color: "#000" })`：先在 `state` 里声明 `scene`（例如 `{ type: string, init: title, visible: none }`）。它把 `scene` 改成新名字并播放转场；render 和 on_tick 里按 `api.state.get("scene")` 画不同的场景。场景跟着存档走。想让每个场景有自己的脚本和画布尺寸，用 10.16 的 `scenes`。
 
 **缓动、补间、碰撞、物理**（纯计算，在沙箱里，结果可重现）
 
@@ -510,8 +510,137 @@ api.overlay.hide("menu");            // hide() 不带参数 = 全部关掉
 - **不能联网**：同样怕偷 Key、偷存档、偷偷上传。AI 只能走玩家自己配置的那一个服务、那一个 Key，并且要经过接入点的权限检查。
 - **不能读剪贴板、文件、真实时间、`Math.random`**：前两个是隐私；后两个会让存档、撤销和重放对不上。随机数用 `api.random`，本地数据用 `api.storage`。
 - **脚本有时间上限（默认 16 毫秒，作者最多调到 50 毫秒）**：防止一个死循环把整个客户端卡死。
-- **暂不支持自定义着色器（GLSL）**：技术上可以做（WebGL 编译着色器不需要 eval），但写坏的着色器能把显卡卡住、甚至让手机驱动崩溃，需要先做好安全的“着色器模板”和超时恢复。现在先用 `blend`、`tint`、`glow`、粒子和 `api.fx.filter` 实现大部分效果。
+- **自定义着色器只能写“模板里的一个函数”**（见 10.11）：写坏的着色器能把显卡卡住、甚至让手机驱动崩溃，所以只开放后期效果函数，有静态检查、编译失败自动跳过、太慢自动关闭和显卡重置后恢复。
 - **出口永远在**：按住 Esc 1 秒、安卓返回手势、右上角“⋯”任何时候都能打开暂停菜单，输入框、界面层和视频都盖不住它们。
+
+### 10.11 自定义后期着色器（GLSL）
+
+整帧画完后，再用作者的着色器处理一遍（暗角、像素化、CRT 扫描线、水波、描边、调色……）。**只能写一个函数**，客户端把它套进固定模板：
+
+```glsl
+// shaders/crt.frag（只能用英文字符；注释也是）
+vec4 effect(vec4 color, vec2 uv) {
+  float line = 0.85 + 0.15 * sin(uv.y * u_resolution.y * 3.14159);
+  float d = distance(uv, vec2(0.5));
+  return vec4(color.rgb * line * (1.0 - d * u_strength), color.a);
+}
+```
+
+```yaml
+assets:
+  crt: { type: shader, path: shaders/crt.frag, uniforms: { strength: float, tint: vec4, noise: texture } }
+```
+
+```js
+export function draw(api) {
+  // ……正常画画面……
+  api.draw.post("crt", { strength: 0.6, tint: [1, 0.95, 0.9, 1], noise: "noise_png" }); // 一帧里最后一条 post 生效；api.draw.post(null) 不加效果
+}
+```
+
+- 模板已经提供：`u_scene`（整帧画面纹理）、`u_resolution`（像素宽高）、`u_texel`（1/宽高）、`u_time`（秒）；`color` 是这个像素原来的颜色（预乘透明度），`uv` 左下角是 (0,0)。
+- 作者的 uniform 在素材的 `uniforms` 里声明，最多 16 个，类型只能是 `float` / `vec2` / `vec3` / `vec4` / `texture`（最多 4 个，值写已登记的图片素材 id）。脚本传的值会被清洗：只收数字、已登记图片。在着色器里用 `u_名字` 读。
+- **检查（校验器和客户端都会做）**：最多 8000 字符；不能写 `#` 预处理指令、`uniform` / `varying` / `attribute`、`main`、`gl_FragColor`、`while` / `do`；`for` 最多 4 个、不能嵌套，必须写成 `for (int i = 0; i < 常数; i++)`，最多 64 次；纹理采样次数有上限。
+- **保护**：编译失败 → 跳过这个着色器、画面照常，错误写进日志（F3 / 调试面板可见）；持续 3 秒低于 20 帧 → 自动关闭这个着色器；显卡上下文丢失 → 自动恢复所有纹理和着色器，带着着色器丢失两次 → 关闭所有自定义着色器。
+- 不支持 WebGL 的设备（Canvas2D 后备）上 post 不生效，画面照常。着色器只交给显卡编译，不经过 JavaScript，不需要改 CSP。
+
+### 10.12 画布里的视频、九宫格图片
+
+- `api.draw.video(id, x, y, w?, h?, { loop, muted, volume, rate, paused, alpha, rotation, z… })`：把视频当纹理画进画布，**上面还能继续画别的**（和 `api.video.play` 的全屏过场不同）。第一次画时开始播放，`loop` 默认 true；连续 0.3 秒没画就自动暂停，暂停菜单打开时也暂停；客户端静音时视频也静音。不能自动出声的设备会先静音播放。
+- `api.draw.nine(id, x, y, w, h, { slice, border, center })`：九宫格图片（对话框、按钮底图）。`slice` 是原图里边框的像素，数字或 `[上, 右, 下, 左]`（同 CSS）；`border` 是显示的边框宽度（默认同 slice）；`center: false` 不画中间。
+- 界面层（`api.overlay`）里任何节点的 `style` 也可以写九宫格背景：`bg_image: 图片素材id`、`bg_slice`、`bg_border`（客户端用 CSS border-image 画，作者只能给素材 id 和数字）。
+
+### 10.13 内置刚体物理
+
+引擎自带 2D 刚体物理（圆、矩形、凸多边形；重力、摩擦、弹性、斜坡；距离/铰链/焊接关节；传感器）。**世界存在引擎里**：会进存档、出错的一帧会撤销、同样的输入一定得到同样的结果。
+
+```js
+export function setup(api) {          // 比如在 on_enter 或开局动作里
+  api.physics.world({ gravity: [0, 980], iterations: 8, bounds: [-500, -500, 3000, 2000] }); // 掉出 bounds 的动态物体自动删除
+  api.physics.add({ type: "static", x: 400, y: 580, shape: { type: "box", w: 800, h: 40 } });
+  api.physics.add({ type: "static", x: 300, y: 450, angle: 0.3, shape: { type: "box", w: 300, h: 16 }, friction: 0.2 }); // 斜坡
+  const hero = api.physics.add({ x: 100, y: 100, shape: { type: "box", w: 24, h: 32 }, fixed_rotation: true, tag: "hero" });
+  api.physics.add({ type: "static", sensor: true, x: 700, y: 520, shape: { type: "circle", r: 20 }, tag: "goal" });
+  api.state.set("hero_id", hero);
+}
+export function tick(api) {
+  const id = api.state.get("hero_id");
+  if (api.input.pressed.jump) api.physics.impulse(id, 0, -300);
+  const ev = api.physics.step();       // 推进 api.dt 毫秒（内部按 1/120 秒细分）
+  for (const e of ev.begin) if (e.tag_a === "goal" || e.tag_b === "goal") api.end("win");
+}
+export function draw(api) { for (const b of api.physics.bodies()) api.draw.rect(b.x, b.y, 24, 32, "#fff", { anchor_x: 0.5, anchor_y: 0.5, rotation: b.angle }); }
+```
+
+- 物体：`type`（dynamic 默认 / static / kinematic）、`shape`（`{ type: "circle", r }`、`{ type: "box", w, h }`、`{ type: "poly", points: [[x,y]…] }`，凸多边形、3~16 个顶点，凹的请拆开）、`x, y`（中心）、`angle`（弧度）、`vx, vy, av`、`density`（默认 0.001）、`friction`（0.4）、`restitution`（弹性 0~1）、`sensor`、`fixed_rotation`、`gravity_scale`、`damping`、`angular_damping`、`tag`、`data`（最多 4 KB）。
+- API：`add(物体) → id`、`remove(id)`、`get(id)`（返回位置、速度、质量、多边形顶点）、`set(id, 改动)`、`impulse(id, ix, iy, 作用点x?, 作用点y?)`、`joint({ type: "distance" | "pin" | "weld", a, b, ax, ay, bx, by, length?, stiffness? }) → id`、`unjoint(id)`、`step(dt?) → { begin: [{a, b, sensor, tag_a, tag_b}], end: [{a, b}] }`、`bodies(tag?)`、`query(x, y) → [id]`、`raycast(x1, y1, x2, y2) → { id, x, y, distance } | null`、`add_map(矩形数组, { tag, friction })`（把 Tiled 碰撞矩形一次加成静态墙）。
+- 上限：512 个物体、256 个关节。render 里只能用 get / bodies / query / raycast。
+- 原来的 `api.physics.move`（简单的“碰墙停”）照常可用。
+
+### 10.14 Tiled 地图（.tmj）
+
+用 [Tiled](https://www.mapeditor.org/) 画地图，另存为 JSON（`.tmj`；外部图块集另存为 `.tsj`），连同图块集图片放进故事包：
+
+```yaml
+assets:
+  tiles:  { type: image, path: maps/tiles.png }   # 路径要和 .tmj 里写的图片路径一致（相对 .tmj 所在文件夹）
+  level1: { type: map, path: maps/level1.tmj }
+```
+
+- 画：`api.draw.tiled("level1", { x, y, layers: ["ground", "deco"] })`（不写 layers 就画所有可见图块层；受相机影响，`fixed: true` 不受）。
+- 读：`api.tiled.load("level1")` → `{ width, height, tile_w, tile_h, pixel_w, pixel_h, properties, layers, collision: [{x,y,w,h}], objects: [{ id, name, type, x, y, w, h, rotation, point?, ellipse?, polygon?, properties, layer }] }`。地图只解析一次，建议在 on_enter 里读一次，把需要的东西放进 state 或物理世界：`api.physics.add_map(m.collision)`。
+- 碰撞：名字叫 `collision` / `solid` / `walls`（或有自定义属性 `collision: true`）的图块层和对象层，以及图块集里带 `collision: true` 属性（或画了碰撞形状）的图块，都会变成 `collision` 矩形（相邻格子自动合并）；碰撞图块层默认不画（图层属性 `visible_collision: true` 才画）。
+- 支持：正交地图、多个图块集（含外部 .tsj）、图层组、透明度、偏移、自定义属性、图块对象。不支持（校验器会报清楚的错误）：无限地图、base64/压缩的图块数据（在 Tiled 里把图层格式改成 CSV）、等距/六边形地图、“图片集合”图块集；翻转标志会被忽略。
+- `api.draw.tilemap` 也多了 `tile_w` / `tile_h`（非正方形图块）、`margin` / `spacing`、`grid_w` / `grid_h`、`alpha`。
+
+### 10.15 音效与空间音效
+
+`api.sound.play(id, 选项)` 新增：
+
+| 选项 | 作用 |
+|---|---|
+| `lowpass` / `highpass`（Hz）、`q` | 低通（闷、水下、隔墙）/ 高通（电话、收音机） |
+| `reverb`（0~1）、`reverb_s`（秒，默认 2） | 混响（山洞、大厅） |
+| `delay_ms`、`delay_feedback`（0~0.9）、`delay_mix`（0~1） | 回声 |
+| `x`, `y`（画面坐标）或 `spatial: true`，`ref_distance`（默认 200）、`max_distance`、`rolloff` | 空间音效：声音从这个位置发出，越远越小、左右声道跟着变 |
+
+- `api.sound.listener(x, y)`：听者位置（一般跟着主角或镜头）；`api.sound.move(id, x, y)`：移动正在播放的声音（同 id 的都跟着动）。同一帧里只保留最后一次。
+- 混响是程序生成的，不需要额外的音频文件；不支持 WebAudio 的设备上这些效果会被忽略，声音照常播放。
+
+### 10.16 场景（scenes）
+
+每个场景有自己的画布设置和脚本，切换时自动调用离开/进入：
+
+```yaml
+scenes:
+  title: { title: { zh: 标题, en: Title }, render: scenes/title.js#draw, on_tick: scenes/title.js#tick }
+  level: { canvas: { width: 640, height: 360, pixelated: true }, render: scenes/level.js#draw,
+           on_enter: scenes/level.js#enter, on_exit: scenes/level.js#exit, on_tick: scenes/level.js#tick, on_resize: scenes/level.js#resize }
+realtime: { tick_hz: 60, start_scene: title }      # 不写 start_scene 就从第一个开始
+ui:
+  components:
+    screen: { type: canvas, region: main, width: 320, height: 240, scenes: true }   # 显示当前场景
+```
+
+- `api.scene.go("level", { fade_ms })` 切换：先调用旧场景的 `on_exit`（params: `{ to }`），下一帧开头调用新场景的 `on_enter`（params: `{ from, width, height, dpr, takeover }`），之后每帧先跑 `realtime.on_tick` 再跑场景的 `on_tick`。`api.scene.current()` 返回当前场景。
+- 画布：固定尺寸的画布会换成场景里写的 `width` / `height`；`size: fill` 的画布仍然铺满。
+- 当前场景会进存档。state 里声明了 `scene`（string/enum）时就用它记当前场景（方便在条件、结局里用），否则引擎自己记。
+
+### 10.17 自定义触摸按键（input.touch）
+
+```yaml
+input:
+  keys: { Space: jump, ArrowLeft: left, ArrowRight: right }
+  touch:
+    - { id: move, type: stick, anchor: bottom_left, x: 24, y: 24, size: 140 }
+    - { id: jump, type: button, anchor: bottom_right, x: 24, y: 32, size: 72, label: { zh: 跳, en: Jump }, image: btn_png, image_pressed: btn_on_png }
+    - { id: pad,  type: dpad, anchor: left, keys: { up: up, down: down, left: left, right: right }, show: always }
+```
+
+- `button`：按下时 `api.input.held[key]` / `pressed[key]`（key 默认等于 id）。`stick`：写 `api.input.sticks[id] = {x, y}`（-1~1），第一个摇杆同时写 `api.input.joystick`。`dpad`：按方向写对应的 held/pressed（可斜着按）。
+- 位置：`anchor`（bottom_left、bottom_right、top_left、top_right、bottom、top、left、right、center）+ `x`、`y` 偏移（像素，自动避开刘海/圆角），`size`、`opacity`、`color`、`image` / `image_pressed`（图片素材）。
+- `show: touch`（默认，只在触摸屏上显示）或 `always`；`visible: false` 先藏起来。脚本里 `api.touch.set(id, { visible, disabled, label })` 随时改。
+- 多点触控：每个按键单独跟踪自己的手指。客户端右上角的“⋯”出口永远在最上层，按键放在右上角会被它盖住（校验器会提醒）。
 
 ## 11. 中英双语
 

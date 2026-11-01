@@ -164,11 +164,19 @@ render 只读状态，用 api.draw.*：clear、camera、rect、circle、line、t
 - 界面层（HUD、菜单、列表、富文本）：api.overlay.show(id, { anchor, x, y, w, h, modal, z, style, children: [text/rich/button/list/image/row/column/space] })、api.overlay.hide(id)；点按钮/列表项 → on_ui 收到 { type: "button"|"select", overlay, id }。只能写数据，不能写 HTML。
 - 视频：assets 里 type: video（webm/mp4），api.video.play(id, { loop, muted, skippable, fit })；播完 → on_ui { type: "video", ended, skipped }。
 - 字体：assets 里 type: font（woff2/woff/ttf/otf），绘制时 font: "素材id"。
-- 图层 z、镜头旋转 camera(x, y, zoom, { rotation })、api.fx.shake / fade / filter、api.scene.go（需要 state 里有 scene）。
+- 图层 z、镜头旋转 camera(x, y, zoom, { rotation })、api.fx.shake / fade / filter、api.scene.go（需要 state 里有 scene，或者用 scenes 声明场景）。
 - api.ease.*、api.tween、api.math.*、api.collide.*、api.physics.move（碰墙停、on_ground）。
 - 手柄 Pad0–Pad16 写进 input.keys；api.input.pointer.wheel / button；api.input.touches（多点触控）。
 - api.save.now()、api.storage.get/set（跨周目小数据，不随读档回滚）、api.device.vibrate / copy。
 - 上面这些请求都不能在 render 里调用（storage.get 除外）。
+高级功能（完整说明见 docs/story-format.md 10.11–10.17）：
+- 后期着色器：assets 里 { type: shader, path: shaders/x.frag, uniforms: { 名字: float|vec2|vec3|vec4|texture } }；.frag 里只写 vec4 effect(vec4 color, vec2 uv) { ... }（只用英文字符；可用 u_scene、u_resolution、u_texel、u_time、u_名字；不能写 #、uniform、main、while；for 写成 for (int i = 0; i < 常数; i++)，最多 64 次）；render 里 api.draw.post("x", { 名字: 数字或数组 })。
+- 画布视频 api.draw.video(id, x, y, w, h, { loop, muted })（上面还能画别的）；九宫格 api.draw.nine(id, x, y, w, h, { slice: [上,右,下,左] })；界面层 style 里 bg_image / bg_slice / bg_border。
+- 刚体物理：api.physics.world({ gravity: [0, 980] }) → add({ type, shape: {type:"box",w,h}|{type:"circle",r}|{type:"poly",points}, x, y, angle, friction, restitution, sensor, tag }) → 每帧 const ev = api.physics.step()（ev.begin / ev.end 是接触开始/结束）；get、set、impulse、joint({ type: distance|pin|weld, a, b })、bodies(tag)、query、raycast、add_map(矩形)。世界进存档；render 里只能读。
+- Tiled 地图：assets 里 { type: map, path: maps/a.tmj }（图块集图片也要登记成 image，路径一致；图块层格式用 CSV）；api.draw.tiled("a", { layers })；api.tiled.load("a") 得到 collision 矩形和 objects。
+- 音效：sound.play 选项 lowpass、highpass、reverb（0~1）、delay_ms、delay_feedback、x、y（空间音效）；api.sound.listener(x, y)、api.sound.move(id, x, y)。
+- 场景：scenes: { 名字: { canvas: { width, height }, render, on_enter, on_exit, on_tick, on_resize } }、realtime.start_scene；画布组件写 scenes: true；api.scene.go(名字)、api.scene.current()。
+- 触摸按键：input.touch: [{ id, type: button|stick|dpad, anchor: bottom_left…, x, y, size, label: {zh, en}, image, keys }]；api.input.sticks[id]；api.touch.set(id, { visible, disabled, label })。不要放在右上角（客户端出口）。
 声音：api.sound.play(id, { volume, loop, channel: "music", fade_ms, rate, pan })；同一 channel 换曲自动交叉淡化；api.sound.stop(id?, { fade_ms })。
 想要 60fps 平滑移动：realtime.interpolate: true，render 里按 api.alpha 在上一步和这一步的位置之间插值。粒子和精灵动画由客户端自动按屏幕刷新率播放，不必开 interpolate。
 
