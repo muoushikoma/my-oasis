@@ -285,6 +285,7 @@ realtime:
   tick_ms: 16                      # 每次脚本调用的时间上限（毫秒），1–50，默认 16
   on_tick: scripts/game.js#tick    # 每次推进时调用（可选）
   on_ai: scripts/game.js#onAi      # 脚本发起的 AI 请求返回时调用（可选）
+  on_resize: scripts/game.js#resize # 可用区域尺寸变化（窗口缩放、手机转屏）后、下一步开头调用（可选），见 10.8
   timers:                          # 定时事件（可选）
     定时器id:
       every_ms: 1000               # 每隔多久触发一次（≥16）
@@ -328,7 +329,8 @@ ui:
 ```
 
 - `render` 必填，格式为 `文件#函数`；`width`、`height` 是画布像素尺寸（16–4096，默认 320×240）；`pixelated: true` 时放大不模糊。
-- 每次推进后调用一次 `render`。`api.params` 里有 `width`、`height`。render 函数只能读状态，对状态的任何改动都会被撤销，也不能播放声音或请求 AI。
+- `size: fill`：画布铺满所在区域，像素尺寸等于实际显示尺寸，窗口缩放、手机转屏时自动变化（这时 `width`/`height` 不生效）。再写 `hidpi: true` 会乘上设备像素比，高清屏更清晰。详见 10.8。
+- 每次推进后调用一次 `render`。`api.params` 里有 `width`、`height`（画布当前像素尺寸）和 `dpr`（设备像素比）。render 函数只能读状态，对状态的任何改动都会被撤销，也不能播放声音或请求 AI。
 - 绘制指令（每帧最多 5000 条，按调用顺序绘制）：
 
 | 指令 | 说明 |
@@ -359,7 +361,7 @@ ui:
 
 ### 10.6 脚本 API 补充与沙箱
 
-- 实时脚本还可以读取：`api.dt`（这一步的毫秒数）、`api.time`（游戏开始后的毫秒数）、`api.input`。
+- 实时脚本还可以读取：`api.dt`（这一步的毫秒数）、`api.time`（游戏开始后的毫秒数）、`api.input`、`api.screen`（`{ width, height, dpr, takeover }`，客户端可用区域的 CSS 像素尺寸，见 10.8）。
 - 任何脚本都可以读 `api.lang`：玩家选的语言，`"zh"` 或 `"en"`（见第 11 节）。
 - 脚本在沙箱里运行：不能联网、不能读写文件、不能读取真实时间，也不能用 `Math.random`，随机数请用 `api.random`。
 - 每次调用受 `realtime.tick_ms` 的时间上限和 `scripts.limits.memory_mb` 的内存上限约束（默认 16 MB），超出会被中止。
@@ -368,6 +370,31 @@ ui:
 ### 10.7 实时示例
 
 仓库 `tests/fixtures/realtime-mini/` 是一个完整的小示例《星星收集者》：方向键、WASD 或虚拟摇杆移动，按住空格或“冲”加速；定时生成星星，倒计时 60 秒；带相机跟随的图块地图；吃到星星有音效；第 5 颗星时异步请求 AI 打气。截图见 `docs/images/realtime-mini-desktop.png`、`docs/images/realtime-mini-mobile.png`。
+
+### 10.8 接管整个页面（ui.takeover）
+
+```yaml
+spec: oasis/0.4
+realtime:
+  on_resize: scripts/game.js#resize     # 可选
+ui:
+  takeover: true                        # 故事接管整个客户端页面
+  layout: { template: custom, grid: ["screen"] }
+  components:
+    screen: { type: canvas, region: screen, size: fill, hidpi: true, render: scripts/game.js#draw }
+```
+
+- `ui.takeover: true`（oasis/0.4，可选，默认 `false`）：客户端不再显示顶栏、调试栏等任何外框，整个窗口交给故事。Windows 上铺满窗口（F11 切换真正的全屏）；安卓上进入沉浸全屏，隐藏状态栏和导航栏，退出故事后恢复。
+- 画面怎么排完全由作者决定：可以只放一个 `size: fill` 的画布自己画全部内容，也可以用 `layout` 摆普通组件（文字、按钮、选项……），各区域铺满整个窗口；手机上也按作者写的布局摆放，不会被改成单列。
+- 尺寸：`api.screen` 随时可读；尺寸变化后，下一步开头会先调用 `realtime.on_resize`（`api.params` 是 `{ width, height, dpr, takeover }`），可以在里面把新尺寸写进状态、重新排版。`render` 里的 `api.params.width/height` 是画布当前的像素尺寸。建议坐标用比例存，屏幕多大都能画。
+- **玩家的出口（故事无法关闭）**：任何时候都可以打开客户端自己的暂停菜单——
+  - 桌面：**按住 Esc 1 秒**（短按 Esc 仍然交给故事，可以绑定成玩法按键）；
+  - 安卓：**系统返回键 / 返回手势**；
+  - 任何设备：**右上角的 ⋯ 小按钮**，平时几乎透明，动一下鼠标或摸一下屏幕就会显出来。
+
+  暂停菜单打开时故事暂停（时间不走、按键全部松开）。菜单里有：继续、存档/读档、声音、外观、设置（AI 服务商与 API Key、AI 用量）、切换全屏、重新开始、回故事库。接管模式下 **token 用量显示在暂停菜单里**（平时在顶栏）。脚本跑在沙箱里碰不到页面，所以故事不能拦截这些按键、不能遮住按钮、也不能关掉菜单；请不要把右上角那一小块当作必须点击的位置。
+- 不写 `takeover` 的故事和以前完全一样。
+- 完整示例：`tests/fixtures/takeover-mini/`《满屏光点》。
 
 ## 11. 中英双语
 

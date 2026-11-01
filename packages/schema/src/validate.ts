@@ -705,7 +705,7 @@ function realtimeChecks(s: Story, files: StoryFiles, report: Report) {
   if (s.realtime) {
     need04(["realtime"], "实时循环 realtime ");
     const rt: any = s.realtime;
-    ref(["realtime"], "on_tick", rt.on_tick); ref(["realtime"], "on_ai", rt.on_ai);
+    ref(["realtime"], "on_tick", rt.on_tick); ref(["realtime"], "on_ai", rt.on_ai); ref(["realtime"], "on_resize", rt.on_resize);
     for (const [id, t] of Object.entries<any>(obj(rt.timers))) {
       const p = ["realtime", "timers", id];
       if (!t?.action && !t?.emit && !t?.script) report("error", "timer_body", p, `定时器「${id}」没写到点后做什么。`, "写 action、emit 或 script 中的至少一个。", "§14");
@@ -715,12 +715,18 @@ function realtimeChecks(s: Story, files: StoryFiles, report: Report) {
     if (!rt.on_tick && !Object.keys(obj(rt.timers)).length) report("warning", "realtime_empty", ["realtime"], "写了 realtime，但没有 on_tick 也没有定时器，循环里什么都不会发生。", undefined, "§14");
   }
   if (s.input) need04(["input"], "输入映射 input ");
+  if ((s.ui as any)?.takeover) {
+    need04(["ui"], "接管整个页面 ui.takeover ");
+    if (typeof (s.input as any)?.keys?.Escape === "string") report("warning", "takeover_escape", ["input", "keys"], "Escape 键可以绑定，但长按 1 秒总会打开客户端的暂停菜单（玩家的出口，故事关不掉）。", "短按 Esc 仍会传给故事；不要让“长按 Esc”成为玩法的一部分。", "§10.8");
+  }
   for (const [id, c] of Object.entries<any>(comps)) {
     if (c?.type !== "canvas") continue;
     const p = ["ui", "components", id];
     need04(p, "画布组件 canvas ");
     if (!c.render) report("error", "canvas_no_render", p, `画布「${id}」没有 render 函数，不知道画什么。`, "写 render: scripts/game.js#draw。", "§14");
     ref(p, "render", c.render);
+    if (c.size === "fill" && (c.width || c.height)) report("warning", "canvas_fill_size", p, `画布「${id}」是 size: fill，写的 width/height 不会生效。`, "铺满时用 render 里的 api.params.width / height。", "§10.8");
+    if (c.hidpi && c.size !== "fill") report("warning", "canvas_hidpi", p, `画布「${id}」的 hidpi 只在 size: fill 时生效。`, undefined, "§10.8");
   }
   for (const [id, e] of Object.entries<any>(entries)) if (e?.trigger === "script") need04(["ai", "entry_points", id], "由脚本调用的 AI 接入点（trigger: script）");
   for (const [id, d] of Object.entries<any>(obj(s.state))) if (d?.type === "json") need04(["state", id], "json 类型的状态");

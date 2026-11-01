@@ -74,11 +74,24 @@ export class RealtimeDriver {
   canvas(cid: string, c: any): HTMLCanvasElement {
     let el = this.canvases.get(cid);
     if (!el) {
-      el = h("canvas", { width: c.width ?? 320, height: c.height ?? 240, class: "rt-canvas", "data-canvas": cid, tabindex: 0, style: { imageRendering: c.pixelated ? "pixelated" : "auto" } });
+      const fill = c.size === "fill";
+      el = h("canvas", { width: fill ? 1 : c.width ?? 320, height: fill ? 1 : c.height ?? 240, class: `rt-canvas${fill ? " rt-fill" : ""}`, "data-canvas": cid, tabindex: 0, style: { imageRendering: c.pixelated ? "pixelated" : "auto" } });
       const pos = (e: PointerEvent) => { const r = el!.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * el!.width, y: ((e.clientY - r.top) / r.height) * el!.height }; };
       el.onpointerdown = (e) => { el!.setPointerCapture?.(e.pointerId); this.input.pointer = { ...pos(e), down: true, target: cid }; this.input.pressed.pointer = true; };
       el.onpointermove = (e) => { this.input.pointer = { ...this.input.pointer, ...pos(e), target: cid }; };
       el.onpointerup = el.onpointercancel = (e) => { this.input.pointer = { ...pos(e), down: false, target: cid }; };
+      if (fill && typeof ResizeObserver !== "undefined") {
+        // 铺满：画布像素 = 实际显示尺寸（hidpi 时再乘设备像素比）；窗口缩放、手机转屏时自动跟着变
+        const cv = el;
+        const ro = new ResizeObserver(() => {
+          const r = cv.getBoundingClientRect(); if (!r.width || !r.height) return;
+          const k = c.hidpi ? (window.devicePixelRatio || 1) : 1;
+          const w = Math.max(1, Math.min(8192, Math.round(r.width * k))), hh = Math.max(1, Math.min(8192, Math.round(r.height * k)));
+          if (cv.width !== w || cv.height !== hh) { cv.width = w; cv.height = hh; }
+          this.s.game.setCanvasSize(cid, w, hh); this.draw();
+        });
+        ro.observe(el); this.off.push(() => ro.disconnect());
+      }
       this.canvases.set(cid, el);
     }
     return el;
@@ -118,11 +131,15 @@ export class RealtimeDriver {
   start() {
     const keys: Record<string, string> = (this.s.story.input as any)?.keys ?? {};
     const typing = (e: KeyboardEvent) => { const t = e.target as HTMLElement; return t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable); };
-    const down = (e: KeyboardEvent) => { const k = keys[e.code]; if (!k || typing(e)) return; e.preventDefault(); if (!this.input.held[k]) this.input.pressed[k] = true; this.input.held[k] = true; };
+    const down = (e: KeyboardEvent) => { const k = keys[e.code]; if (!k || typing(e) || this.paused) return; e.preventDefault(); if (!this.input.held[k]) this.input.pressed[k] = true; this.input.held[k] = true; };
     const up = (e: KeyboardEvent) => { const k = keys[e.code]; if (k) delete this.input.held[k]; };
     const blur = () => { this.input.held = {}; };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up); window.addEventListener("blur", blur);
     this.off.push(() => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); window.removeEventListener("blur", blur); });
+    // 可用区域尺寸：告诉引擎（api.screen、realtime.on_resize）
+    const scr = () => this.s.game.setScreen({ width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio || 1, takeover: !!(this.s.story.ui as any)?.takeover });
+    scr(); window.addEventListener("resize", scr); window.addEventListener("orientationchange", scr);
+    this.off.push(() => { window.removeEventListener("resize", scr); window.removeEventListener("orientationchange", scr); });
     this.last = performance.now(); this.acc = 0;
     const frame = (now: number) => { this.raf = requestAnimationFrame(frame); this.step(now); };
     this.raf = requestAnimationFrame(frame);
@@ -132,9 +149,14 @@ export class RealtimeDriver {
     for (const a of this.loops.values()) a.pause(); this.loops.clear();
   }
 
+  /** 暂停菜单打开时：不推进时间、松开所有按键 */
+  paused = false;
+  setPaused(p: boolean) { this.paused = p; this.input.held = {}; this.input.pressed = {}; this.input.joystick = { x: 0, y: 0 }; this.input.pointer = { ...this.input.pointer, down: false }; }
+
   /** 推进若干固定步长（最多 5 步，防止卡顿后“死亡螺旋”） */
   step(now: number) {
     const g = this.s.game; if (g.ending) { this.stop(); this.s.onFrame(true); return; }
+    if (this.paused) { this.last = now; return; }
     const dtStep = 1000 / this.hz;
     this.acc = Math.min(this.acc + (now - this.last), dtStep * 5); this.last = now;
     let ticked = false;

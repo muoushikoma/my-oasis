@@ -1,0 +1,23 @@
+spec: oasis/0.4
+meta:
+  id: takeover-mini
+  title: { zh: 满屏光点, en: Full-screen Dots }
+  version: 1.0.0
+  summary: { zh: 故事接管整个页面、画布铺满屏幕的最小示例（oasis/0.4）。, en: Minimal example of a story taking over the whole page with a fill canvas. }
+  language: zh-CN
+  rating: all-ages
+state:
+  dot:  { type: json, init: { x: 0.5, y: 0.5 }, visible: none }
+  view: { type: json, init: { width: 0, height: 0 }, visible: none }
+realtime:
+  tick_hz: 30
+  on_tick: scripts/game.js#tick
+  on_resize: scripts/game.js#resize
+input:
+  keys: { ArrowLeft: left, ArrowRight: right, ArrowUp: up, ArrowDown: down }
+  pointer: true
+ui:
+  takeover: true
+  layout: { template: custom, grid: ["screen"] }
+  components:
+    screen: { type: canvas, region: screen, size: fill, hidpi: true, render: scripts/game.js#draw }

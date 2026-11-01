@@ -126,3 +126,27 @@ realtime: { on_tick: s.js#tick }`, { "s.js": "export function tick(){}" });
     expect(v.issues.some((i) => i.code === "needs_0_4")).toBe(true);
   });
 });
+
+describe("oasis/0.4 接管页面：ui.takeover + 铺满画布", () => {
+  const tdir = new URL("../../../tests/fixtures/takeover-mini/", import.meta.url).pathname;
+  const tf = loadDir(tdir); const tr = validateFiles(tf);
+  it("示例通过校验", () => { expect(tr.issues.filter((i) => i.level === "error")).toEqual([]); expect(tr.ok).toBe(true); expect((tr.story as any).ui.takeover).toBe(true); });
+  it("render 拿到实际尺寸；api.screen 和 on_resize 跟着窗口变化", () => {
+    const g = new Game(tr.story as Story, { files: tf, scripts: runner }); g.start();
+    g.setScreen({ width: 800, height: 600, dpr: 2, takeover: true });
+    g.setCanvasSize("screen", 1600, 1200);
+    g.tick(33);
+    expect(g.state.view).toEqual({ width: 800, height: 600 });
+    const t = g.renderCanvas("screen").find((c) => c[0] === "text");
+    expect(t?.[1]).toBe("1600×1200");
+    g.setScreen({ width: 390, height: 844 }); g.tick(33);
+    expect(g.state.view).toEqual({ width: 390, height: 844 });
+    g.tick(33, { pointer: { x: 39, y: 84.4, down: true } });
+    expect(g.state.dot.x).toBeCloseTo(0.1); expect(g.state.dot.y).toBeCloseTo(0.1);
+  });
+  it("takeover 需要 oasis/0.4", () => {
+    const y = readFileSync(join(tdir, "story.yaml"), "utf8").replace("spec: oasis/0.4", "spec: oasis/0.3");
+    const m = new Map(tf); m.set("story.yaml", new TextEncoder().encode(y));
+    expect(validateFiles(m).issues.some((i) => i.code === "needs_0_4" && i.path?.[0] === "ui")).toBe(true);
+  });
+});

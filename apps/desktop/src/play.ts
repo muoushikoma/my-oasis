@@ -9,6 +9,9 @@ import { makeLlm } from "./llm";
 import { beginSession, sessionUsage, loadUsage, onUsage, fmtNum, fmtCost, zero } from "./usage";
 import { explainError } from "./providers";
 import { loadSettings, saveSettings, isLocalUrl, type Settings } from "./settings";
+import { enterTakeover, setFullscreen, isFullscreen } from "./takeover";
+import { providerSetup } from "./setup";
+import { usageCard } from "./usage-card";
 
 interface Feed { id: number; to: string; text: string; kind: "ai" | "rule" | "event" | "ending" | "player" | "reject" | "error" | "dice"; who?: string; streaming?: boolean }
 
@@ -87,6 +90,38 @@ export class PlaySession {
   }
 
   private offUsage?: () => void;
+  /** ui.takeover：故事接管整个页面（没有顶栏/侧栏） */
+  get takeover() { return !!(this.story.ui as any)?.takeover; }
+  private tk?: { corner: HTMLElement; exit: () => void };
+  private menu?: HTMLElement;
+  leave() { this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.offUsage?.(); this.tk?.exit(); this.tk = undefined; this.menu?.remove(); this.menu = undefined; this.onExit(); }
+  /** 暂停菜单：接管模式下玩家的出口（故事无法关闭）。继续 / 存档 / 声音 / 外观 / 设置（AI 与用量）/ 全屏 / 回故事库 */
+  pauseMenu() {
+    if (this.menu) return;
+    this.rt?.setPaused(true);
+    const close = () => { m.remove(); this.menu = undefined; this.rt?.setPaused(false); this.render(); };
+    const body = h("div", { class: "card pause-card" });
+    const main = () => body.replaceChildren(
+      h("h3", {}, `⏸ ${String(this.story.meta.title)}`),
+      this.usageEl() ?? h("span", {}),
+      h("div", { class: "pause-list" },
+        h("button", { class: "primary", onclick: close }, "▶ 继续"),
+        h("button", { onclick: () => this.savesDialog() }, "存档 / 读档"),
+        h("button", { onclick: () => { this.settings.muted = !this.settings.muted; saveSettings(this.settings); this.sound.music.muted = this.settings.muted; main(); } }, this.settings.muted ? "🔇 已静音（点击取消）" : "🔊 声音开着（点击静音）"),
+        h("button", { onclick: () => this.viewDialog() }, "外观"),
+        h("button", { onclick: () => settingsView() }, "⚙️ 设置（AI 与用量）"),
+        h("button", { onclick: async () => { await setFullscreen(!(await isFullscreen())); } }, "⛶ 切换全屏（F11）"),
+        h("button", { onclick: () => { if (confirm("重新开始这个故事？")) { close(); void this.restart(); } } }, "重新开始"),
+        h("button", { onclick: () => this.leave() }, "← 回故事库")),
+      h("p", { class: "small muted" }, "随时打开这个菜单：按住 Esc 1 秒、安卓返回键，或点右上角的 ⋯。故事关不掉这个出口。"));
+    const settingsView = () => body.replaceChildren(
+      h("h3", {}, "设置"), providerSetup(), usageCard(settingsView),
+      h("p", { class: "small muted" }, "改了 AI 设置后，重新开始故事才会生效。"),
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: main }, "返回")));
+    main();
+    const m = h("div", { class: "modal pause", onclick: (e: Event) => e.target === m && close() }, body);
+    this.menu = m; this.root.append(m);
+  }
   /** 顶栏的用量小字：本局 / 这个故事累计（只在本机统计） */
   usageEl() {
     const se = sessionUsage(); const st = loadUsage().stories[this.storyId] ?? zero();
@@ -309,7 +344,7 @@ export class PlaySession {
     const bg = this.background();
     const end = this.game.ending ? this.story.endings.list.find((e) => e.id === this.game.ending) : undefined;
     const bar = h("div", { class: "topbar" },
-      h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.offUsage?.(); this.onExit(); } }, "← 故事库"),
+      h("button", { onclick: () => this.leave() }, "← 故事库"),
       h("b", { class: "title" }, String(this.story.meta.title)),
       h("span", { class: "muted" }, `第 ${this.game.turn} 回合`),
       this.busy ? h("span", { class: "busy" }, "AI 思考中…") : null,
@@ -324,9 +359,17 @@ export class PlaySession {
       grid,
       this.rt?.controlsEl() ?? null,
       end ? h("div", { class: `ending ${end.kind ?? ""}` }, h("h2", {}, `🏁 ${end.label}`), end.text ? h("p", {}, end.text) : null,
-        h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, "再玩一次"), h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.offUsage?.(); this.onExit(); } }, "回故事库"))) : null);
-    const body = h("div", { class: "play-body" }, page, this.debug ? this.debugPanel() : null);
-    this.root.replaceChildren(bar, body);
+        h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, "再玩一次"), h("button", { onclick: () => this.leave() }, "回故事库"))) : null);
+    const modals = [...this.root.querySelectorAll(":scope > .modal")]; // 打开着的对话框不要被每帧刷新冲掉
+    if (this.takeover) {
+      // 接管：没有顶栏和调试栏，页面整个交给故事；只留出口按钮和暂停菜单（在最上层）
+      this.tk ??= enterTakeover({ openMenu: () => this.pauseMenu(), menuOpen: () => !!this.menu });
+      this.root.classList.add("takeover");
+      this.root.replaceChildren(page, this.tk.corner, ...modals);
+    } else {
+      const body = h("div", { class: "play-body" }, page, this.debug ? this.debugPanel() : null);
+      this.root.replaceChildren(bar, body, ...modals);
+    }
     for (const [k, v] of Object.entries(this.themeVars())) this.root.style.setProperty(k, v);
     this.updateMusic();
 

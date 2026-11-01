@@ -25,6 +25,7 @@ export function saveCheck(d: Omit<SaveData, "check">): string {
   const s = SAVE_SALT + JSON.stringify({ ...d, check: undefined });
   return fnv(s).toString(16).padStart(8, "0") + fnv(s, 0x9e3779b9).toString(16).padStart(8, "0");
 }
+export interface ScreenInfo { width: number; height: number; dpr: number; takeover: boolean }
 export interface GameOptions { /** 玩家选的语言（zh/en），默认 zh */ lang?: Lang; seed?: number; scripts?: ScriptRunner; files?: StoryFiles }
 
 class StepFail extends Error {}
@@ -340,6 +341,7 @@ export class Game {
           case "input": return clone(this.input);
           case "time": return [this.rtDt, this.rtTime];
           case "lang": return this.lang;
+          case "screen": return { ...this.screen };
           case "draw.commit": if (!ctx.render) throw new Error("api.draw 只能在画布的 render 函数里用"); this.drawBuf = a[0]; return null;
           case "sound.play": case "sound.stop": {
             if (ctx.render) throw new Error("render 函数里不能播放声音");
@@ -368,6 +370,23 @@ export class Game {
   input: InputState = { held: {}, pressed: {}, joystick: { x: 0, y: 0 }, pointer: { x: 0, y: 0, down: false } };
   effects: Effects = { sounds: [], ai: [] };
   private rtDt = 0; private drawBuf: DrawCmd[] = []; private aiSeq = 0; private aiInFlight = 0; private lastRtError = "";
+  /** 客户端可用区域（CSS 像素）与设备像素比；接管模式下就是整个窗口/屏幕 */
+  screen: ScreenInfo = { width: 0, height: 0, dpr: 1, takeover: false };
+  /** “铺满”画布当前的像素尺寸（客户端每次尺寸变化时告诉引擎） */
+  canvasSizes: Record<string, { width: number; height: number }> = {};
+  private lastResize = "";
+  /** 客户端在窗口大小/旋转变化时调用；下一帧开头会调用 realtime.on_resize */
+  setScreen(sc: Partial<ScreenInfo>) {
+    const n = (v: any, d: number) => (typeof v === "number" && isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : d);
+    this.screen = { width: Math.round(n(sc.width, this.screen.width)), height: Math.round(n(sc.height, this.screen.height)), dpr: n(sc.dpr, this.screen.dpr), takeover: sc.takeover ?? this.screen.takeover };
+  }
+  setCanvasSize(cid: string, width: number, height: number) { this.canvasSizes[cid] = { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) }; }
+  /** 画布 render 拿到的宽高：铺满模式用实际尺寸，否则用作者写的固定尺寸 */
+  canvasSize(cid: string): { width: number; height: number } {
+    const c: any = this.story.ui?.components?.[cid] ?? {};
+    if (c.size === "fill") return this.canvasSizes[cid] ?? { width: this.screen.width || 320, height: this.screen.height || 240 };
+    return { width: c.width ?? 320, height: c.height ?? 240 };
+  }
   get rtTime(): number { return this.extra.rt_time ?? 0; }
   get isRealtime() { return !!this.story.realtime; }
   private rtLimits() { return { time_ms: this.story.realtime?.tick_ms ?? 16, memory_mb: this.story.scripts?.limits?.memory_mb ?? 16 }; }
@@ -399,6 +418,8 @@ export class Game {
         }
         if (next[id] !== -1 && this.rtTime >= next[id]) next[id] = this.rtTime + (t.every_ms ?? 0); // 落后太多时不追帧
       }
+      const sig = `${this.screen.width}x${this.screen.height}@${this.screen.dpr}`;
+      if (rt.on_resize && this.screen.width && sig !== this.lastResize) { this.lastResize = sig; this.runScript(rt.on_resize, { ...this.screen }, ctx, this.rtLimits()); }
       if (rt.on_tick) this.runScript(rt.on_tick, {}, ctx, this.rtLimits());
     } catch (e: any) {
       this.restore(s); this.extra.rt_time = tBefore + dt; this.extra.rt_timers = timersBefore;
@@ -415,7 +436,7 @@ export class Game {
     const c: any = this.story.ui?.components?.[cid];
     if (!c?.render) return [];
     const s = this.snap(); this.drawBuf = [];
-    try { this.runScript(c.render, { width: c.width ?? 320, height: c.height ?? 240 }, { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set(), render: true }, this.rtLimits()); }
+    try { this.runScript(c.render, { ...this.canvasSize(cid), dpr: this.screen.dpr }, { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set(), render: true }, this.rtLimits()); }
     catch (e: any) { this.restore(s); this.rtError(`画布「${cid}」`, e); return []; }
     this.restore(s);
     return this.drawBuf;
