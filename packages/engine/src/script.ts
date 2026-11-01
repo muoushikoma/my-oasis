@@ -21,7 +21,10 @@ const api = {
   fail: (msg) => __c("fail", [String(msg)]),
   log: (msg) => __c("log", [String(msg)]),
   // ---- oasis/0.4 实时 ----
-  sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id, o) => __c("sound.stop", [id == null ? null : String(id), o || {}]) },
+  sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id, o) => __c("sound.stop", [id == null ? null : String(id), o || {}]),
+           listener: (x, y, o) => __c("sound.listener", [Number(x) || 0, Number(y) || 0, o || {}]), move: (id, x, y) => __c("sound.move", [String(id), Number(x) || 0, Number(y) || 0]) },
+  tiled: { load: (id) => __c("tiled.load", [String(id)]) },
+  touch: { set: (id, o) => __c("touch.set", [String(id), o || {}]) },
   textinput: { open: (o) => __c("textinput.open", [o || {}]), close: () => __c("textinput.close", []) },
   video: { play: (id, o) => __c("video.play", [String(id), o || {}]), stop: () => __c("video.stop", []) },
   // ---- 常用引擎工具（纯计算，在沙箱里运行，结果可重现） ----
@@ -71,10 +74,24 @@ const api = {
       }
       return { x, y, hit_x: hx, hit_y: hy, on_ground: hy && dy > 0 };
     },
+    // ---- 内置刚体物理（世界存在引擎里，能存档；同样输入同样结果） ----
+    world: (o) => __c("physics.world", [o || {}]),
+    add: (b) => __c("physics.add", [b || {}]),
+    remove: (id) => __c("physics.remove", [id]),
+    get: (id) => __c("physics.get", [id]),
+    set: (id, o) => __c("physics.set", [id, o || {}]),
+    impulse: (id, ix, iy, px, py) => __c("physics.impulse", [id, Number(ix) || 0, Number(iy) || 0, px == null ? null : Number(px), py == null ? null : Number(py)]),
+    joint: (o) => __c("physics.joint", [o || {}]),
+    unjoint: (id) => __c("physics.unjoint", [id]),
+    step: (dt) => __c("physics.step", [dt == null ? null : Number(dt)]),
+    bodies: (tag) => __c("physics.bodies", [tag == null ? null : String(tag)]),
+    query: (x, y) => __c("physics.query", [Number(x) || 0, Number(y) || 0]),
+    raycast: (x1, y1, x2, y2) => __c("physics.raycast", [Number(x1) || 0, Number(y1) || 0, Number(x2) || 0, Number(y2) || 0]),
+    add_map: (rects, o) => __c("physics.add_map", [rects || [], o || {}]),
   },
   // ---- 原生界面与设备 ----
   overlay: { show: (id, spec) => __c("overlay.show", [String(id), spec || {}]), hide: (id) => __c("overlay.hide", [id == null ? null : String(id)]) },
-  scene: { go: (name, o) => __c("scene.go", [String(name), o || {}]) },
+  scene: { go: (name, o) => __c("scene.go", [String(name), o || {}]), current: () => __c("scene.current", []) },
   fx: { shake: (amount, ms) => __c("fx.shake", [Number(amount) || 4, Number(ms) || 300]), fade: (o) => __c("fx.fade", [o || {}]), filter: (o) => __c("fx.filter", [o || {}]) },
   device: { vibrate: (p) => __c("device.vibrate", [p]), copy: (text) => __c("device.copy", [String(text)]) },
   save: { now: (label) => __c("save.now", [label == null ? "" : String(label)]) },
@@ -91,6 +108,10 @@ const api = {
     camera: (x, y, zoom, o) => __d(["camera", x || 0, y || 0, zoom || 1, o || {}]),
     sprite: (id, x, y, o) => __d(["sprite", String(id), x, y, o || {}]),
     particles: (key, x, y, o) => __d(["particles", String(key), x, y, o || {}]),
+    video: (id, x, y, w, h, o) => __d(["video", String(id), x, y, w == null ? null : w, h == null ? null : h, o || {}]),
+    nine: (id, x, y, w, h, o) => __d(["nine", String(id), x, y, w, h, o || {}]),
+    tiled: (id, o) => __d(["tiled", String(id), o || {}]),
+    post: (id, u) => __d(["post", id == null ? null : String(id), u || {}]),
   },
 };
 let __draw = [];
