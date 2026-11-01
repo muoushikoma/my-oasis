@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  issues: write
 concurrency:
   group: stories-publish
   cancel-in-progress: false
@@ -34,6 +35,8 @@ jobs:
               --notes "自动生成的故事目录，客户端和发布页读取这里的 index.json。请勿手动修改。" --latest=false
           fi
           gh release upload story-index index.json --clobber
+      - name: 给新故事建点赞帖（Issue + 👍）
+        run: node tools/stories/ensure-like-issues.mjs
       - name: 检查 Pages 是否已开启
         id: pages
         run: |
