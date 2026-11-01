@@ -9,7 +9,7 @@ export const STORIES = path.join(ROOT, "stories");
 export const LIMITS = { total: 300 * 1024 * 1024, image: 10 * 1024 * 1024, audio: 30 * 1024 * 1024, text: 2 * 1024 * 1024, files: 2000, file: 100 * 1024 * 1024 - 1 };
 export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg", ".gif", ".avif"];
 export const AUDIO_EXT = [".ogg", ".mp3", ".m4a", ".wav", ".flac", ".opus"];
-export const TEXT_EXT = [".yaml", ".yml", ".json", ".md", ".txt"];
+export const TEXT_EXT = [".yaml", ".yml", ".json", ".md", ".txt", ".frag", ".glsl", ".tmj", ".tsj"];
 /** 与客户端一致：脚本和字体也可以放进故事包 */
 export const SCRIPT_EXT = [".js", ".ts", ".lua", ".py"];
 export const FONT_EXT = [".woff2", ".woff", ".ttf", ".otf"];

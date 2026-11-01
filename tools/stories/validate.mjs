@@ -67,7 +67,7 @@ for (const id of ids) {
     else if (AUDIO_EXT.includes(ext)) { if (f.size > LIMITS.audio) fail(id, `音频太大（超过 30 MB）：${f.rel}`); }
     else if (FONT_EXT.includes(ext) || VIDEO_EXT.includes(ext)) { /* 只受整包 300 MB 和单文件 100 MB 限制 */ }
     else if (TEXT_EXT.includes(ext) || SCRIPT_EXT.includes(ext)) { if (f.size > LIMITS.text) fail(id, `文本文件太大（超过 2 MB）：${f.rel}`); }
-    else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/yml/json/md/txt、js/ts/lua/py、webp/png/jpg/jpeg/gif/avif、ogg/mp3/m4a/wav/flac/opus、woff2/woff/ttf/otf、webm/mp4）`);
+    else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/yml/json/md/txt/frag/glsl/tmj/tsj、js/ts/lua/py、webp/png/jpg/jpeg/gif/avif、ogg/mp3/m4a/wav/flac/opus、woff2/woff/ttf/otf、webm/mp4）`);
   }
   if (total > LIMITS.total) fail(id, `整个故事包超过 300 MB（现在 ${(total / 1048576).toFixed(1)} MB）`);
   if (bad === before) console.log(`✅ [${id}] 通过`);
