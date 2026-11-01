@@ -16,6 +16,8 @@ export interface RtHost {
   muted(): boolean; sfx(): number;
   onFrame(changed: boolean): void; // 每帧之后（节流的 DOM 刷新、结局处理由页面决定）
   onHooks(hooks: string[]): void;
+  /** api.save.now：脚本请求存档（客户端写入自动存档槽） */
+  onSave?(label: string): void;
 }
 
 /** 把绘制指令画到 2D 画布上（兼容旧接口：测试/截图用；游戏里用 WebGL 渲染器） */
@@ -42,9 +44,13 @@ export class RealtimeDriver {
   ui: NativeUi;
   private fonts: FontFace[] = [];
   private padHeld = new Set<string>(); private padStick = false;
+  private shakeAmt = 0; private shakeUntil = 0; private shakeMs = 1; private touches = new Map<number, { id: number; x: number; y: number; target?: string }>();
   constructor(private s: RtHost) {
     this.ui = new NativeUi({
       lang: s.game.lang, muted: () => s.muted(), url: (id) => s.assets.url(`asset:${id}`),
+      shake: (amount, ms) => { this.shakeAmt = amount; this.shakeUntil = this.clock + ms; this.shakeMs = ms; },
+      save: (label) => s.onSave?.(label),
+      filter: (css) => { for (const v of this.views.values()) v.el.style.filter = css; },
       deliver: (res) => { s.game.deliverUi(res); this.effects(); const hooks = s.game.drainHooks(); if (hooks.length) s.onHooks(hooks); s.onFrame(true); },
     });
   }
@@ -62,9 +68,24 @@ export class RealtimeDriver {
       const v: View = { el, w, h: hh, dpr: 0, cmds: [], animated: false, pixelated: !!c.pixelated, fixedDpr: fill ? 1 : undefined };
       this.views.set(cid, v);
       const pos = (e: PointerEvent) => { const r = el!.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * v.w, y: ((e.clientY - r.top) / r.height) * v.h }; };
-      el.onpointerdown = (e) => { el!.setPointerCapture?.(e.pointerId); this.input.pointer = { ...pos(e), down: true, target: cid }; this.input.pressed.pointer = true; };
-      el.onpointermove = (e) => { this.input.pointer = { ...this.input.pointer, ...pos(e), target: cid }; };
-      el.onpointerup = el.onpointercancel = (e) => { this.input.pointer = { ...pos(e), down: false, target: cid }; };
+      // 多点触控：每根手指一条（api.input.touches）；pointer 仍是“主指针”（鼠标或第一根手指），button：0 左键 1 中键 2 右键
+      const syncTouches = () => { this.input.touches = [...this.touches.values()].slice(0, 10).map((t) => ({ ...t })); };
+      el.onpointerdown = (e) => {
+        el!.setPointerCapture?.(e.pointerId);
+        if (e.pointerType === "touch") { this.touches.set(e.pointerId, { id: e.pointerId, ...pos(e), target: cid }); syncTouches(); }
+        if (e.isPrimary || e.pointerType === "mouse") { this.input.pointer = { ...this.input.pointer, ...pos(e), down: true, target: cid, button: e.button }; this.input.pressed.pointer = true; if (e.button === 2) this.input.pressed.pointer_right = true; }
+      };
+      el.onpointermove = (e) => {
+        if (this.touches.has(e.pointerId)) { this.touches.set(e.pointerId, { id: e.pointerId, ...pos(e), target: cid }); syncTouches(); }
+        if (e.isPrimary || e.pointerType === "mouse") this.input.pointer = { ...this.input.pointer, ...pos(e), target: cid };
+      };
+      el.onpointerup = el.onpointercancel = (e) => {
+        if (this.touches.delete(e.pointerId)) syncTouches();
+        if (e.isPrimary || e.pointerType === "mouse") this.input.pointer = { ...this.input.pointer, ...pos(e), down: false, target: cid };
+      };
+      el.oncontextmenu = (e) => e.preventDefault();
+      // 滚轮：每个 tick 累计的滚动量（向下为正，约 100 = 一格）
+      el.addEventListener("wheel", (e) => { e.preventDefault(); this.input.pointer = { ...this.input.pointer, wheel: (this.input.pointer.wheel ?? 0) + Math.max(-1000, Math.min(1000, e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY)) }; }, { passive: false });
       if (fill && typeof ResizeObserver !== "undefined") {
         // 铺满：画布像素 = 实际显示尺寸（hidpi 时再乘设备像素比）；窗口缩放、手机转屏时自动跟着变
         const cv = el;
@@ -212,13 +233,14 @@ export class RealtimeDriver {
     let ticked = 0;
     while (this.acc >= dtStep) {
       this.acc -= dtStep;
-      g.tick(dtStep, this.input); this.input.pressed = {}; ticked++;
+      g.tick(dtStep, this.input); this.input.pressed = {}; this.input.pointer = { ...this.input.pointer, wheel: 0 }; ticked++;
       this.effects();
       const hooks = g.drainHooks(); if (hooks.length) this.s.onHooks(hooks);
       if (g.ending) break;
     }
     const t1 = performance.now();
     if (ticked) { st.tickMs = t1 - t0; st.ticks = ticked; }
+    this.applyShake();
     this.draw(!!ticked || this.interpolate, frameDt);
     st.frameMs = performance.now() - t0;
     this.updateDebug(now);
@@ -232,6 +254,14 @@ export class RealtimeDriver {
     }
   }
 
+  /** 屏幕震动（api.fx.shake）：只移动画面元素，逐渐减弱；纯视觉，不影响逻辑 */
+  private applyShake() {
+    const left = this.shakeUntil - this.clock;
+    for (const v of this.views.values()) {
+      if (left > 0) { const k = this.shakeAmt * (left / this.shakeMs); v.el.style.translate = `${(Math.sin(this.clock * 0.09) * k).toFixed(1)}px ${(Math.cos(this.clock * 0.071) * k).toFixed(1)}px`; }
+      else if (v.el.style.translate) v.el.style.translate = "";
+    }
+  }
   /** 手柄：标准布局按键名 Pad0…Pad16 可写进 input.keys；左摇杆（或十字键）驱动 api.input.joystick */
   private pad() {
     const keys: Record<string, string> = (this.s.story.input as any)?.keys ?? {};

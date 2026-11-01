@@ -144,3 +144,15 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .nui-btn { padding: 8px 16px; border-radius: 8px; border: none; background: var(--accent, #4a7dff); color: #fff; font-size: 15px; } .nui-btn.ghost { background: transparent; color: inherit; border: 1px solid #8886; }
 .nui-video-layer { background: #000; } .nui-video { width: 100%; height: 100%; }
 .nui-skip { position: absolute; right: calc(16px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); padding: 8px 14px; border-radius: 8px; border: 1px solid #fff6; background: rgba(0,0,0,.5); color: #fff; }
+/* api.overlay 界面层 */
+.nui-olayer { pointer-events: none; } .nui-olayer.modal-bg { pointer-events: auto; background: rgba(0,0,0,.35); }
+.nui-overlay { position: absolute; pointer-events: auto; display: flex; flex-direction: column; gap: 8px; color: var(--text, #fff); max-width: 100vw; max-height: 100vh; box-sizing: border-box; }
+.nui-overlay.a-center { left: 50%; top: 50%; transform: translate(-50%, -50%); } .nui-overlay.a-top { left: 50%; top: 0; transform: translateX(-50%); } .nui-overlay.a-bottom { left: 50%; bottom: 0; transform: translateX(-50%); }
+.nui-overlay.a-left { left: 0; top: 50%; transform: translateY(-50%); } .nui-overlay.a-right { right: 0; top: 50%; transform: translateY(-50%); }
+.nui-overlay.a-top_left { left: 0; top: 0; } .nui-overlay.a-top_right { right: 0; top: 0; } .nui-overlay.a-bottom_left { left: 0; bottom: 0; } .nui-overlay.a-bottom_right { right: 0; bottom: 0; }
+.nui-row { display: flex; flex-direction: row; gap: 8px; align-items: center; } .nui-column { display: flex; flex-direction: column; gap: 8px; } .nui-space { flex: 1; }
+.nui-obtn { padding: 8px 14px; border-radius: 8px; border: none; background: var(--accent, #4a7dff); color: #fff; font: inherit; cursor: pointer; } .nui-obtn:disabled { opacity: .5; }
+.nui-list { display: flex; flex-direction: column; gap: 4px; overflow: auto; max-height: 60vh; -webkit-overflow-scrolling: touch; }
+.nui-item { text-align: left; padding: 8px 10px; border-radius: 6px; border: 1px solid #8884; background: rgba(0,0,0,.25); color: inherit; font: inherit; } .nui-item:disabled { opacity: .5; } .nui-sub { opacity: .65; font-size: .85em; }
+.nui-rich, .nui-otext { white-space: pre-wrap; } .nui-img { max-width: 100%; }
+.nui-fade { position: fixed; inset: 0; z-index: 2147482500; pointer-events: none; }

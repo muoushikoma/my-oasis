@@ -55,3 +55,44 @@ describe("原生界面：输入框和视频", () => {
     expect(bad.doAction("film", {}, "rules").ok).toBe(false);
   });
 });
+
+describe("引擎工具：缓动、碰撞、物理、界面层、场景、本地数据", () => {
+  const tools = `
+export function run(api) {
+  const out = {};
+  out.ease = api.ease.out_quad(0.5);
+  out.hit = api.collide.rect({ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 5, w: 10, h: 10 });
+  out.miss = api.collide.circle({ x: 0, y: 0, r: 1 }, { x: 5, y: 0, r: 1 });
+  out.mv = api.physics.move({ x: 0, y: 0, w: 8, h: 8 }, 30, 0, { map: ["..#"], tile: 16, solid: ["#"] });
+  out.fall = api.physics.move({ x: 0, y: 0, w: 8, h: 8 }, 0, 50, { rects: [{ x: 0, y: 20, w: 100, h: 5 }] });
+  api.storage.set("best", 42); out.best = api.storage.get("best");
+  api.overlay.show("hud", { anchor: "top", children: [{ type: "button", id: "go", text: { zh: "开始", en: "Start" }, onclick: "alert(1)" }, { type: "text", text: "<b>x</b>" }] });
+  api.fx.shake(8, 200); api.device.vibrate([50, 9999]);
+  api.state.set("comment", JSON.stringify(out));
+}`;
+  it("工具函数结果正确，界面描述被清洗", () => {
+    const mem: Record<string, any> = {};
+    const g = build(tools, (y) => y.replace("actions:\n", "actions:\n  run: { script: scripts/ui.js#run }\n"));
+    (g.opts as any).storage = { get: (k: string) => mem[k], set: (k: string, v: any) => { mem[k] = v; } };
+    expect(g.doAction("run", {}, "rules").ok).toBe(true);
+    const out = JSON.parse(g.state.comment);
+    expect(out.ease).toBeCloseTo(0.75);
+    expect(out.hit).toBe(true); expect(out.miss).toBe(false);
+    expect(out.mv).toMatchObject({ x: 24, hit_x: true });
+    expect(out.fall).toMatchObject({ y: 12, on_ground: true });
+    expect(out.best).toBe(42);
+    const ui: any[] = g.takeEffects().ui;
+    const ov = ui.find((u) => u.op === "overlay.show");
+    expect(ov.spec.children[0]).toMatchObject({ type: "button", id: "go", text: { zh: "开始", en: "Start" } });
+    expect(ov.spec.children[0].onclick).toBeUndefined();
+    expect(ui.find((u) => u.op === "vibrate").pattern).toEqual([50, 1000]);
+  });
+  it("api.scene.go 需要声明 scene 状态", () => {
+    const g = build(`export function go(api) { api.scene.go("forest", { fade_ms: 200 }); }`, (y) => y.replace("actions:\n", "actions:\n  go: { script: scripts/ui.js#go }\n"));
+    expect(g.doAction("go", {}, "rules").ok).toBe(false);
+    const g2 = build(`export function go(api) { api.scene.go("forest", { fade_ms: 200 }); }`, (y) => y.replace("actions:\n", "actions:\n  go: { script: scripts/ui.js#go }\n").replace("state:\n", "state:\n  scene: { type: string, init: title, visible: none }\n"));
+    expect(g2.doAction("go", {}, "rules").ok).toBe(true);
+    expect(g2.state.scene).toBe("forest");
+    expect(g2.takeEffects().ui[0]).toMatchObject({ op: "fade", in_ms: 200 });
+  });
+});

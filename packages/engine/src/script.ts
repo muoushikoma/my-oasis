@@ -24,6 +24,61 @@ const api = {
   sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id, o) => __c("sound.stop", [id == null ? null : String(id), o || {}]) },
   textinput: { open: (o) => __c("textinput.open", [o || {}]), close: () => __c("textinput.close", []) },
   video: { play: (id, o) => __c("video.play", [String(id), o || {}]), stop: () => __c("video.stop", []) },
+  // ---- 常用引擎工具（纯计算，在沙箱里运行，结果可重现） ----
+  ease: (() => {
+    const P = Math.PI, b = (t) => { const n = 7.5625, d = 2.75; if (t < 1 / d) return n * t * t; if (t < 2 / d) return n * (t -= 1.5 / d) * t + 0.75; if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + 0.9375; return n * (t -= 2.625 / d) * t + 0.984375; };
+    return {
+      linear: (t) => t, in_quad: (t) => t * t, out_quad: (t) => t * (2 - t), in_out_quad: (t) => (t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t),
+      in_cubic: (t) => t * t * t, out_cubic: (t) => 1 - Math.pow(1 - t, 3), in_out_cubic: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+      in_sine: (t) => 1 - Math.cos((t * P) / 2), out_sine: (t) => Math.sin((t * P) / 2), in_out_sine: (t) => -(Math.cos(P * t) - 1) / 2,
+      out_back: (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
+      out_elastic: (t) => (t === 0 || t === 1 ? t : Math.pow(2, -10 * t) * Math.sin(((t * 10 - 0.75) * 2 * P) / 3) + 1),
+      out_bounce: b,
+    };
+  })(),
+  math: {
+    clamp: (v, a, b) => Math.max(a, Math.min(b, v)), lerp: (a, b, t) => a + (b - a) * t,
+    dist: (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1), angle: (x1, y1, x2, y2) => Math.atan2(y2 - y1, x2 - x1),
+    approach: (v, target, step) => (v < target ? Math.min(target, v + step) : Math.max(target, v - step)),
+  },
+  /** 补间：给定开始时间、时长，按 api.time 算当前值。tween(from, to, start_ms, duration_ms, ease) */
+  tween: (from, to, start, dur, e) => { const f = typeof e === "function" ? e : (api.ease[e] || api.ease.linear); const t = dur > 0 ? Math.max(0, Math.min(1, (api.time - start) / dur)) : 1; return from + (to - from) * f(t); },
+  collide: {
+    rect: (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y,
+    circle: (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < a.r + b.r,
+    circle_rect: (c, r) => { const nx = Math.max(r.x, Math.min(c.x, r.x + r.w)), ny = Math.max(r.y, Math.min(c.y, r.y + r.h)); return Math.hypot(c.x - nx, c.y - ny) < c.r; },
+    point: (px, py, r) => px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h,
+    /** 地图格子：map 是字符串行或数组行，solid 是“算墙”的格子值列表 */
+    tile_at: (map, tile, px, py) => { const row = map[Math.floor(py / tile)]; if (row == null) return null; const v = row[Math.floor(px / tile)]; return v === undefined ? null : v; },
+  },
+  physics: {
+    /**
+     * 简单平台/俯视物理：按 x、y 分两步移动矩形 body {x,y,w,h}，碰到墙就停。
+     * world: { rects?: [{x,y,w,h}], map?, tile?, solid?: [格子值] }。返回 { x, y, hit_x, hit_y, on_ground }
+     */
+    move: (body, dx, dy, world) => {
+      world = world || {}; const rects = world.rects || [], solid = world.solid || ["#", 1], T = world.tile || 16;
+      const hits = (bx, by) => {
+        for (const r of rects) if (bx < r.x + r.w && bx + body.w > r.x && by < r.y + r.h && by + body.h > r.y) return r;
+        if (world.map) { for (let ty = Math.floor(by / T); ty <= Math.floor((by + body.h - 0.001) / T); ty++) for (let tx = Math.floor(bx / T); tx <= Math.floor((bx + body.w - 0.001) / T); tx++) { const row = world.map[ty]; const v = row == null ? undefined : row[tx]; if (v !== undefined && solid.indexOf(v) >= 0) return { x: tx * T, y: ty * T, w: T, h: T }; } }
+        return null;
+      };
+      let x = body.x, y = body.y, hx = false, hy = false;
+      const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / Math.max(1, Math.min(body.w, body.h) / 2)));
+      for (let i = 0; i < steps; i++) {
+        if (!hx && dx) { const nx = x + dx / steps, r = hits(nx, y); if (r) { hx = true; x = dx > 0 ? r.x - body.w : r.x + r.w; } else x = nx; }
+        if (!hy && dy) { const ny = y + dy / steps, r = hits(x, ny); if (r) { hy = true; y = dy > 0 ? r.y - body.h : r.y + r.h; } else y = ny; }
+      }
+      return { x, y, hit_x: hx, hit_y: hy, on_ground: hy && dy > 0 };
+    },
+  },
+  // ---- 原生界面与设备 ----
+  overlay: { show: (id, spec) => __c("overlay.show", [String(id), spec || {}]), hide: (id) => __c("overlay.hide", [id == null ? null : String(id)]) },
+  scene: { go: (name, o) => __c("scene.go", [String(name), o || {}]) },
+  fx: { shake: (amount, ms) => __c("fx.shake", [Number(amount) || 4, Number(ms) || 300]), fade: (o) => __c("fx.fade", [o || {}]), filter: (o) => __c("fx.filter", [o || {}]) },
+  device: { vibrate: (p) => __c("device.vibrate", [p]), copy: (text) => __c("device.copy", [String(text)]) },
+  save: { now: (label) => __c("save.now", [label == null ? "" : String(label)]) },
+  storage: { get: (k) => __c("storage.get", [String(k)]), set: (k, v) => __c("storage.set", [String(k), v === undefined ? null : v]) },
   ai: { request: (id, input, data) => __c("ai.request", [String(id), input == null ? "" : String(input), data || {}]) },
   draw: {
     clear: (color) => __d(["clear", color || null]),
@@ -33,7 +88,7 @@ const api = {
     text: (s, x, y, o) => __d(["text", String(s), x, y, o || {}]),
     image: (id, x, y, w, h, o) => __d(["image", String(id), x, y, w == null ? null : w, h == null ? null : h, o || {}]),
     tilemap: (o) => __d(["tilemap", o || {}]),
-    camera: (x, y, zoom) => __d(["camera", x || 0, y || 0, zoom || 1]),
+    camera: (x, y, zoom, o) => __d(["camera", x || 0, y || 0, zoom || 1, o || {}]),
     sprite: (id, x, y, o) => __d(["sprite", String(id), x, y, o || {}]),
     particles: (key, x, y, o) => __d(["particles", String(key), x, y, o || {}]),
   },
