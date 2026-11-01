@@ -87,6 +87,7 @@ assets:
   rocks: { type: image, path: assets/sprites/rocks.png, use: other }
   chasm: { type: image, path: assets/sprites/chasm.png, use: other }
   thorns: { type: image, path: assets/sprites/thorns.png, use: other }
+  glyphs: { type: image, path: assets/sprites/glyphs.png, use: other }
 
 state:
   hp:        { type: number, init: 14, min: 0, integer: true, label: { zh: 生命, en: HP } }

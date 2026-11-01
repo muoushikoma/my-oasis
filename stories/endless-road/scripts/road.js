@@ -163,6 +163,7 @@ function gain(api, k, n) {
 // ---------- 画面状态（scripts/scene.js 负责画） ----------
 function sfx(api) { return get(api, "scene_fx"); }
 function saveFx(api, s) { s.busy = true; set(api, "scene_fx", s); }
+// 飘字只用像素字体里有的字符：数字、+ - !，以及图标 v(成功) x(失败/未命中) s(闪开) h(强化)
 function pop(api, text, color, onFoe) {
   const s = sfx(api); const x = onFoe && s.cur ? s.cur.wx - s.scroll : HERO_X;
   s.fx = (s.fx || []).slice(-5); s.fx.push({ text: String(text), color, x: x + api.random.int(-4, 4), y: 84, life: 900 }); saveFx(api, s);
@@ -430,7 +431,7 @@ function chooseOption(api, id) {
     const total = r.nat + m + r.bonus;
     ok = r.nat === 20 || (r.nat !== 1 && total >= o.dc);
     log(api, `🎲 ${T2(api, ABIL_NAME[o.ability])} ${L(api, "检定", "check")}：d20=${r.nat} ${sign(m)}${bonusText(r.bonus)} = ${total} ${L(api, "对", "vs")} DC ${o.dc} → ${ok ? L(api, "成功", "success") : L(api, "失败", "failure")}`);
-    pop(api, ok ? L(api, "成功", "pass") : L(api, "失败", "fail"), ok ? "#9aff8a" : "#ff8a7a", false);
+    pop(api, ok ? "v" : "x", ok ? "#9aff8a" : "#ff8a7a", false);
   }
   if (ok) {
     const msg = applyReward(api, o);
@@ -466,7 +467,7 @@ function enemyTurn(api) {
   const f = get(api, "foe"); reveal(api);
   const roll = api.random.int(1, 20), total = roll + f.atk, ac = calcAc(api);
   if (roll === 1 || (roll !== 20 && total < ac)) {
-    pop(api, L(api, "闪开", "dodge"), "#c8d8ff", false);
+    pop(api, "s", "#c8d8ff", false);
     log(api, L(api, `🛡 ${f.name}攻击落空（d20=${roll}，${total} 对 AC ${ac}）`, `🛡 ${f.name} misses (d20=${roll}, ${total} vs AC ${ac})`));
     return;
   }
@@ -581,7 +582,7 @@ function shopBuy(api, id) {
     api.state.inc("gold", -cost.gold); api.state.inc("iron", -cost.iron); api.state.inc("essence", -cost.essence);
     const g = gear(api); g[k] += 1; set(api, "gear", g);
     log(api, L(api, `⚒ ${GEAR[k].name[0]}强化到 ${g[k]} 级：${GEAR[k].desc[0]}。`, `⚒ ${GEAR[k].name[1]} upgraded to ${g[k]}: ${GEAR[k].desc[1]}.`));
-    pop(api, "⚒", "#ffd890", false);
+    pop(api, "h", "#ffd890", false);
   }
 }
 
@@ -783,7 +784,7 @@ export function attack(api) {
   for (let i = 0; i < swings; i++) {
     const f = get(api, "foe"); const r = d20(api); const total = r.nat + bonus + r.bonus;
     if (r.nat === 1 || (r.nat !== 20 && total < f.ac)) {
-      pop(api, L(api, "未命中", "miss"), "#e8e8e8", true);
+      pop(api, "x", "#e8e8e8", true);
       log(api, L(api, `🗡 攻击落空（d20=${r.nat}，${total} 对 AC ${f.ac}）`, `🗡 You miss (d20=${r.nat}, ${total} vs AC ${f.ac})`));
       continue;
     }

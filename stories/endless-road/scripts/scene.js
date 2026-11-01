@@ -11,7 +11,21 @@ export const SPR = {
   warden: { w: 30, h: 27 },
   chest: { w: 22, h: 14 }, cart: { w: 40, h: 20 }, shrine: { w: 24, h: 19 }, campfire: { w: 36, h: 13, frames: 2 },
   stranger: { w: 16, h: 20 }, rocks: { w: 28, h: 11 }, chasm: { w: 54, h: 11, sink: 3 }, thorns: { w: 35, h: 9 },
+  glyphs: { w: 7, h: 9, frames: 19 },
 };
+// 像素字体：和精灵一样逐像素画的，放大后不会糊（客户端的文字在 256×144 的画布上放大会糊）
+const GLYPHS = "0123456789+-!vxshm?";
+function pxText(d, str, x, y, o) {
+  o = o || {};
+  const sc = o.scale || 1, adv = 6 * sc, chars = String(str).split("").filter((c) => GLYPHS.indexOf(c) >= 0);
+  let cx = Math.round(o.align === "right" ? x - chars.length * adv : o.align === "center" ? x - (chars.length * adv) / 2 : x);
+  for (const c of chars) {
+    const opt = { sx: GLYPHS.indexOf(c) * 7, sy: 0, sw: 7, sh: 9, alpha: o.alpha == null ? 1 : o.alpha };
+    if (o.tint) opt.tint = o.tint;
+    d.image("glyphs", cx, Math.round(y), 7 * sc, 9 * sc, opt);
+    cx += adv;
+  }
+}
 const TINT = { none: null, red: "#ff9a8a", green: "#a8ff9a", blue: "#9ac4ff", gold: "#ffe08a", shadow: "#8078a0", pale: "#e8f4ff", purple: "#d4a4ff" };
 const LAYERS = [["sky", 0, 256], ["far", 0.15, 256], ["mid", 0.4, 512], ["ground", 1, 512]];
 
@@ -84,7 +98,7 @@ export function draw(api) {
     if (c.sprite === "campfire" && !c.pending) d.particles("fire", x + 6 * (c.scale || 1), GROUND - 8, { rate: 14, life_ms: 700, speed: 14, angle: -90, spread: 30, size: 1, end_size: 0, color: "#ffb03a", end_color: "#ff4a1a", gravity: -6, soft: false, max: 60 });
     if (c.sprite === "shrine" && !c.pending) d.particles("rune", x, GROUND - 22, { rate: 6, life_ms: 1600, speed: 8, angle: -90, spread: 120, size: 1, color: "#c4f2ff", end_color: "#4a8aff", soft: false, max: 40 });
     if (c.sprite === "chest" && !c.pending) d.particles("glint", x, GROUND - 14, { rate: 3, life_ms: 900, speed: 4, spread: 360, size: 1, color: "#fff6c0", end_color: "#f2cc54", soft: false, max: 20 });
-    if (c.pending) d.text("?", Math.round(x), Math.round(box.y - 10), { size: 10, color: "#ffffff", align: "center", bold: true, alpha: 0.6 + Math.sin(t / 200) * 0.3 });
+    if (c.pending) pxText(d, "?", x, box.y - 12 + Math.round(Math.sin(t / 250)), { align: "center", alpha: 0.75 + Math.sin(t / 200) * 0.25 });
   }
   // 倒下的敌人（淡出）
   if (s.dying) drawSprite(d, s.dying.sprite, s.dying.wx - scroll + (600 - s.dying.t) / 30, GROUND, { scale: s.dying.scale, tint: "#ff6a5a", alpha: Math.max(0, s.dying.t / 600), t });
@@ -121,8 +135,8 @@ export function draw(api) {
   // 飘字
   for (const f of st.get("hp") > 0 ? s.fx || [] : []) {
     const k = 1 - f.life / 900;
-    d.text(f.text, Math.round(f.x), Math.round(f.y - k * 14), { size: 8, color: f.color, align: "center", bold: true, alpha: Math.min(1, f.life / 300), outline: { color: "#1a1420", width: 2 } });
+    pxText(d, f.text, f.x, f.y - Math.round(k * 14), { align: "center", tint: f.color, alpha: Math.min(1, f.life / 300) });
   }
   // 里程
-  d.text(`${st.get("distance")} ${api.lang === "en" ? "mi" : "里"}`, W - 4, 4, { size: 8, color: "#fff4dc", align: "right", bold: true, outline: { color: "#1a1420", width: 2 } });
+  pxText(d, `m${st.get("distance")}`, W - 3, 3, { align: "right", tint: "#fff4dc" });
 }
