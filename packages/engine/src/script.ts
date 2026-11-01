@@ -21,7 +21,7 @@ const api = {
   fail: (msg) => __c("fail", [String(msg)]),
   log: (msg) => __c("log", [String(msg)]),
   // ---- oasis/0.4 实时 ----
-  sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id) => __c("sound.stop", [id == null ? null : String(id)]) },
+  sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id, o) => __c("sound.stop", [id == null ? null : String(id), o || {}]) },
   ai: { request: (id, input, data) => __c("ai.request", [String(id), input == null ? "" : String(input), data || {}]) },
   draw: {
     clear: (color) => __d(["clear", color || null]),
@@ -32,6 +32,8 @@ const api = {
     image: (id, x, y, w, h, o) => __d(["image", String(id), x, y, w == null ? null : w, h == null ? null : h, o || {}]),
     tilemap: (o) => __d(["tilemap", o || {}]),
     camera: (x, y, zoom) => __d(["camera", x || 0, y || 0, zoom || 1]),
+    sprite: (id, x, y, o) => __d(["sprite", String(id), x, y, o || {}]),
+    particles: (key, x, y, o) => __d(["particles", String(key), x, y, o || {}]),
   },
 };
 let __draw = [];
@@ -42,6 +44,7 @@ Object.defineProperty(api, "screen", { get: () => __c("screen", []) });
 Object.defineProperty(api, "lang", { get: () => __c("lang", []) });
 Object.defineProperty(api, "dt", { get: () => __c("time", [])[0] });
 Object.defineProperty(api, "time", { get: () => __c("time", [])[1] });
+Object.defineProperty(api, "alpha", { get: () => __c("time", [])[2] });
 Math.random = () => { throw new Error("脚本里不能用 Math.random，请用 api.random"); };
 Date.now = () => { throw new Error("脚本里不能读取时间"); };
 `;

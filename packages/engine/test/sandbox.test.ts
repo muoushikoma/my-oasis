@@ -27,3 +27,13 @@ describe("常驻沙箱：性能优化后隔离保证不变", () => {
     expect(r.run("d.js", `function f(){ return 2 }`, "f", host(), lim)).toBe(2);
   });
 });
+
+describe("新绘制指令", () => {
+  it("sprite / particles 生成指令；api.alpha 可读", () => {
+    let drawn: any[] = [];
+    const h = { call: (m: string, a: any[]) => { if (m === "draw.commit") drawn = a[0]; if (m === "time") return [16, 100, 0.5]; return m === "params" ? {} : null; } };
+    const a = r.run("e.js", `function draw(api){ api.draw.sprite("hero", 1, 2, { frame_w: 16, frame_h: 16, fps: 8 }); api.draw.particles("fx", 3, 4, { rate: 10 }); return api.alpha; }`, "draw", h, lim);
+    expect(a).toBe(0.5);
+    expect(drawn).toEqual([["sprite", "hero", 1, 2, { frame_w: 16, frame_h: 16, fps: 8 }], ["particles", "fx", 3, 4, { rate: 10 }]]);
+  });
+});

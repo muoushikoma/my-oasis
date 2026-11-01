@@ -40,7 +40,8 @@ const clone = <T>(x: T): T => (x === undefined ? x : JSON.parse(JSON.stringify(x
 
 interface Ctx { params: Record<string, any>; locals: Record<string, any>; out?: any; event?: any; depth: number; caller: Caller; changed: Set<string>; render?: boolean }
 /** 实时模式产生的副作用：声音、异步 AI 请求（客户端取走后执行，不阻塞循环） */
-export interface Effects { sounds: { op: "play" | "stop"; id: string | null; volume?: number; loop?: boolean }[]; ai: { req: number; entry: string; input: string; data: any }[] }
+export interface SoundEffect { op: "play" | "stop"; id: string | null; volume?: number; loop?: boolean; channel?: string; fade_ms?: number; rate?: number; pan?: number }
+export interface Effects { sounds: SoundEffect[]; ai: { req: number; entry: string; input: string; data: any }[] }
 export type DrawCmd = any[];
 
 export class Game {
@@ -339,14 +340,17 @@ export class Game {
           case "fail": throw new Error(FAIL_MARK + a[0]);
           case "log": this.log.push({ turn: this.turn, kind: "rule", text: String(a[0]) }); return null;
           case "input": return clone(this.input);
-          case "time": return [this.rtDt, this.rtTime];
+          case "time": return [this.rtDt, this.rtTime, this.rtAlpha];
           case "lang": return this.lang;
           case "screen": return { ...this.screen };
           case "draw.commit": if (!ctx.render) throw new Error("api.draw 只能在画布的 render 函数里用"); this.drawBuf = a[0]; return null;
           case "sound.play": case "sound.stop": {
             if (ctx.render) throw new Error("render 函数里不能播放声音");
             const id = a[0]; if (id !== null && !this.story.assets?.[id]) throw new Error(`素材「${id}」没有登记`);
-            if (this.effects.sounds.length < 32) this.effects.sounds.push(m === "sound.play" ? { op: "play", id, volume: a[1]?.volume, loop: a[1]?.loop } : { op: "stop", id });
+            const o = a[1] && typeof a[1] === "object" ? a[1] : {};
+            const pick: any = {}; for (const k of ["volume", "fade_ms", "rate", "pan"]) if (typeof o[k] === "number" && isFinite(o[k])) pick[k] = o[k];
+            if (typeof o.loop === "boolean") pick.loop = o.loop; if (typeof o.channel === "string") pick.channel = o.channel.slice(0, 40);
+            if (this.effects.sounds.length < 32) this.effects.sounds.push(m === "sound.play" ? { op: "play", id, ...pick } : { op: "stop", id, ...(pick.fade_ms !== undefined ? { fade_ms: pick.fade_ms } : {}) });
             return null;
           }
           case "ai.request": {
@@ -369,7 +373,7 @@ export class Game {
   // ---------- 实时（oasis/0.4） ----------
   input: InputState = { held: {}, pressed: {}, joystick: { x: 0, y: 0 }, pointer: { x: 0, y: 0, down: false } };
   effects: Effects = { sounds: [], ai: [] };
-  private rtDt = 0; private drawBuf: DrawCmd[] = []; private aiSeq = 0; private aiInFlight = 0; private lastRtError = "";
+  private rtDt = 0; private rtAlpha = 0; private drawBuf: DrawCmd[] = []; private aiSeq = 0; private aiInFlight = 0; private lastRtError = "";
   /** 客户端可用区域（CSS 像素）与设备像素比；接管模式下就是整个窗口/屏幕 */
   screen: ScreenInfo = { width: 0, height: 0, dpr: 1, takeover: false };
   /** “铺满”画布当前的像素尺寸（客户端每次尺寸变化时告诉引擎） */
@@ -400,7 +404,7 @@ export class Game {
     const rt = this.story.realtime;
     if (!rt || this.ending) return { ok: true };
     if (input) this.input = { ...this.input, ...clone(input) };
-    const dt = Math.max(0, Math.min(250, Number(dtMs) || 0));
+    const dt = Math.max(0, Math.min(250, Number(dtMs) || 0)); this.rtAlpha = 0;
     const s = this.snap(); const tBefore = this.rtTime, timersBefore = { ...(this.extra.rt_timers ?? {}) };
     const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
     const hooks: { hook: string; data?: any }[] = [];
@@ -432,7 +436,8 @@ export class Game {
     return { ok: true };
   }
   /** 画布组件取绘制指令：调用组件的 render 函数；render 里对状态的任何改动都会被撤销 */
-  renderCanvas(cid: string): DrawCmd[] {
+  renderCanvas(cid: string, alpha = 0): DrawCmd[] {
+    this.rtAlpha = Math.max(0, Math.min(1, Number(alpha) || 0));
     const c: any = this.story.ui?.components?.[cid];
     if (!c?.render) return [];
     const s = this.snap(); this.drawBuf = [];
