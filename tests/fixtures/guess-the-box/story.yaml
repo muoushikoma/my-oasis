@@ -36,3 +36,15 @@ ui:
         - { label: 二号箱, action: open_box, params: { n: 2 } }
         - { label: 三号箱, action: open_box, params: { n: 3 } }
     stats: { type: stat-list, region: status, bind: [chances] }
+
+ai:
+  entry_points:
+    narrator:
+      kind: narrate
+      trigger: game_end
+      prompt: 用一两句话为结局写一句收尾。
+      fallback: { zh: 故事结束了。, en: The story ends. }
+      card:
+        task: 简短为结局写一句收尾
+        authority: 0
+        output: { format: text, max_chars: 120 }

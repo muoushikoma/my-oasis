@@ -151,7 +151,7 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
       const cover = st.cover && /^stories\/[a-z0-9-]+\/[^?#]+$/.test(st.cover) && !st.cover.includes("..") ? (() => { const img = h("img", { class: "cover", alt: "" }) as HTMLImageElement; bridge.netGet(source().file(st.cover!)).then((b) => { img.src = URL.createObjectURL(new Blob([b as BlobPart])); }).catch(() => img.replaceWith(ph)); return img; })() : ph;
       return h("div", { class: "story-card" }, cover,
         h("div", { class: "info" },
-          h("h3", {}, tr(st.title), st.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
+          h("h3", {}, tr(st.title), h("span", { class: "tag ai" }, "AI 故事")),
           h("p", { class: "muted" }, tr(st.summary)),
           h("p", { class: "small muted" }, `作者 ${st.author ?? "未署名"} · 版本 ${st.version ?? "?"}${size ? ` · ${size < 1048576 ? Math.max(1, Math.round(size / 1024)) + " KB" : (size / 1048576).toFixed(1) + " MB"}` : ""}${st.tags?.length ? ` · ${trList(st.tags).join("、")}` : ""}`),
           h("p", { class: "small muted" }, `支持平台：${platformText(st)}`),

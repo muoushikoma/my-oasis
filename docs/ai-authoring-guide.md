@@ -21,7 +21,7 @@
 
 【最高原则，必须遵守】
 1. 每一处内容要么固定、要么 AI 处理，不写就是固定。AI 要输出到的组件必须写 content: ai（choice-buttons 用 from_ai: true）。
-2. 玩家只能做 actions 里声明的事。放 text-input（自由输入）或 chat-box 时可写 input: { actions: [允许导致的动作], reject: 做不到时的固定回应 }；不写 input 时玩家文字不能触发任何动作。可加 words: { 动作id: [关键词] } 让没有 AI 时也能用。
+2. 玩家只能做 actions 里声明的事。放 text-input（自由输入）或 chat-box 时可写 input: { actions: [允许导致的动作], reject: 做不到时的固定回应 }；不写 input 时玩家文字不能触发任何动作。可加 words: { 动作id: [关键词] } 让常用指令直接执行（不用等 AI，AI 出错或超时时也能用）。
 3. 不要设计“玩家说一句话就能改数值或跳结局”的地方；这些只能通过动作和规则发生。
 
 【输出要求】
@@ -93,7 +93,7 @@ hook 取值：game_start | turn_start | turn_end | action:<动作id> | state:<�
   { query: 表达式 }（只读）
   { write: 状态id }（该状态 writable_by 要含 ai）
 
-【ai】（不需要 AI 的纯规则故事可以整个省略）
+【ai】必填：每个故事都必须接 AI，entry_points 里至少写一个接入点（平台不再收纯规则故事）
 一个故事只用一个 AI 模型，不要为不同地方指定不同模型。
 ai:
   model_hint: { tier: light|standard|strong }
@@ -198,7 +198,7 @@ render 只读状态，用 api.draw.*：clear、camera、rect、circle、line、t
 ---
 
 ## 给 AI 的参考示例
-完整、可通过校验的示例见 [ruleset-spec.md §16《守灯人（迷你版）》](ruleset-spec.md)。下面是一个**不用 AI 的纯规则故事**，展示最小写法：
+完整、可通过校验的示例见 [ruleset-spec.md §16《守灯人（迷你版）》](ruleset-spec.md)。下面是一个最小写法：规则和结局在本地判定，AI 只负责在结局时收尾（**每个故事都必须至少有一个 AI 接入点**）：
 
 ```yaml
 spec: oasis/0.3
@@ -213,7 +213,7 @@ meta:
   tags:
     - { zh: 解谜, en: Puzzle }
     - { zh: 短篇, en: Short }
-    - { zh: 纯规则, en: Rules only }
+    - { zh: 运气, en: Luck }
 start:
   intro:
     zh: 面前有三个箱子，只有一个里面有钥匙。你有三次机会。
@@ -246,6 +246,17 @@ ui:
         - { label: { zh: 二号箱, en: Box 2 }, action: open_box, params: { n: 2 } }
         - { label: { zh: 三号箱, en: Box 3 }, action: open_box, params: { n: 3 } }
     stats: { type: stat-list, region: status, bind: [chances] }
+ai:
+  entry_points:
+    narrator:
+      kind: narrate
+      trigger: game_end
+      prompt: 用一两句话为结局收尾。
+      fallback: { zh: 故事结束了。, en: The story ends. }
+      card:
+        task: 为结局写一句收尾
+        authority: 0
+        output: { format: text, max_chars: 120 }
 ```
 
 ## 常见问题

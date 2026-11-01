@@ -11,7 +11,7 @@
 
 ## 怎么玩
 
-1. 安装客户端。第一次打开时按向导接入你自己的 AI（DeepSeek、通义千问、Kimi、OpenAI 等，或本地模型）；纯规则的故事不需要 AI。
+1. 安装客户端。第一次打开时按向导接入你自己的 AI（DeepSeek、通义千问、Kimi、OpenAI 等，或本地模型）；每个故事都由 AI 讲述，必须先接好 AI 才能玩。
 2. 打开“游玩 → 在线故事库”，**不用登录**就能浏览、下载、游玩。故事目录 `index.json` 在每次合并后自动生成，挂在固定发布 [`story-index`](https://github.com/muoushikoma/my-oasis/releases/tag/story-index) 上（不存进仓库）；客户端默认读它，读不到就直接列出 `main` 分支的 `stories/` 现场生成。故事文件来自 `main` 分支的 `stories/`。
 3. 列表打不开？在顶部换“线路”：GitHub 直连、jsDelivr 加速、GitHub Pages，或填自己的镜像/代理地址。
 4. 列表只显示**这台设备能玩**的故事（故事在 `meta.platforms` 里声明支持电脑、手机或两者）。

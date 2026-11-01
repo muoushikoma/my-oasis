@@ -10,7 +10,7 @@ A non-profit, open-source platform for AI-driven adventure stories. **Story auth
 This repo holds both the **client source code** and the **public story library** (`stories/`).
 
 ## Play
-1. Install the app and connect your own AI in the setup wizard (or a local model). Rules-only stories need no AI.
+1. Install the app and connect your own AI in the setup wizard (or a local model). Every story is AI-driven, so an AI connection is required to play.
 2. Open **Play → Online library**. **No sign-in needed** to browse, download and play. The story index (`index.json`) is built after each merge and attached to the fixed Release [`story-index`](https://github.com/muoushikoma/my-oasis/releases/tag/story-index); the app reads it, or falls back to listing `stories/` on `main` directly. Story files come from `stories/` on `main`.
    - Only stories playable on the current device are listed (stories declare `meta.platforms`: `desktop`, `mobile` or both).
    - ☆ Favorites are stored only on your device. 👍 Likes are GitHub 👍 reactions on each story's like issue (label `story-likes`); sign in with GitHub (Create → Submit) to like. No server involved.

@@ -108,7 +108,7 @@ export function submitView(drafts: { title: string; files: () => StoryFiles }[],
       };
       out.replaceChildren(h("div", { class: "card" }, h("h3", {}, `准备投稿：${pickText(meta.title, "zh")} / ${pickText(meta.title, "en")}`),
         warns.length ? h("details", {}, h("summary", {}, `提醒：有 ${warns.length} 处文字只有一种语言（不影响投稿）`), h("ul", { class: "small" }, ...warns.slice(0, 30).map((t) => h("li", {}, t)))) : null,
-        h("p", { class: "small muted" }, `会放到 stories/${meta.id}/，共 ${files.size} 个文件。分级：全年龄；${ai ? "需要 AI" : "纯规则"}。如果这个 id 已经上架，会作为新版本覆盖（记得把 meta.version 改大）。`),
+        h("p", { class: "small muted" }, `会放到 stories/${meta.id}/，共 ${files.size} 个文件。分级：全年龄；AI 故事。如果这个 id 已经上架，会作为新版本覆盖（记得把 meta.version 改大）。`),
         h("label", { class: "row" }, ok, h("span", {}, "我确认：不含色情等不适合公开的内容；文字和素材是我原创或有权使用；没有 Key 或隐私信息。版权仍归我，同意授权本平台公开分发。")),
         h("div", { class: "row" }, btn)));
     };

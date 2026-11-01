@@ -103,7 +103,7 @@ defs={
   "images":{"type":"object","additionalProperties":REF},"fit":{"enum":["cover","contain"]},"generated":ID,
   "content":{"enum":["fixed","ai"],"description":"固定（作者写死）或 AI 处理；不写 = fixed"},
   "input":obj({"actions":{"type":"array","items":ID,"description":"玩家这段文字最多能导致的已声明动作"},
-     "words":{"type":"object","propertyNames":ID,"additionalProperties":STRL,"description":"不经 AI 时：关键词 → 动作"},
+     "words":{"type":"object","propertyNames":ID,"additionalProperties":STRL,"description":"关键词直达：关键词 → 动作（不等 AI；AI 出错时也能用）"},
      "reject":{"type":"string","minLength":1,"description":"无法映射或超界时的固定回应"},
      "max_length":{"type":"integer","minimum":1,"maximum":2000}},["actions","reject"])},"additionalProperties":False},
 }
