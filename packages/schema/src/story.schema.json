@@ -1959,7 +1959,8 @@
             "text-block",
             "image",
             "dice-log",
-            "canvas"
+            "canvas",
+            "custom"
           ]
         },
         "region": {
@@ -2164,6 +2165,34 @@
         "hidpi": {
           "type": "boolean",
           "description": "canvas 铺满时按设备像素比放大像素（更清晰，render 拿到的宽高也更大）"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "uniqueItems": true,
+          "maxItems": 64,
+          "description": "custom：组件可以触发的动作"
+        },
+        "emits": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "uniqueItems": true,
+          "maxItems": 32,
+          "description": "custom：组件可以发出的事件（触发 ui:<组件id>.<事件> 的 AI 接入点）"
+        },
+        "config": {
+          "type": "object",
+          "description": "custom：原样传给组件的作者配置"
+        },
+        "fallback": {
+          "$ref": "#/$defs/text",
+          "description": "custom：玩家关闭自定义组件或加载失败时显示的文字"
         }
       },
       "additionalProperties": false

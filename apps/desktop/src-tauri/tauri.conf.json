@@ -12,7 +12,7 @@
   "app": {
     "windows": [{ "title": "我的绿洲", "width": 1200, "height": 800, "minWidth": 800, "minHeight": 560, "dragDropEnabled": true }],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data: blob:; media-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ipc: http://ipc.localhost https:"
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data: blob:; media-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ipc: http://ipc.localhost https:; frame-src oasisui: http://oasisui.localhost"
     }
   },
   "bundle": {

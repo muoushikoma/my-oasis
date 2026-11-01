@@ -144,8 +144,26 @@ interface ComponentApi {
 ```
 组件不能直接调用模型、不能直接写状态（除非该状态 `writable_by` 含 `ui`）。
 
-#### 3.4.5 自定义组件与安全（MVP 之后）
-无同源权限的沙箱 iframe（`sandbox="allow-scripts"`），CSP `default-src 'none'`，不能联网；只通过 `postMessage` 使用上面的接口；拿不到 Key、令牌、文件、Tauri 命令。玩家可全局禁用自定义组件。
+#### 3.4.5 自定义组件与安全
+- 组件写在故事包里（`src: ui/xxx.html`，可引用同包的 `.js`/`.css`/图片/音频/字体，相对 HTML 所在文件夹）；客户端把这些文件内联成一份文档，放进**无同源权限的沙箱 iframe**（`sandbox="allow-scripts"`），文档 CSP 为 `default-src 'none'`，只允许内联脚本/样式和 `data:` 素材，**不能联网**。桌面/安卓客户端经单独的 `oasisui:` 协议加载（独立源与 CSP，主窗口的 Tauri IPC 不可用）。
+- 只能通过 `postMessage` 和客户端说话，协议版本 `oasis-ui/1`（只做向后兼容的增加）。组件里直接用全局对象 `window.oasis`：
+
+| 接口 | 说明 |
+|---|---|
+| `oasis.ready` | Promise，收到初始数据后完成（返回 `oasis` 本身） |
+| `oasis.state` | 玩家可见的状态（`visible` 不含 player 的状态拿不到） |
+| `oasis.onState(cb)` | 状态变化时回调 `cb(state, changedKeys)`；返回取消函数 |
+| `oasis.action(id, params)` | 调用动作，返回 `Promise<{ ok, error? }>`；只能调 `actions` 里列出、玩家可调用的动作，照常检查 `require`、参数和回合；AI 正在处理时会被拒绝；每秒最多 20 次 |
+| `oasis.emit(event, payload)` | 发事件，触发 AI 接入点 `trigger: "ui:<组件id>.<event>"`；只能发 `emits` 里列出的；`payload` 转成 JSON（≤ 2 KB）作为 `{{input}}` |
+| `oasis.lang` / `oasis.config` / `oasis.component` | 当前语言、组件的 `config`、组件 id |
+| `oasis.ended` / `oasis.busy` | 是否已结局、AI 是否在处理 |
+| `oasis.resize(height)` | 调整高度（40–2000 px） |
+| `oasis.log(...)` | 调试日志（打开“调试”时出现在控制台） |
+
+- 拿不到 Key、令牌、存档、文件、Tauri 命令，也不能直接写状态、调模型，只能“调用声明过的动作”和“发声明过的事件”。
+- 玩家可在“设置”里全局关闭自定义组件，此时显示组件的 `fallback` 文字。作者应保证关掉后故事仍能玩（同样的动作另外给按钮或输入框）。
+
+详见 [规范 §13.3](ruleset-spec.md)。
 
 #### 3.4.3 素材与声音
 - 故事包自带图片、立绘、背景、音乐、音效，在 `assets` 清单登记，用 `asset:<id>` 引用；导入时检查文件存在、格式、大小（图片 ≤ 10 MB、音频 ≤ 30 MB、单文件 < 100 MB、整包 ≤ 300 MB，见 story-format.md §1）。

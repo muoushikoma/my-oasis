@@ -94,7 +94,7 @@ defs={
   "cache":{"oneOf":[{"enum":["once","none"]},obj({"by_state":{"type":"array","items":ID,"minItems":1}},["by_state"])]},
   "fallback":{"oneOf":[REF,{"const":"none"}]},"alt":{"type":"string"}},["trigger","prompt"]),
 "component":{"type":"object","required":["type","region"],"properties":{
-  "type":{"enum":["text-log","text-input","button","choice-buttons","stat-list","stat-bar","item-list","chat-box","text-block","image","dice-log"]},
+  "type":{"enum":["text-log","text-input","button","choice-buttons","stat-list","stat-bar","item-list","chat-box","text-block","image","dice-log","canvas","custom"]},
   "region":ID,"label":{"type":"string"},"hidden_by_default":{"type":"boolean"},"player_can_hide":{"type":"boolean"},
   "placeholder":{"type":"string"},"writes":ID,"action":ID,"emit":ID,"params":{"type":"object"},
   "choices":{"type":"array","items":obj({"label":{"type":"string"},"action":ID,"params":{"type":"object"}},["label","action"])},

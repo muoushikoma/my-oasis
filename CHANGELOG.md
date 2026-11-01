@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- **自定义组件（`ui` 组件 `type: custom`）**：作者在故事包里自带 HTML/JS/CSS，客户端放进无同源权限的沙箱 iframe（`allow-scripts`，CSP `default-src 'none'`，不能联网；桌面/安卓经独立的 `oasisui:` 协议加载）。组件只能通过 `postMessage` 桥接协议 `oasis-ui/1`（`window.oasis`）读取玩家可见的状态、订阅变化、调用声明过的动作（`actions`）、发出声明过的事件（`emits`，触发 `ui:<id>.<事件>`）、读语言和 `config`、调整高度；拿不到 Key、令牌、文件和 Tauri 命令。设置里可以全局关闭，关闭时显示 `fallback`。校验器检查文件存在、引用文件、外网引用、大小（≤ 8 MB）、声明的动作和事件。示例 `tests/fixtures/custom-ui-mini/`。
+
 - **每个故事都必须接 AI**：`ai` 变为必填，且至少要有一个 AI 接入点（`ai.entry_points`），否则校验报错 `ai_required`；平台不再收纯规则故事。AI 失败/超时时的 fallback 替代文字、可关闭的 AI 生图仍然保留。
 - 客户端：没接好 AI（没填 Key、也没设置本地模型）时，开始游玩前会提示先去“设置”接 AI；去掉“纯规则”标签，首次向导文案同步。
 - 文档、README、发布页、测试样例与示例故事同步更新。

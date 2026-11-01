@@ -140,6 +140,16 @@ export const bridge = {
     if (isTauri) { const t = await tauri(); return t.invoke("key_delete", { providerId: provider }); }
     sessionStorage.removeItem("devkey:" + provider);
   },
+  /** 自定义组件：Tauri 里经 oasisui:// 协议加载（独立源和 CSP），浏览器开发模式用 srcdoc */
+  async loadCustomFrame(iframe: HTMLIFrameElement, html: string) {
+    if (isTauri) {
+      const core = await import("@tauri-apps/api/core");
+      const token = await core.invoke<string>("ui_frame_put", { html });
+      iframe.src = core.convertFileSrc(token, "oasisui");
+      return;
+    }
+    iframe.srcdoc = html;
+  },
   // ---------- GitHub 登录与投稿：token 只在 Rust 端和系统安全存储里 ----------
   async gh<T = any>(cmd: "gh_status" | "gh_device_start" | "gh_device_poll" | "gh_logout" | "gh_submit" | "gh_my_prs" | "gh_like", args: Record<string, any> = {}): Promise<T> {
     if (isTauri) { const t = await tauri(); return t.invoke(cmd, args); }

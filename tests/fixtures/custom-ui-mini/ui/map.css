@@ -1,0 +1,5 @@
+body { margin: 0; font: 14px system-ui, sans-serif; color: #ddd; background: transparent; }
+#map { display: flex; gap: 6px; flex-wrap: wrap; }
+button { flex: 1; padding: 10px 6px; border-radius: 8px; border: 1px solid #567; background: #234; color: inherit; cursor: pointer; }
+button.here { background: #c93; color: #111; font-weight: bold; }
+#msg { min-height: 1.2em; margin: 6px 0 0; color: #f99; font-size: 12px; }

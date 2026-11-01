@@ -221,6 +221,14 @@ type Report = (level: Level, code: string, path: (string | number)[], message: s
 
 const STEP_OPS = ["set", "inc", "add", "remove", "put", "let", "if", "call", "emit", "end", "fail", "log"];
 
+/** 自定义组件 HTML 连同内联的文件最多多大 */
+export const CUSTOM_MAX_BYTES = 8 * 1024 * 1024;
+/** 包内相对路径规范化（处理 ./ 和 ../，越出包外返回空） */
+export function normPath(p: string): string {
+  const out: string[] = [];
+  for (const seg of p.split("/")) { if (!seg || seg === ".") continue; if (seg === "..") { if (!out.length) return ""; out.pop(); } else out.push(seg); }
+  return out.join("/");
+}
 function semantic(s: Story, files: StoryFiles, report: Report) {
   const obj = (x: any) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
   const state: Record<string, StateDef> = obj(s.state);
@@ -239,6 +247,28 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
   const fileExists = (p: unknown) => typeof p === "string" && files.has(p);
   const checkFile = (path: (string | number)[], p: unknown, what: string) => {
     if (typeof p === "string" && !fileExists(p)) report("error", "missing_file", path, `${what}引用了文件「${p}」，但故事包里没有这个文件。`, `把文件放进故事包，或检查路径大小写（包内文件有：${[...files.keys()].slice(0, 8).join("、")}${files.size > 8 ? "……" : ""}）。`, "§1");
+  };
+
+  // 自定义组件（§13.3）：作者自带的 HTML，客户端放进沙箱 iframe
+  const customChecks = (id: string, c: any, p: (string | number)[]) => {
+    const src = c.src;
+    if (typeof src !== "string" || src.startsWith("asset:")) { report("error", "custom_no_src", p, `自定义组件「${id}」要用 src 写故事包里的 HTML 文件路径。`, "例如 src: ui/map.html。", "§13.3", "src"); return; }
+    if (!/\.html?$/i.test(src)) report("error", "custom_src_type", p, `自定义组件「${id}」的 src 必须是 .html 文件（现在是「${src}」）。`, undefined, "§13.3", "src");
+    const html = files.get(src);
+    if (!html) { checkFile([...p, "src"], src, `自定义组件「${id}」`); return; }
+    const text = new TextDecoder().decode(html);
+    const dir = src.includes("/") ? src.slice(0, src.lastIndexOf("/") + 1) : "";
+    let total = html.length;
+    for (const m of text.matchAll(/\b(?:src|href)\s*=\s*["']([^"'#?]+)["']/gi)) {
+      const ref = m[1].trim();
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(ref)) { if (/^https?:|^\/\//i.test(ref)) report("warning", "custom_network", p, `自定义组件「${id}」引用了网络地址「${ref}」。自定义组件不能联网，这个文件不会加载。`, "把文件放进故事包，用相对路径引用。", "§13.3"); continue; }
+      const full = normPath(dir + ref);
+      const d = full && files.get(full);
+      if (!d) report("error", "missing_file", [...p, "src"], `自定义组件「${id}」的 HTML 引用了「${ref}」，但故事包里没有这个文件。`, "把文件放进故事包，路径相对于 HTML 文件所在的文件夹。", "§13.3");
+      else total += d.length;
+    }
+    if (total > CUSTOM_MAX_BYTES) report("error", "custom_too_big", p, `自定义组件「${id}」连同它引用的文件一共 ${(total / 1048576).toFixed(1)} MB，超过 ${CUSTOM_MAX_BYTES / 1048576} MB。`, "压缩图片，或把大素材改成用 asset 组件显示。", "§13.3");
+    if (c.fallback === undefined) report("info", "custom_no_fallback", p, `自定义组件「${id}」没写 fallback：玩家关闭自定义组件时会显示一句默认提示。`, "写一句 fallback 文字，说明这里本来是什么。", "§13.3");
   };
 
   // assets（素材清单）
@@ -540,9 +570,11 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
           const c = comps[cid];
           if (!c) report("error", "unknown_component", p, `触发用的组件「${cid}」不存在。${didYouMean(cid, Object.keys(comps))}`, `已有组件：${listOf(Object.keys(comps))}。`, "§10.4", "trigger");
           else {
-            const evts: Record<string, string[]> = { button: ["click"], "chat-box": ["send"], "text-input": ["submit"], "choice-buttons": ["click"] };
+            const evts: Record<string, string[]> = { button: ["click"], "chat-box": ["send"], "text-input": ["submit"], "choice-buttons": ["click"], custom: Array.isArray(c.emits) ? c.emits : [] };
             const ok = evts[c.type];
-            if (!ok) report("error", "component_no_event", p, `组件「${cid}」（${c.type}）不会产生事件，不能用来触发 AI。`, "用 button、chat-box、text-input 或 choice-buttons。", "§13", "trigger");
+            if (c.type === "custom" && !ok.length) report("error", "component_event", p, `自定义组件「${cid}」没有声明任何事件。`, `在组件里写 emits: [${evt ?? "事件名"}]。`, "§13.3", "trigger");
+            else if (c.type === "custom" && !ok.includes(evt)) report("error", "component_event", p, `自定义组件「${cid}」没有声明事件「${evt}」。`, `在组件的 emits 里加上 ${evt}，或改成 ${listOf(ok)} 之一。`, "§13.3", "trigger");
+            else if (!ok) report("error", "component_no_event", p, `组件「${cid}」（${c.type}）不会产生事件，不能用来触发 AI。`, "用 button、chat-box、text-input 或 choice-buttons。", "§13", "trigger");
             else if (!ok.includes(evt)) report("error", "component_event", p, `组件「${cid}」（${c.type}）没有「${evt}」事件。`, `应写 ui:${cid}.${ok[0]}。`, "§13", "trigger");
           }
         }
@@ -584,6 +616,8 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     }
     const acts: [string, any][] = [];
     if (c.action !== undefined) acts.push(["action", c.action]);
+    if (c.type === "custom" && Array.isArray(c.actions)) c.actions.forEach((a: any) => acts.push(["actions", a]));
+    if (c.type === "custom") customChecks(id, c, p);
     if (Array.isArray(c.choices)) c.choices.forEach((ch: any, i: number) => acts.push([`choices`, ch?.action]));
     for (const [k, a] of acts) {
       if (!(a in actions)) report("error", "unknown_action", p, `组件要执行的动作「${a}」不存在。${didYouMean(String(a), actionIds)}`, `已有的动作：${listOf(actionIds)}。`, "§13", k);
@@ -603,7 +637,7 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
       }
     }
     if (c.type === "text-input" && c.writes !== undefined) { const d = state[c.writes]; if (!d) report("error", "unknown_state", p, `输入框要写入的状态「${c.writes}」不存在。`, undefined, "§13", "writes"); else if (!(d.writable_by ?? []).includes("ui")) report("error", "not_ui_writable", p, `状态「${c.writes}」不允许界面直接写。`, `在状态里加 writable_by: [rules, ui]。`, "§13", "writes"); }
-    for (const k of ["src", "portrait"]) checkRef(p, c[k], "image", "组件", k);
+    for (const k of ["src", "portrait"]) { if (k === "src" && c.type === "custom") continue; checkRef(p, c[k], "image", "组件", k); }
     for (const [k, v] of Object.entries(obj(c.images))) checkRef([...p, "images"], v, "image", "组件图片", k);
     if (c.type === "choice-buttons" && c.from_ai) {
       const targets = Object.values<any>(entries).flatMap((e) => [e?.card?.output?.to, ...Object.values(obj(e?.card?.output?.sections))]);

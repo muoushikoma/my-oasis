@@ -425,7 +425,44 @@ export function run(api) {
 | `text-block` | `bind: 状态id` 或 `text` | 显示一段文字 |
 | `image` | `src`，或 `bind`（一个状态）+ `images: { 值: 素材引用 }`（可再写 `src` 作默认图），或 `generated: 生图点id`；`fit: cover\|contain` | 图片 / 随状态切换 / AI 生图 |
 | `dice-log` | —（需 `oasis/dice`） | 随机结果记录 |
-| `node-map`、`portrait`、`item-grid`、`timer`、`custom` | — | MVP 之后 |
+| `custom` | `src`（包内 `.html`），`actions`（可调用的动作 id 列表），`emits`（可发出的事件名），`config`（任意数据，原样交给组件），`height`，`fallback`（关闭时显示的文字） | 作者自带的 HTML/JS 组件，沙箱运行，见下方“自定义组件” |
+| `node-map`、`portrait`、`item-grid`、`timer` | — | 以后再加（可先用 `custom` 自己做） |
+
+**自定义组件（type: custom）**
+
+```yaml
+ui:
+  components:
+    map:
+      type: custom
+      region: side
+      src: ui/map.html        # 可引用同包的 map.js / map.css / 图片
+      actions: [move]
+      emits: [opened]         # AI 接入点用 trigger: "ui:map.opened"
+      height: 120
+      config: { title: 小岛 }
+      fallback: 小地图已关闭，你可以用下面的按钮移动。
+```
+
+- 组件写在故事包里（`src: ui/xxx.html`，可引用同包的 `.js`/`.css`/图片/音频/字体，相对 HTML 所在文件夹）；客户端把这些文件内联成一份文档，放进**无同源权限的沙箱 iframe**（`sandbox="allow-scripts"`），文档 CSP 为 `default-src 'none'`，只允许内联脚本/样式和 `data:` 素材，**不能联网**。桌面/安卓客户端经单独的 `oasisui:` 协议加载（独立源与 CSP，主窗口的 Tauri IPC 不可用）。
+- 只能通过 `postMessage` 和客户端说话，协议版本 `oasis-ui/1`（只做向后兼容的增加）。组件里直接用全局对象 `window.oasis`：
+
+| 接口 | 说明 |
+|---|---|
+| `oasis.ready` | Promise，收到初始数据后完成（返回 `oasis` 本身） |
+| `oasis.state` | 玩家可见的状态（`visible` 不含 player 的状态拿不到） |
+| `oasis.onState(cb)` | 状态变化时回调 `cb(state, changedKeys)`；返回取消函数 |
+| `oasis.action(id, params)` | 调用动作，返回 `Promise<{ ok, error? }>`；只能调 `actions` 里列出、玩家可调用的动作，照常检查 `require`、参数和回合；AI 正在处理时会被拒绝；每秒最多 20 次 |
+| `oasis.emit(event, payload)` | 发事件，触发 AI 接入点 `trigger: "ui:<组件id>.<event>"`；只能发 `emits` 里列出的；`payload` 转成 JSON（≤ 2 KB）作为 `{{input}}` |
+| `oasis.lang` / `oasis.config` / `oasis.component` | 当前语言、组件的 `config`、组件 id |
+| `oasis.ended` / `oasis.busy` | 是否已结局、AI 是否在处理 |
+| `oasis.resize(height)` | 调整高度（40–2000 px） |
+| `oasis.log(...)` | 调试日志（打开“调试”时出现在控制台） |
+
+- 拿不到 Key、令牌、存档、文件、Tauri 命令，也不能直接写状态、调模型，只能“调用声明过的动作”和“发声明过的事件”。
+- 玩家可在“设置”里全局关闭自定义组件，此时显示组件的 `fallback` 文字。作者应保证关掉后故事仍能玩（同样的动作另外给按钮或输入框）。
+- 校验：`src` 必须是包里存在的 `.html`（`custom_no_src` / `custom_src_type` / `missing_file`）；HTML 里相对引用的文件必须存在（`missing_file`）；引用外网地址给警告（`custom_network`，运行时也加载不到）；内联后总大小 ≤ 8 MB（`custom_too_big`）；`actions` 必须是存在且玩家可调用的动作；`ui:<id>.<事件>` 触发器的事件必须写在 `emits` 里（`component_event`）；没写 `fallback` 给提示。
+- 示例：`tests/fixtures/custom-ui-mini/`。
 
 **AI 生成的选项按钮（choices 约定）**
 `choice-buttons` 写 `from_ai: true` 时，选项由 AI 给出：
