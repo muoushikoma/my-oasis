@@ -14,6 +14,9 @@ export const TEXT_EXT = [".yaml", ".yml", ".json", ".md", ".txt"];
 export const SCRIPT_EXT = [".js", ".ts", ".lua", ".py"];
 export const FONT_EXT = [".woff2", ".woff", ".ttf", ".otf"];
 export const VIDEO_EXT = [".webm", ".mp4"];
+/** 自定义着色器（单个最多 32 KB）与 Tiled 地图（.tmj，按文本文件 2 MB 限制） */
+export const SHADER_EXT = [".glsl", ".frag"];
+export const MAP_EXT = [".tmj"];
 export const ID_RE = /^[a-z][a-z0-9-]{2,63}$/;
 
 export function storyDirs() {

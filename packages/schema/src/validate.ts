@@ -3,7 +3,9 @@ import { parseDocument, LineCounter, isMap, isSeq, isPair, isScalar, type Docume
 import storyValidate from "./story.validate.generated.js";
 import { strFromU8 } from "fflate";
 import { parseExpr, collectRefs, ExprError, BUILTIN_FUNCS, RANDOM_FUNCS, DICE_FUNCS } from "./expr.js";
-import { ALLOWED_EXT, IMAGE_EXT, AUDIO_EXT, FONT_EXT, VIDEO_EXT, LIMITS, type StoryFiles } from "./files.js";
+import { ALLOWED_EXT, IMAGE_EXT, AUDIO_EXT, FONT_EXT, VIDEO_EXT, SHADER_EXT, MAP_EXT, LIMITS, textFile, type StoryFiles } from "./files.js";
+import { checkShaderSource } from "./shader.js";
+import { parseTiled } from "./tiled.js";
 import { DEFAULT_MAX_AUTHORITY, KNOWN_TEMPLATES, regionsOf, type Story, type Step, type StateDef } from "./types.js";
 
 export type Level = "error" | "warning" | "info";
@@ -253,6 +255,25 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     if (a.type === "audio" && !AUDIO_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为音频，但「${a.path}」不是 OGG/MP3/M4A/WAV/FLAC/OPUS。`, undefined, "§13.5", "path");
     if (a.type === "font" && !FONT_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为字体，但「${a.path}」不是 WOFF2/WOFF/TTF/OTF。`, undefined, "§13.5", "path");
     if (a.type === "video" && !VIDEO_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为视频，但「${a.path}」不是 WebM/MP4。`, undefined, "§13.5", "path");
+    if (a.type === "shader") {
+      if (!SHADER_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为着色器，但「${a.path}」不是 .glsl / .frag。`, undefined, "§10.11", "path");
+      else { const err = checkShaderSource(textFile(files, a.path) ?? ""); if (err) report("error", "shader_bad", p, `着色器「${id}」：${err}。`, "见 story-format.md 10.11 的着色器写法。", "§10.11", "path"); }
+    }
+    if (a.type === "tilemap") {
+      if (!MAP_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为地图，但「${a.path}」不是 Tiled 的 .tmj（JSON）文件。`, "在 Tiled 里“另存为”选 JSON 地图格式（*.tmj）。", "§10.11", "path");
+      else {
+        try {
+          const ts = a.tilesets && typeof a.tilesets === "object" ? a.tilesets : {};
+          const m = parseTiled(textFile(files, a.path) ?? "", a.path, (path, name) => ts[name] ?? Object.entries<any>(assets).find(([, x]) => x?.type === "image" && x.path === path)?.[0]);
+          for (const t of m.tilesets) {
+            if (!t.image) continue;
+            if (!t.asset) report("error", "tilemap_image", p, `地图「${id}」的图块集「${t.name}」用的图片「${t.image}」没有登记成图片素材。`, `在 assets 里登记这张图（type: image, path: ${t.image}），或在地图素材里写 tilesets: { ${t.name || "图块集名"}: 图片素材id }。`, "§10.11", "path");
+            else if (assets[t.asset]?.type !== "image") report("error", "tilemap_image", p, `地图「${id}」的图块集「${t.name}」对应的素材「${t.asset}」不是图片。`, undefined, "§10.11", "tilesets");
+          }
+        } catch (err: any) { report("error", "tilemap_bad", p, `地图「${id}」读不了：${err?.message ?? err}。`, undefined, "§10.11", "path"); }
+      }
+    }
+    if (a.tilesets && a.type !== "tilemap") report("warning", "asset_tilesets", p, `只有 type: tilemap 的素材才用得到 tilesets。`, undefined, "§10.11", "tilesets");
     if ((a.use === "music" || a.use === "sfx") && a.type !== "audio") report("error", "asset_use", p, `素材「${id}」用途是 ${a.use}，类型应为 audio。`, undefined, "§13.5", "use");
     if (["background", "portrait", "illustration", "icon"].includes(a.use) && a.type !== "image") report("error", "asset_use", p, `素材「${id}」用途是 ${a.use}，类型应为 image。`, undefined, "§13.5", "use");
   }
@@ -726,11 +747,29 @@ function realtimeChecks(s: Story, files: StoryFiles, report: Report) {
     if (c?.type !== "canvas") continue;
     const p = ["ui", "components", id];
     need04(p, "画布组件 canvas ");
-    if (!c.render) report("error", "canvas_no_render", p, `画布「${id}」没有 render 函数，不知道画什么。`, "写 render: scripts/game.js#draw。", "§14");
+    if (!c.render && !(s as any).scenes) report("error", "canvas_no_render", p, `画布「${id}」没有 render 函数，不知道画什么。`, "写 render: scripts/game.js#draw。", "§14");
     ref(p, "render", c.render);
     if (c.size === "fill" && (c.width || c.height)) report("warning", "canvas_fill_size", p, `画布「${id}」是 size: fill，写的 width/height 不会生效。`, "铺满时用 render 里的 api.params.width / height。", "§10.8");
     if (c.hidpi && c.size !== "fill") report("warning", "canvas_hidpi", p, `画布「${id}」的 hidpi 只在 size: fill 时生效。`, undefined, "§10.8");
   }
+  // 场景文件（scenes）
+  const sc: any = (s as any).scenes;
+  if (sc) {
+    need04(["scenes"], "场景文件 scenes ");
+    const list = obj(sc.list), names = Object.keys(list);
+    if (sc.start !== undefined && !(sc.start in list)) report("error", "unknown_scene", ["scenes"], `开始场景「${sc.start}」不在 scenes.list 里。${didYouMean(String(sc.start), names)}`, undefined, "§10.12", "start");
+    for (const [id, d] of Object.entries<any>(list)) if (typeof d?.script === "string" && !files.has(d.script)) report("error", "missing_file", ["scenes", "list", id], `场景「${id}」的脚本文件「${d.script}」不在故事包里。`, undefined, "§10.12", "script");
+    if (!s.realtime) report("warning", "scenes_no_realtime", ["scenes"], "写了 scenes，但没有 realtime 循环：场景的 tick 不会被调用。", "加上 realtime: { tick_hz: 30 }。", "§10.12");
+  }
+  // 屏幕控件（input.controls）
+  const ctl: any[] = Array.isArray((s.input as any)?.controls) ? (s.input as any).controls : [];
+  const seenCtl = new Set<string>(), assetsOf = obj((s as any).assets);
+  ctl.forEach((c, i) => {
+    const p = ["input", "controls", i];
+    if (c?.id && seenCtl.has(c.id)) report("error", "duplicate_control", p, `屏幕控件 id「${c.id}」重复了。`, undefined, "§10.13", "id");
+    if (c?.id) seenCtl.add(c.id);
+    for (const k of ["image", "pressed_image"]) if (c?.[k] !== undefined && assetsOf[c[k]]?.type !== "image") report("error", "unknown_asset", p, `屏幕控件「${c.id}」的 ${k}「${c[k]}」不是登记过的图片素材。`, undefined, "§10.13", k);
+  });
   for (const [id, e] of Object.entries<any>(entries)) if (e?.trigger === "script") need04(["ai", "entry_points", id], "由脚本调用的 AI 接入点（trigger: script）");
   for (const [id, d] of Object.entries<any>(obj(s.state))) if (d?.type === "json") need04(["state", id], "json 类型的状态");
 }

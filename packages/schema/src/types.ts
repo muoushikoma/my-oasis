@@ -52,14 +52,19 @@ export interface Story {
   state: Record<string, StateDef>; actions?: Record<string, ActionDef>; events?: EventDef[];
   endings: { check_on?: "state_change" | "turn_end" | "manual"; list: EndingDef[]; script?: string };
   tools?: Record<string, ToolDef>; ai?: AiDef; ui?: UiDef; scripts?: { limits?: { time_ms?: number; memory_mb?: number } };
-  realtime?: RealtimeDef; input?: InputDef; assets?: Record<string, { type: "image" | "audio"; path: string; [k: string]: any }>;
+  realtime?: RealtimeDef; input?: InputDef; assets?: Record<string, { type: "image" | "audio" | "font" | "video" | "shader" | "tilemap"; path: string; tilesets?: Record<string, string>; [k: string]: any }>;
+  /** oasis/0.4：场景文件 */ scenes?: ScenesDef;
 }
 /** oasis/0.4：实时循环 */
 export interface TimerDef { every_ms?: number; after_ms?: number; action?: string; params?: Record<string, any>; emit?: string; script?: string }
 export interface RealtimeDef { tick_hz?: number; tick_ms?: number; interpolate?: boolean; on_tick?: string; on_ai?: string; on_resize?: string; on_ui?: string; timers?: Record<string, TimerDef> }
 /** oasis/0.4：输入映射。keys：按键（KeyboardEvent.code）→ 输入名 */
-export interface InputDef { keys?: Record<string, string>; joystick?: boolean | { side?: "left" | "right" }; buttons?: { id: string; label?: string }[]; pointer?: boolean }
-export interface InputState { held: Record<string, boolean>; pressed: Record<string, boolean>; joystick: { x: number; y: number }; pointer: { x: number; y: number; down: boolean; target?: string; wheel?: number; button?: number }; touches?: { id: number; x: number; y: number; target?: string }[] }
+export interface InputDef { keys?: Record<string, string>; joystick?: boolean | { side?: "left" | "right" }; buttons?: { id: string; label?: string }[]; pointer?: boolean; controls?: ControlDef[] }
+/** oasis/0.4：故事自己摆放的屏幕控件 */
+export interface ControlDef { id: string; type: "button" | "joystick" | "dpad"; anchor?: string; x?: number | string; y?: number | string; size?: number; shape?: "circle" | "rect"; label?: any; image?: string; pressed_image?: string; color?: string; opacity?: number; show?: "touch" | "always"; hidden?: boolean }
+/** oasis/0.4：场景文件。每个场景一个脚本，可写 enter/exit/tick/render/ui/ai/resize */
+export interface ScenesDef { start?: string; list: Record<string, { script: string; title?: any }> }
+export interface InputState { held: Record<string, boolean>; pressed: Record<string, boolean>; joystick: { x: number; y: number }; pointer: { x: number; y: number; down: boolean; target?: string; wheel?: number; button?: number }; touches?: { id: number; x: number; y: number; target?: string }[]; sticks?: Record<string, { x: number; y: number }> }
 export const DEFAULT_MAX_AUTHORITY = 1; // 暂定默认
 export const KNOWN_TEMPLATES = ["oasis/dice@1", "oasis/check@1", "oasis/inventory@1", "oasis/clock@1"];
 export const TEMPLATE_REGIONS: Record<string, string[]> = {

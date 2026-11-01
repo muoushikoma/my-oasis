@@ -7,7 +7,11 @@ export const AUDIO_EXT = [".ogg", ".mp3", ".m4a", ".wav", ".flac", ".opus"];
 export const FONT_EXT = [".woff2", ".woff", ".ttf", ".otf"];
 /** 视频：只受单文件 100 MB / 整包 300 MB 限制；用 api.video.play 全屏播放 */
 export const VIDEO_EXT = [".webm", ".mp4"];
-export const ALLOWED_EXT = [".yaml", ".yml", ".json", ".md", ".txt", ".js", ".ts", ".lua", ".py", ...IMAGE_EXT, ...AUDIO_EXT, ...FONT_EXT, ...VIDEO_EXT];
+/** 自定义着色器（GLSL 片元着色器主体，单个最多 32 KB，见 shader.ts） */
+export const SHADER_EXT = [".glsl", ".frag"];
+/** Tiled 地图（JSON 格式 .tmj；.tsj 图块集请嵌入地图） */
+export const MAP_EXT = [".tmj"];
+export const ALLOWED_EXT = [".yaml", ".yml", ".json", ".md", ".txt", ".js", ".ts", ".lua", ".py", ...IMAGE_EXT, ...AUDIO_EXT, ...FONT_EXT, ...VIDEO_EXT, ...SHADER_EXT, ...MAP_EXT];
 /** 体积上限（与 tools/stories/common.mjs、Rust package.rs 保持一致）。单个文件必须小于 100 MB（GitHub 硬性限制）。 */
 export const LIMITS = { packageBytes: 300 * 1024 * 1024, imageBytes: 10 * 1024 * 1024, audioBytes: 30 * 1024 * 1024, textBytes: 2 * 1024 * 1024, fileCount: 2000, fileBytes: 100 * 1024 * 1024 - 1 };
 

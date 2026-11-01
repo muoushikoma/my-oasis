@@ -779,8 +779,168 @@
         },
         "pointer": {
           "type": "boolean"
+        },
+        "controls": {
+          "type": "array",
+          "maxItems": 16,
+          "description": "oasis/0.4：故事自己摆放的屏幕控件（按钮、摇杆、十字键）",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "type": {
+                "enum": [
+                  "button",
+                  "joystick",
+                  "dpad"
+                ]
+              },
+              "anchor": {
+                "enum": [
+                  "top_left",
+                  "top",
+                  "top_right",
+                  "left",
+                  "center",
+                  "right",
+                  "bottom_left",
+                  "bottom",
+                  "bottom_right"
+                ]
+              },
+              "x": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^-?\\d+(\\.\\d+)?%$"
+                  }
+                ]
+              },
+              "y": {
+                "oneOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^-?\\d+(\\.\\d+)?%$"
+                  }
+                ]
+              },
+              "size": {
+                "type": "number",
+                "minimum": 24,
+                "maximum": 320
+              },
+              "shape": {
+                "enum": [
+                  "circle",
+                  "rect"
+                ]
+              },
+              "label": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 12
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "zh": {
+                        "type": "string",
+                        "maxLength": 12
+                      },
+                      "en": {
+                        "type": "string",
+                        "maxLength": 12
+                      }
+                    },
+                    "additionalProperties": false,
+                    "minProperties": 1
+                  }
+                ]
+              },
+              "image": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "pressed_image": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,39}$"
+              },
+              "color": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "opacity": {
+                "type": "number",
+                "minimum": 0.05,
+                "maximum": 1
+              },
+              "show": {
+                "enum": [
+                  "touch",
+                  "always"
+                ]
+              },
+              "hidden": {
+                "type": "boolean"
+              }
+            }
+          }
         }
       }
+    },
+    "scenes": {
+      "type": "object",
+      "description": "oasis/0.4：场景文件。每个场景一个脚本文件，里面可以写 enter/exit/tick/render/ui/ai/resize 函数",
+      "properties": {
+        "start": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$"
+        },
+        "list": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 200,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "script"
+            ],
+            "properties": {
+              "script": {
+                "type": "string",
+                "pattern": "^[^#]+\\.(js|ts)$"
+              },
+              "title": {
+                "$ref": "#/$defs/text"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "list"
+      ],
+      "additionalProperties": false
     }
   },
   "$defs": {
@@ -1799,7 +1959,9 @@
             "image",
             "audio",
             "font",
-            "video"
+            "video",
+            "shader",
+            "tilemap"
           ]
         },
         "path": {
@@ -1847,6 +2009,18 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "tilesets": {
+          "type": "object",
+          "description": "Tiled 地图（type: tilemap）：图块集名字 → 图片素材 id；不写时按 .tmj 里的 image 路径找",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          }
         }
       },
       "additionalProperties": false,
