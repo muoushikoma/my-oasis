@@ -275,7 +275,7 @@ meta: { id: my-story, title: 示例, version: 1.0.0, summary: 简介, language: 
 ```yaml
 realtime:
   tick_hz: 30                      # 每秒推进几次，1–60，默认 30
-  tick_ms: 16                      # 每次脚本调用的时间上限（毫秒），1–50，默认 16
+  tick_ms: 50                      # 每次脚本调用的时间上限（毫秒），1–200，默认 50
   on_tick: scripts/game.js#tick    # 每次推进时调用（可选）
   on_ai: scripts/game.js#onAi      # 脚本发起的 AI 请求返回时调用（可选）
   timers:                          # 定时事件（可选）
@@ -354,7 +354,7 @@ ui:
 
 - 实时脚本还可以读取：`api.dt`（这一步的毫秒数）、`api.time`（游戏开始后的毫秒数）、`api.input`。
 - 脚本在沙箱里运行：不能联网、不能读写文件、不能读取真实时间，也不能用 `Math.random`，随机数请用 `api.random`。
-- 每次调用受 `realtime.tick_ms` 的时间上限和 `scripts.limits.memory_mb` 的内存上限约束（默认 16 MB），超出会被中止。
+- 每次调用受 `realtime.tick_ms` 的时间上限（默认 50 毫秒，作者可自行调整）和 `scripts.limits.memory_mb` 的内存上限约束（默认 16 MB），超出会被中止。
 - 脚本文件每次调用都会重新执行，顶层常量可以随便用；需要保存的数据请写进状态（`json` 类型最方便）。
 
 ### 10.7 实时示例

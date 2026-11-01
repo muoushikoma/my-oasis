@@ -365,7 +365,7 @@ export class Game {
   private rtDt = 0; private drawBuf: DrawCmd[] = []; private aiSeq = 0; private aiInFlight = 0; private lastRtError = "";
   get rtTime(): number { return this.extra.rt_time ?? 0; }
   get isRealtime() { return !!this.story.realtime; }
-  private rtLimits() { return { time_ms: this.story.realtime?.tick_ms ?? 16, memory_mb: this.story.scripts?.limits?.memory_mb ?? 16 }; }
+  private rtLimits() { return { time_ms: this.story.realtime?.tick_ms ?? 50, memory_mb: this.story.scripts?.limits?.memory_mb ?? 16 }; }
   private rtError(where: string, e: any) {
     const text = `${where}出错：${e?.message ?? e}`;
     if (text !== this.lastRtError) this.log.push({ turn: this.turn, kind: "error", text });

@@ -553,7 +553,8 @@
         "tick_ms": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 50
+          "maximum": 200,
+          "default": 50
         },
         "on_tick": {
           "type": "string",
