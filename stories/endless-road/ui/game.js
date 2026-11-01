@@ -193,10 +193,11 @@ function itemBar(s) {
 // AI 为这段旅程创造的玩法系统
 function sysPanel(s) {
   const list = s.sys_ui || []; if (!list.length) return null;
-  return h("div", { class: "syspanel" }, list.map((y) => h("div", { class: "sys out" },
-    h("div", { class: "shead", title: `${y.desc}\n\n${y.text}`, onclick: () => { sheet = "trip"; render(); } }, icon(y.icon), h("b", {}, y.name), h("em", {}, `${y.val}/${y.max}`)),
-    h("div", { class: "sbar" }, h("i", { style: { width: `${(100 * y.val) / y.max}%` } }), y.thr.map((t) => h("span", { class: "tick" + (t.on ? " on" : ""), style: { left: `${(100 * t.at) / y.max}%` }, title: `${t.at}：${t.name}` }))),
-    y.spends.length ? h("div", { class: "sbtns" }, y.spends.map((sp) => h("button", { class: "btn sbtn" + (sp.ok ? " ready" : ""), disabled: !sp.ok || busy(), title: `${sp.text}${sp.battle ? T("（战斗中）", " (in battle)") : ""}`, onclick: () => run("invoke", { id: sp.key }) }, `✦ ${sp.name}`, h("small", {}, ` ${sp.cost}`)))) : null)));
+  return h("div", { class: "syspanel" }, list.map((y) => h("div", { class: "sys out" + (y.off ? " off" : "") },
+    h("div", { class: "shead", title: `${y.desc}\n\n${y.text}`, onclick: () => { sheet = "trip"; render(); } }, icon(y.icon), h("b", {}, y.name), h("em", {}, y.label || (y.val != null ? `${y.val}/${y.max}` : ""))),
+    y.val != null ? h("div", { class: "sbar" }, h("i", { style: { width: `${(100 * y.val) / y.max}%` } })) : null,
+    h("div", { class: "ebar", title: T("能量：有益的效果会消耗，每里回复", "Energy: spent by helpful effects, refills each mile") }, h("i", { style: { width: `${(100 * y.energy) / y.emax}%` } })),
+    y.spends.length ? h("div", { class: "sbtns" }, y.spends.map((sp) => h("button", { class: "btn sbtn" + (sp.ok ? " ready" : ""), disabled: !sp.ok || busy(), title: `${sp.text}${sp.battle ? T("（战斗中）", " (in battle)") : ""}`, onclick: () => run("invoke", { id: sp.key }) }, `✦ ${sp.name}`))) : null)));
 }
 function resBar(s) {
   const r = s.res; if (!r || !r.k) return null;
@@ -326,7 +327,7 @@ function sheetBody(s, id) {
     s.quest && s.quest.due ? h("div", { class: "row" }, icon("scroll"), h("span", { class: "grow" }, T(`委托「${s.quest.title}」`, `Errand "${s.quest.title}"`)), h("b", {}, T(`第 ${s.quest.due} 里`, `mile ${s.quest.due}`))) : null,
     h("p", { style: { color: "#c5b392", fontSize: "13px" } }, T("每 10 里换一个地区，每 25 里有一个守关者。", "The region changes every 10 miles; a warden waits every 25 miles.")),
     ...((s.sys_ui || []).length ? [h("h3", { class: "serif", style: { marginTop: "14px" } }, T("✦ 这段旅程的玩法（AI 创造）", "✦ This journey's systems (created by the AI)")),
-      ...(s.sys_ui || []).map((y) => h("div", { class: "slot", style: { gridTemplateColumns: "40px 1fr" } }, icon(y.icon, true), h("div", {}, h("b", {}, `${y.name} · ${y.val}/${y.max}`), h("small", { style: { fontStyle: "italic" } }, y.desc), h("small", { style: { whiteSpace: "pre-line" } }, y.text))))] : []),
+      ...(s.sys_ui || []).map((y) => h("div", { class: "slot", style: { gridTemplateColumns: "40px 1fr" } }, icon(y.icon, true), h("div", {}, h("b", {}, `${y.name}${y.label ? " · " + y.label : ""}`), h("small", { style: { fontStyle: "italic" } }, y.desc), h("small", { style: { whiteSpace: "pre-line" } }, y.text))))] : []),
     h("h3", { class: "serif", style: { marginTop: "14px" } }, T(`✦ 本局 AI 造物（${(s.made || []).length}）· 图鉴共 ${s.codex_n || 0} 种`, `✦ AI creations this run (${(s.made || []).length}) · ${s.codex_n || 0} in your codex`)),
     s.thread ? h("p", { style: { fontStyle: "italic", color: "#f0dcb0" } }, `✦ ${s.thread}`) : null,
     ...(s.made || []).slice().reverse().map((m) => h("div", { class: "row" }, icon(m.t === "foe" ? "skull" : m.t === "insight" ? "scroll" : "gem"), h("div", { class: "grow" }, h("b", {}, m.n), h("div", { style: { fontSize: "12.5px", color: "#d0bc96" } }, m.e), m.d ? h("div", { style: { fontSize: "12.5px", color: "#a89878", fontStyle: "italic" } }, m.d) : null))),
