@@ -1,0 +1,386 @@
+spec: oasis/0.4
+meta:
+  id: endless-road
+  title: { zh: 无尽之路, en: The Endless Road }
+  version: 1.0.0
+  summary:
+    zh: 一条没有尽头的路，一路上的怪物、陷阱、行商与奇遇都由 AI 现场生成。简化版 D&D 规则，管好口粮、药水和金币，看你能走多远。
+    en: A road with no end. Every monster, trap, peddler and wonder along it is generated live by AI. Light D&D rules — manage rations, potions and gold, and see how far you can go.
+  language: zh-CN
+  languages: [zh, en]
+  rating: all-ages
+  tags:
+    - { zh: 地下城与勇士规则, en: D&D rules }
+    - { zh: 无尽生存, en: Survival }
+    - { zh: AI生成事件, en: AI events }
+  authors: [muoushikoma]
+  cover: assets/cover.png
+  est_minutes: 30
+  license: All rights reserved by the author; distributed under stories/LICENSE.md
+
+assets:
+  cover: { type: image, path: assets/cover.png, use: illustration, alt: { zh: 通往远方的路, en: A road to the horizon } }
+  vista: { type: image, path: assets/vista.png, use: illustration, alt: { zh: 远方的风景, en: A distant view } }
+  # 背景：每个地区 4 层（天空 / 远景 / 中景 / 地面与路），画面里按不同速度视差卷动
+  plains_sky: { type: image, path: assets/bg/plains_sky.png, use: background }
+  plains_far: { type: image, path: assets/bg/plains_far.png, use: background }
+  plains_mid: { type: image, path: assets/bg/plains_mid.png, use: background }
+  plains_ground: { type: image, path: assets/bg/plains_ground.png, use: background }
+  forest_sky: { type: image, path: assets/bg/forest_sky.png, use: background }
+  forest_far: { type: image, path: assets/bg/forest_far.png, use: background }
+  forest_mid: { type: image, path: assets/bg/forest_mid.png, use: background }
+  forest_ground: { type: image, path: assets/bg/forest_ground.png, use: background }
+  hills_sky: { type: image, path: assets/bg/hills_sky.png, use: background }
+  hills_far: { type: image, path: assets/bg/hills_far.png, use: background }
+  hills_mid: { type: image, path: assets/bg/hills_mid.png, use: background }
+  hills_ground: { type: image, path: assets/bg/hills_ground.png, use: background }
+  swamp_sky: { type: image, path: assets/bg/swamp_sky.png, use: background }
+  swamp_far: { type: image, path: assets/bg/swamp_far.png, use: background }
+  swamp_mid: { type: image, path: assets/bg/swamp_mid.png, use: background }
+  swamp_ground: { type: image, path: assets/bg/swamp_ground.png, use: background }
+  mountains_sky: { type: image, path: assets/bg/mountains_sky.png, use: background }
+  mountains_far: { type: image, path: assets/bg/mountains_far.png, use: background }
+  mountains_mid: { type: image, path: assets/bg/mountains_mid.png, use: background }
+  mountains_ground: { type: image, path: assets/bg/mountains_ground.png, use: background }
+  ashlands_sky: { type: image, path: assets/bg/ashlands_sky.png, use: background }
+  ashlands_far: { type: image, path: assets/bg/ashlands_far.png, use: background }
+  ashlands_mid: { type: image, path: assets/bg/ashlands_mid.png, use: background }
+  ashlands_ground: { type: image, path: assets/bg/ashlands_ground.png, use: background }
+  # 精灵（像素画，自动描边）：主角 6 帧（站立、走路 4 帧、攻击），篝火 2 帧，其余 1 帧
+  hero: { type: image, path: assets/sprites/hero.png, use: other }
+  wolf: { type: image, path: assets/sprites/wolf.png, use: other }
+  spider: { type: image, path: assets/sprites/spider.png, use: other }
+  bandit: { type: image, path: assets/sprites/bandit.png, use: other }
+  skeleton: { type: image, path: assets/sprites/skeleton.png, use: other }
+  troll: { type: image, path: assets/sprites/troll.png, use: other }
+  drake: { type: image, path: assets/sprites/drake.png, use: other }
+  ooze: { type: image, path: assets/sprites/ooze.png, use: other }
+  wisp: { type: image, path: assets/sprites/wisp.png, use: other }
+  warden: { type: image, path: assets/sprites/warden.png, use: other }
+  chest: { type: image, path: assets/sprites/chest.png, use: other }
+  cart: { type: image, path: assets/sprites/cart.png, use: other }
+  shrine: { type: image, path: assets/sprites/shrine.png, use: other }
+  campfire: { type: image, path: assets/sprites/campfire.png, use: other }
+  stranger: { type: image, path: assets/sprites/stranger.png, use: other }
+  rocks: { type: image, path: assets/sprites/rocks.png, use: other }
+  chasm: { type: image, path: assets/sprites/chasm.png, use: other }
+  thorns: { type: image, path: assets/sprites/thorns.png, use: other }
+
+state:
+  hp:        { type: number, init: 10, min: 0, integer: true, label: { zh: 生命, en: HP } }
+  max_hp:    { type: number, init: 10, min: 1, integer: true, label: { zh: 最大生命, en: Max HP } }
+  level:     { type: number, init: 1, min: 1, integer: true, label: { zh: 等级, en: Level } }
+  xp:        { type: number, init: 0, min: 0, integer: true, label: { zh: 经验, en: XP } }
+  xp_next:   { type: number, init: 60, integer: true, label: { zh: 升级所需, en: XP to level } }
+  ac:        { type: number, init: 12, integer: true, label: { zh: 护甲等级, en: Armor Class } }
+  weapon_bonus: { type: number, init: 0, min: 0, integer: true, label: { zh: 武器加值, en: Weapon bonus } }
+  armor_bonus:  { type: number, init: 0, min: 0, integer: true, label: { zh: 护甲加值, en: Armor bonus } }
+  distance:  { type: number, init: 0, min: 0, integer: true, label: { zh: 已走里程, en: Miles walked } }
+  best:      { type: number, init: 0, min: 0, integer: true, label: { zh: 最远纪录, en: Best record } }
+  rations:   { type: number, init: 8, min: 0, integer: true, label: { zh: 口粮, en: Rations } }
+  potions:   { type: number, init: 2, min: 0, integer: true, label: { zh: 治疗药水, en: Potions } }
+  gold:      { type: number, init: 15, min: 0, integer: true, label: { zh: 金币, en: Gold } }
+  kills:     { type: number, init: 0, min: 0, integer: true, label: { zh: 击败敌人, en: Foes defeated } }
+  abil:      { type: json, init: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, visible: ai, desc: 冒险者的六项属性值 }
+  abilities: { type: string, init: "", visible: player, label: { zh: 属性, en: Abilities } }
+  biome:
+    type: enum
+    values: [plains, forest, hills, swamp, mountains, ashlands]
+    init: plains
+    visible: ai
+    desc: 当前地区：plains 风语平原，forest 幽暗森林，hills 古冢丘陵，swamp 腐沼泽地，mountains 霜脊山道，ashlands 余烬荒原
+  scene_fx:  { type: json, init: { scroll: 0, target: 0, prev: null, cur: null, fx: [], busy: false }, visible: none, desc: 画面动画状态（卷动、主体、飘字） }
+  art:       { type: json, init: { time: day, weather: clear }, visible: ai, desc: 画面的时间与天气 }
+  event_kind:
+    type: enum
+    values: [none, combat, hazard, treasure, social, merchant, shrine, rest]
+    init: none
+    visible: ai
+    desc: 当前遭遇类型（由引擎掷骰决定）
+  event_tier:
+    type: enum
+    values: [weak, normal, tough, elite, boss]
+    init: normal
+    visible: ai
+    desc: 遭遇强度（由引擎掷骰决定）
+  event_title: { type: string, init: "", max_length: 60, visible: ai, desc: 当前遭遇的名字 }
+  threat:    { type: number, init: 1, integer: true, visible: ai, desc: 威胁等级，越大越危险 }
+  foe:       { type: json, init: {}, visible: none }
+  check:     { type: json, init: {}, visible: none }
+  camped:    { type: bool, init: false, visible: none }
+  situation: { type: string, init: "", visible: player, label: { zh: 眼前, en: Right now } }
+
+realtime:
+  tick_hz: 20
+  tick_ms: 16
+  interpolate: true
+  on_tick: scripts/scene.js#tick
+
+start:
+  intro:
+    zh: 老旅店的门在你身后关上。门前那条路向东延伸，没人知道它通向哪里——据说从没有人走到过尽头。你紧了紧背包，迈出了第一步。
+    en: The old inn's door shuts behind you. The road outside runs east, and no one knows where it leads — they say no one has ever reached its end. You tighten your pack and take the first step.
+  do:
+    - call: setup
+
+actions:
+  setup:
+    callable_by: [rules]
+    script: scripts/road.js#setup
+  walk:
+    label: { zh: 继续前进, en: Walk on }
+    desc: { zh: 向前走一里，吃掉 1 份口粮，并遇到新的事件, en: "Walk one mile, eat 1 ration, and meet a new event" }
+    require: "state.event_kind == 'none' || state.event_kind == 'merchant' || state.event_kind == 'rest'"
+    require_message: { zh: 眼前的事还没解决：攻击、应对，或者离开。, en: "Deal with what's in front of you first: attack, resolve, or leave." }
+    callable_by: [player]
+    steps:
+      - call: walk_rules
+      - if: "state.event_kind != 'none'"
+        then: [ { emit: encounter } ]
+      - if: "state.distance % 10 == 0"
+        then: [ { emit: milestone } ]
+  walk_rules:
+    callable_by: [rules]
+    script: scripts/road.js#walk_rules
+  attack:
+    label: { zh: 攻击, en: Attack }
+    require: "state.event_kind == 'combat'"
+    require_message: { zh: 这里没有敌人。, en: There is no enemy here. }
+    callable_by: [player]
+    script: scripts/road.js#attack
+  resolve:
+    label: { zh: 应对（检定）, en: Resolve (check) }
+    require: "state.event_kind == 'hazard' || state.event_kind == 'treasure' || state.event_kind == 'social' || state.event_kind == 'shrine'"
+    require_message: { zh: 现在没有需要检定的事。, en: There is nothing to roll for right now. }
+    callable_by: [player]
+    script: scripts/road.js#resolve
+  leave:
+    label: { zh: 离开 / 逃跑, en: Leave / Flee }
+    require: "state.event_kind != 'none'"
+    require_message: { zh: 路上什么也没有，直接前进吧。, en: Nothing here — just walk on. }
+    callable_by: [player]
+    script: scripts/road.js#leave
+  potion:
+    label: { zh: 喝药水, en: Drink potion }
+    require: "state.potions > 0 && state.hp < state.max_hp"
+    require_message: { zh: 没有药水，或者生命已满。, en: "No potions, or you are at full HP." }
+    callable_by: [player]
+    script: scripts/road.js#potion
+  camp:
+    label: { zh: 扎营休息, en: Make camp }
+    require: "(state.event_kind == 'rest') || (state.event_kind == 'none' && !state.camped && state.rations > 0)"
+    require_message: { zh: 现在不能扎营（每里只能扎营一次，需要 1 份口粮，且附近不能有麻烦）。, en: "You can't camp now (once per mile, costs 1 ration, and no trouble nearby)." }
+    callable_by: [player]
+    steps:
+      - call: camp_rules
+      - if: "state.event_kind == 'combat'"
+        then: [ { emit: encounter } ]
+  camp_rules:
+    callable_by: [rules]
+    script: scripts/road.js#camp_rules
+  buy:
+    label: { zh: 购买, en: Buy }
+    params:
+      item: { type: enum, values: [ration, potion, gear] }
+    require: "state.event_kind == 'merchant'"
+    require_message: { zh: 附近没有商人。, en: There is no merchant here. }
+    callable_by: [player]
+    script: scripts/road.js#buy
+  apply_ai:
+    callable_by: [rules]
+    params:
+      title:    { type: string, required: false }
+      text:     { type: string, required: false }
+      foe:      { type: string, required: false }
+      ability:  { type: enum, values: [str, dex, con, int, wis, cha], required: false }
+      approach: { type: string, required: false }
+      reward:   { type: enum, values: [gold, rations, potion, heal], required: false }
+      hostile:  { type: bool, required: false }
+      sprite:   { type: string, required: false }
+      tint:     { type: string, required: false }
+      time:     { type: string, required: false }
+      weather:  { type: string, required: false }
+    script: scripts/road.js#apply_ai
+
+endings:
+  list:
+    - id: fallen
+      label: { zh: 倒在路上, en: Fallen on the road }
+      kind: bad
+      when: "state.hp <= 0"
+      text:
+        zh: 你倒在了路边。风吹过，路依旧向前延伸。看看你走了多远——下一次，也许能走得更远。
+        en: You collapse by the roadside. The wind blows on, and the road still runs ahead. See how far you came — next time, perhaps further.
+
+ai:
+  model_hint: { tier: light, note: 每走一步生成一个小事件，快速便宜的模型就够用 }
+  system: |
+    这是一个低魔奇幻世界（类似 D&D 的经典奇幻）。一位冒险者沿着一条没有尽头的路向东走，路上会遇到怪物、陷阱、宝藏、路人、行商、奇遇和安全的营地。
+    风格：简洁、有画面感、偶尔带一点幽默。适合所有年龄：可以有战斗和危险，但不写血腥细节。
+    每次冒险都应该是全新的：多用意想不到的生物、人物和地点，不要重复之前出现过的东西。
+  rules:
+    max_authority: 0
+    must:
+      - 遭遇的类型和强度已经由引擎掷骰决定，你只负责把它写得具体、生动
+      - 名字和描述要符合当前地区（biome）和强度（event_tier）
+    forbid:
+      - 写出具体的数值、伤害或骰子结果（数值由规则计算）
+      - 替玩家做决定或写出遭遇的结果
+      - 血腥、恐怖猎奇或不适合全年龄的内容
+  entry_points:
+    road_event:
+      kind: generate
+      trigger: event:encounter
+      prompt: |
+        冒险者走到了第 {{state.distance}} 里，地区：{{state.biome}}。
+        引擎掷出的遭遇类型：{{state.event_kind}}，强度：{{state.event_tier}}，威胁等级：{{state.threat}}。
+        冒险者现在 {{state.hp}}/{{state.max_hp}} 生命，{{state.level}} 级，口粮 {{state.rations}}，药水 {{state.potions}}，金币 {{state.gold}}。
+
+        请为这个遭遇写内容：
+        - title：遭遇的名字（不超过 12 个字）。
+        - text：2~3 句描述，玩家看到的就是这段，写出现场的样子和气氛，结尾停在需要玩家做决定的地方。
+        - foe：combat 时是敌人的名字（守关者 boss 要写出一个有气势的名号）；social 时是这个人的称呼；其他类型留空。
+        - ability：hazard/treasure/social/shrine 时，最适合用来应对的属性（str 力量、dex 敏捷、con 体质、int 智力、wis 感知、cha 魅力）；其他类型随便填一个。
+        - approach：hazard/treasure/social/shrine 时，玩家“应对”要做的事（不超过 12 个字，如“攀过断桥”“说服守卫”）；其他类型留空。
+        - reward：treasure/social/shrine 成功时最合理的收获类型（gold 金币、rations 口粮、potion 药水、heal 恢复体力）。
+        - hostile：social 时，如果谈判失败对方会不会动手；其他类型填 false。
+        merchant 就写一位有特点的行商；rest 就写一处安全的歇脚地。
+
+        画面由模块拼成，请挑最贴切的组合：
+        - sprite：combat 从 wolf 狼/野兽、spider 蜘蛛/虫、bandit 人形敌人、skeleton 亡灵、troll 大块头、drake 飞龙/蜥蜴、ooze 软泥、wisp 元素/幽魂 里选（守关者还可以选 warden 骑士）；hazard 从 chasm 断崖、rocks 落石、thorns 荆棘 里选；social 选 stranger 旅人 或 bandit 可疑的人；其他类型随便填。
+        - tint：给精灵染色，none / red / green / blue / gold / shadow / pale / purple（例如火焰怪 red、冰怪 blue、幽灵 pale）。
+        - time：day / dusk / night，可以顺着上一个事件的时间往后推。
+        - weather：clear / rain / snow / fog / embers / fireflies / leaves，要符合地区。
+      card:
+        task: 为引擎刚刚掷出的路上遭遇写出具体的名字、描述和应对方式。
+        authority: 0
+        output:
+          format: json
+          to: none
+          max_chars: 800
+          schema:
+            title: string
+            text: string
+            foe: string
+            ability: "enum:[str,dex,con,int,wis,cha]"
+            approach: string
+            reward: "enum:[gold,rations,potion,heal]"
+            hostile: bool
+            sprite: "enum:[wolf,spider,bandit,skeleton,troll,drake,ooze,wisp,warden,chasm,rocks,thorns,stranger,chest,cart,shrine,campfire]"
+            tint: "enum:[none,red,green,blue,gold,shadow,pale,purple]"
+            time: "enum:[day,dusk,night]"
+            weather: "enum:[clear,rain,snow,fog,embers,fireflies,leaves]"
+          then:
+            - call: apply_ai
+              params:
+                title: out.title
+                text: out.text
+                foe: out.foe
+                ability: out.ability
+                approach: out.approach
+                reward: out.reward
+                hostile: out.hostile
+                sprite: out.sprite
+                tint: out.tint
+                time: out.time
+                weather: out.weather
+      context:
+        state: [distance, biome, event_kind, event_tier, event_title, threat, level, hp, max_hp, rations, potions, gold, art]
+        history_turns: 10
+        setting: false
+      temperature: 1.0
+      fallback: { zh: （AI 没有连上：本次遭遇使用内置描述。）, en: (AI unavailable — using the built-in description for this encounter.) }
+    epitaph:
+      kind: narrate
+      trigger: game_end
+      after_end: true
+      optional: true
+      prompt: |
+        冒险者倒下了。他/她一共走了 {{state.distance}} 里，到达 {{state.level}} 级，击败了 {{state.kills}} 个敌人，最后倒在了 {{state.biome}}。
+        请写一段简短的墓志铭式的结语（2~3 句），回顾这段旅程，语气庄重但带一点温暖。
+      card:
+        task: 为倒下的冒险者写一段简短的旅程结语。
+        authority: 0
+        output:
+          format: text
+          to: component:log
+          max_chars: 300
+      context:
+        state: [distance, level, kills, biome]
+        history_turns: 0
+        setting: false
+      fallback: { zh: 路还在，传说也还在。, en: "The road remains, and so does the legend." }
+  images:
+    vista:
+      trigger: event:milestone
+      prompt: 一条古老的道路穿过奇幻世界中的地区（{{state.biome}}），远处是地平线，冒险者的背影很小。
+      style: painterly fantasy landscape, wide shot, warm light, no text
+      size: 1536x1024
+      cache: { by_state: [biome] }
+      fallback: asset:vista
+      alt: { zh: AI 绘制的远方风景, en: An AI-painted view ahead }
+
+ui:
+  theme:
+    base: dark
+    colors: { accent: "#e0a84a", bg: "#16130f", text: "#efe6d6", panel: "#221d17" }
+    font: { body: serif, size: 16 }
+  layout:
+    template: two-column
+  components:
+    stage:
+      type: canvas
+      region: main
+      width: 256
+      height: 144
+      pixelated: true
+      render: scripts/scene.js#draw
+    log:
+      type: text-log
+      region: main
+      content: ai
+    now:
+      type: text-block
+      region: side
+      label: { zh: 眼前, en: Right now }
+      bind: situation
+    vitals:
+      type: stat-list
+      region: side
+      label: { zh: 冒险者, en: Adventurer }
+      bind: [hp, max_hp, level, xp, xp_next, ac, weapon_bonus]
+    pack:
+      type: stat-list
+      region: side
+      label: { zh: 行囊, en: Pack }
+      bind: [distance, best, rations, potions, gold, kills]
+    abil_block:
+      type: text-block
+      region: side
+      label: { zh: 属性, en: Abilities }
+      bind: abilities
+    vista_img:
+      type: image
+      region: side
+      label: { zh: 远方, en: Ahead }
+      generated: vista
+      fit: cover
+      player_can_hide: true
+    road:
+      type: choice-buttons
+      region: input
+      choices:
+        - { label: { zh: 继续前进, en: Walk on }, action: walk }
+        - { label: { zh: 攻击, en: Attack }, action: attack }
+        - { label: { zh: 应对（检定）, en: Resolve }, action: resolve }
+        - { label: { zh: 离开 / 逃跑, en: Leave / Flee }, action: leave }
+        - { label: { zh: 喝药水, en: Potion }, action: potion }
+        - { label: { zh: 扎营休息, en: Camp }, action: camp }
+    shop:
+      type: choice-buttons
+      region: input
+      label: { zh: 行商, en: Merchant }
+      choices:
+        - { label: { zh: 买口粮 2g, en: Ration 2g }, action: buy, params: { item: ration } }
+        - { label: { zh: 买药水 15g, en: Potion 15g }, action: buy, params: { item: potion } }
+        - { label: { zh: 升级装备, en: Upgrade gear }, action: buy, params: { item: gear } }
