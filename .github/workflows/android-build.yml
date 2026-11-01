@@ -1,6 +1,7 @@
 # 安卓 APK 构建（手动触发、打 v* 标签，或改了代码的 PR；只改故事的 PR 不触发）。不提交任何签名密钥：
 # - 默认每次用临时生成的自签名证书签名（能安装；但换证书后需先卸载旧版才能装新版）
-# - 以后想要固定签名：在仓库 Secrets 里放 ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD（keystore 别名 my-oasis）
+# - 固定签名：仓库 Secrets 里放 ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD，可选 ANDROID_KEY_ALIAS（默认 my-oasis）/ ANDROID_KEY_PASSWORD（默认同 keystore 密码）
+# - 打 v* 标签时，APK 会作为 MyOasis_<版本>_android.apk 上传到同名 Release（草稿，维护者检查后发布）
 name: android-build
 on:
   workflow_dispatch:
@@ -94,15 +95,18 @@ jobs:
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -e
           IN=$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name "*release-unsigned.apk" | head -1)
           if [ -z "$IN" ]; then echo "找不到 APK，产物如下："; find apps/desktop/src-tauri/gen/android/app/build/outputs -name "*.apk"; exit 1; fi
           echo "APK: $IN"
-          if [ -n "$KS_B64" ]; then echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/ks.jks"; PASS="$KS_PASS";
+          ALIAS=my-oasis
+          if [ -n "$KS_B64" ]; then echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/ks.jks"; PASS="$KS_PASS"; ALIAS="${KEY_ALIAS:-my-oasis}";
           else PASS=$(openssl rand -hex 16); keytool -genkeypair -keystore "$RUNNER_TEMP/ks.jks" -storetype PKCS12 -storepass "$PASS" -keypass "$PASS" -alias my-oasis -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=My Oasis Test"; fi
           "$BUILD_TOOLS/zipalign" -f -p 4 "$IN" "$RUNNER_TEMP/aligned.apk"
-          "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/ks.jks" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --ks-key-alias my-oasis --out my-oasis-android.apk "$RUNNER_TEMP/aligned.apk"
+          "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/ks.jks" --ks-pass "pass:$PASS" --key-pass "pass:${KEY_PASS:-$PASS}" --ks-key-alias "$ALIAS" --out my-oasis-android.apk "$RUNNER_TEMP/aligned.apk"
           "$BUILD_TOOLS/apksigner" verify my-oasis-android.apk
           rm -f "$RUNNER_TEMP/ks.jks"
       - uses: actions/upload-artifact@v4
@@ -111,3 +115,26 @@ jobs:
           path: my-oasis-android.apk
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    # 打 v* 标签时把安装包上传到同名 Release（不存在就建一个草稿；已存在就覆盖同名文件）
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist }
+      - name: 上传到 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          VER="${TAG#v}"
+          mkdir -p up && cp dist/my-oasis-android/my-oasis-android.apk "up/MyOasis_${VER}_android.apk"
+          ls -la up
+          gh release view "$TAG" -R "$REPO" >/dev/null 2>&1 || gh release create "$TAG" -R "$REPO" --draft --verify-tag --title "我的绿洲 $TAG" --notes "见 CHANGELOG.md 的 $VER 一节。" || { sleep 20; gh release view "$TAG" -R "$REPO" >/dev/null; }
+          gh release upload "$TAG" up/* -R "$REPO" --clobber
