@@ -1,6 +1,6 @@
 # 无尽之路 / The Endless Road
 
-一条没有尽头的路，从左往右一直走。每走一里吃掉 1 份口粮，并遇到一个新事件。管好资源、强化装备、收集遗物，看你能走多远。
+一条没有尽头的路，从左往右一直走。每走一里吃掉 1 份口粮，并遇到一个由 AI 现场写成的新事件。管好资源、强化装备、收集遗物，看你能走多远。**这个故事需要接入 AI。**
 
 A road with no end, walked left to right. Every mile costs a ration and brings a new event. Manage supplies, upgrade your gear, collect relics — see how far you can go.
 
@@ -73,7 +73,7 @@ A road with no end, walked left to right. Every mile costs a ration and brings a
 
 ## 四、AI 与画面模块
 
-AI 只有 0 级权限：不能改任何数值。它写的每个字段都会被规则校验（动作是否适用于这个类别、收获是否允许、精灵是否在白名单里），不合规的会被丢掉或换成默认值。没连 AI 时，每个类别都有内置事件模板；AI 太慢时也会先用模板，AI 的结果到了再替换（玩家还没做选择的话）。
+AI 只有 0 级权限：不能改任何数值。它写的每个字段都会被规则校验（动作是否适用于这个类别、收获是否允许、精灵是否在白名单里），不合规的会被丢掉或换成默认值；如果一个可用的选项都没剩下，规则会补一组通用选项。AI 超过 25 秒没有回应时，事件卡会提示检查 AI 设置，并显示“重试”按钮。
 
 画面是 256×144 的像素画布（`scripts/scene.js`），每一帧由模块叠出来：
 

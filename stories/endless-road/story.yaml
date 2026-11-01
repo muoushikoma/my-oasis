@@ -4,8 +4,8 @@ meta:
   title: { zh: 无尽之路, en: The Endless Road }
   version: 1.0.0
   summary:
-    zh: 一条没有尽头的路，一路上的怪物、陷阱、行商与奇遇都由 AI 现场生成。简化版 D&D 规则，管好口粮、药水和金币，看你能走多远。
-    en: A road with no end. Every monster, trap, peddler and wonder along it is generated live by AI. Light D&D rules — manage rations, potions and gold, and see how far you can go.
+    zh: 一条没有尽头的路，一路上的怪物、陷阱、行商与奇遇都由 AI 现场生成（需要接入 AI）。简化版 D&D 规则，管好资源、强化装备，看你能走多远。
+    en: An endless road where AI invents every monster, trap and wonder (AI required). Light D&D rules — manage supplies, upgrade gear, see how far you get.
   language: zh-CN
   languages: [zh, en]
   rating: all-ages
@@ -122,7 +122,6 @@ state:
   card:      { type: json, init: {}, visible: none }
   foe:       { type: json, init: {}, visible: none }
   next_kind: { type: string, init: "", visible: none }
-  ai_mode:   { type: string, init: unknown, visible: none }
   camped:    { type: bool, init: false, visible: none }
   # 面板文字（规则生成）
   situation:   { type: string, init: "", visible: player, label: { zh: 眼前, en: Right now } }
@@ -357,7 +356,6 @@ ai:
         history_turns: 10
         setting: false
       temperature: 1.0
-      fallback: { zh: （AI 没有连上：本次事件使用内置模板。）, en: (AI unavailable — using a built-in event.) }
     epitaph:
       kind: narrate
       trigger: game_end

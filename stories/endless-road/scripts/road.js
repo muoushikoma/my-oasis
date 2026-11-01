@@ -3,7 +3,7 @@
 // 框架：
 //   每走一里 → 引擎掷出「事件类别 + 强度」→ AI 把它写成一张「事件卡」（标题、描述、2~3 个选项）→ 玩家选一个 → 规则结算。
 //   选项 = 动作（检定 / 付出 / 赌运 / 动手 / 接委托）+ 从菜单里挑的「收获」和「风险」。具体数值全部由规则按威胁和难度计算，
-//   卡上直接显示，AI 改不了。没有 AI 时用内置的事件模板。
+//   卡上直接显示，AI 改不了。这个故事需要接 AI。
 //   资源：口粮、药水、金币（消耗品）；铁料、魔晶（强化材料）；遗物（最多 3 件，被动效果）；
 //   强化：武器、护甲、背包（携带上限）、营具（扎营效果），在交易事件里用金币和材料升级。
 //
@@ -52,8 +52,8 @@ const R_NAME = {
 };
 // 状态效果（按里程计时；疲惫直到扎营）
 const STATUS = {
-  blessed: ["祝福", "Blessed", "d20 +2"], cursed: ["诅咒", "Cursed", "d20 -2"], poisoned: ["中毒", "Poisoned", "每里 -1d4"],
-  exhausted: ["疲惫", "Exhausted", "AC -2"], scouted: ["侦察", "Scouted", "下一里避开战斗"],
+  blessed: ["祝福", "Blessed", "d20 +2", "d20 +2"], cursed: ["诅咒", "Cursed", "d20 -2", "d20 -2"], poisoned: ["中毒", "Poisoned", "每里 -1d4", "-1d4 HP per mile"],
+  exhausted: ["疲惫", "Exhausted", "AC -2", "AC -2"], scouted: ["侦察", "Scouted", "更容易避开战斗", "easier to avoid fights"],
 };
 // 遗物（被动，最多 3 件）
 const RELICS = {
@@ -88,62 +88,8 @@ const WEATHER = ["clear", "rain", "snow", "fog", "embers", "fireflies", "leaves"
 const BIOME_WEATHER = { plains: "clear", forest: "leaves", hills: "clear", swamp: "fog", mountains: "snow", ashlands: "embers" };
 const SUBJECT_X = 176, HERO_X = 58, MILE_PX = 160;
 const BOSS_EVERY = 25, BIOME_EVERY = 10;
-const AI_WAIT = { unknown: 20000, yes: 30000, no: 1500 };
+const AI_STALE_MS = 25000; // 等这么久还没有 AI 结果，就提示检查设置并允许重试
 
-// ===== 内置事件模板（没有 AI，或 AI 太慢时用）=====
-// 选项：{ label:[zh,en], verb, ability?, diff?, reward?, risk?, cost? }
-const TEMPLATES = {
-  encounter: [
-    { title: ["路边的老兵", "An old soldier"], text: ["一位独臂老兵坐在里程碑上擦拭头盔，见你走来，眯起眼打量你的剑。", "A one-armed veteran polishes his helm on a milestone, eyeing your sword."], sprite: "stranger",
-      options: [{ label: ["向他讨教剑术", "Ask for sword tips"], verb: "check", ability: "wis", diff: "normal", reward: "xp", risk: "none" },
-        { label: ["分他一份口粮", "Share a ration"], verb: "pay", cost: "rations", reward: "iron" },
-        { label: ["替他送一封信", "Deliver his letter"], verb: "quest" }] },
-    { title: ["收过路费的人", "The toll keepers"], text: ["两个持棍的家伙拦在路中间：“过路费，十个金币，概不赊账。”", "Two men with clubs block the road. \"Toll. Pay up, no credit.\""], sprite: "bandit", foe: ["收费的恶棍", "Toll thugs"],
-      options: [{ label: ["乖乖付钱", "Pay the toll"], verb: "pay", cost: "gold", reward: "none" },
-        { label: ["吓唬他们", "Intimidate them"], verb: "check", ability: "cha", diff: "hard", reward: "gold", risk: "ambush" },
-        { label: ["拔剑", "Draw your sword"], verb: "fight" }] },
-  ],
-  discovery: [
-    { title: ["半埋的箱子", "A half-buried chest"], text: ["路旁的土里露出一角铁皮箱，锁孔里塞着泥。", "The corner of an iron chest pokes out of the dirt, its lock caked with mud."], sprite: "chest",
-      options: [{ label: ["撬开锁", "Pick the lock"], verb: "check", ability: "dex", diff: "normal", reward: "gold", risk: "hurt" },
-        { label: ["用蛮力砸开", "Smash it open"], verb: "check", ability: "str", diff: "easy", reward: "iron", risk: "hurt" }] },
-    { title: ["倒塌的哨塔", "A collapsed watchtower"], text: ["一座哨塔斜倒在路边，上层的储物间似乎还完好。", "A watchtower leans by the road; its upper storeroom looks intact."], sprite: "rocks",
-      options: [{ label: ["爬上去搜", "Climb up and search"], verb: "check", ability: "str", diff: "hard", reward: "relic", risk: "hurt" },
-        { label: ["在瓦砾里翻找", "Dig through the rubble"], verb: "gamble", reward: "potion", risk: "hurt" }] },
-  ],
-  hazard: [
-    { title: ["断裂的吊桥", "A broken rope bridge"], text: ["峡谷上的吊桥只剩一半木板，风一吹就晃。", "Half the planks of the gorge bridge are gone, and it sways in the wind."], sprite: "chasm",
-      options: [{ label: ["小心走过去", "Edge across"], verb: "check", ability: "dex", diff: "normal", reward: "xp", risk: "hurt" },
-        { label: ["绕远路", "Take the long way"], verb: "pay", cost: "rations", reward: "none" }] },
-    { title: ["落石坡", "A rockslide slope"], text: ["山坡上不断有碎石滚落，路被埋了一半。", "Stones keep tumbling down the slope, half-burying the road."], sprite: "rocks",
-      options: [{ label: ["顶着落石冲过去", "Dash through"], verb: "check", ability: "con", diff: "normal", reward: "none", risk: "hurt" },
-        { label: ["清出一条路", "Clear a path"], verb: "check", ability: "str", diff: "hard", reward: "iron", risk: "exhaust" }] },
-  ],
-  mystic: [
-    { title: ["古老的祭坛", "An ancient altar"], text: ["长满青苔的石门中央，一枚符文在缓缓发光。", "In a mossy stone arch, a rune glows slowly."], sprite: "shrine",
-      options: [{ label: ["默念祷词", "Pray"], verb: "check", ability: "wis", diff: "normal", reward: "blessing", risk: "curse" },
-        { label: ["献上金币", "Offer gold"], verb: "pay", cost: "gold", reward: "heal" },
-        { label: ["撬下符文石", "Pry out the runestone"], verb: "gamble", reward: "essence", risk: "curse" }] },
-    { title: ["会说话的鬼火", "A talking wisp"], text: ["一团鬼火绕着你转：“回答我的谜题，就给你看点好东西。”", "A wisp circles you: \"Answer my riddle and I'll show you something nice.\""], sprite: "wisp",
-      options: [{ label: ["解谜", "Solve the riddle"], verb: "check", ability: "int", diff: "hard", reward: "relic", risk: "curse" },
-        { label: ["让它带路", "Let it lead the way"], verb: "gamble", reward: "map", risk: "lost" }] },
-  ],
-  dilemma: [
-    { title: ["受伤的商人", "A wounded merchant"], text: ["一个商人倒在翻倒的车旁，腿被压住了，远处还有狼嚎。", "A merchant lies pinned under his overturned cart; wolves howl nearby."], sprite: "stranger",
-      options: [{ label: ["给他一瓶药水", "Give him a potion"], verb: "pay", cost: "potion", reward: "gold" },
-        { label: ["抬起车子", "Lift the cart"], verb: "check", ability: "str", diff: "normal", reward: "rations", risk: "ambush" }] },
-    { title: ["迷路的孩子", "A lost child"], text: ["一个孩子坐在路边哭，说她的村子在“很远很远的东边”。", "A child sobs by the road; her village is \"far, far to the east\"."], sprite: "stranger",
-      options: [{ label: ["答应送她回家", "Promise to take her home"], verb: "quest" },
-        { label: ["分她点吃的", "Share some food"], verb: "pay", cost: "rations", reward: "blessing" }] },
-  ],
-  quest: [
-    { title: ["委托的终点", "The end of the errand"], text: ["你终于找到了委托里提到的地方。", "You finally reach the place the errand spoke of."], sprite: "stranger",
-      options: [{ label: ["完成委托", "Complete the errand"], verb: "check", ability: "cha", diff: "normal", reward: "relic", risk: "none" },
-        { label: ["讨要更多报酬", "Ask for more"], verb: "gamble", reward: "gold", risk: "ambush" }] },
-  ],
-  trade: [{ title: ["流浪行商", "A wandering peddler"], text: ["一辆挂着铜铃的马车停在路边，车上还架着一个小铁砧。", "A cart with brass bells waits by the road, a small anvil on its tailboard."], sprite: "cart" }],
-  rest: [{ title: ["避风的岩洞", "A sheltered hollow"], text: ["一处干燥的岩洞，里面还留着别人的篝火灰。", "A dry hollow with the ashes of someone else's fire."], sprite: "campfire" }],
-};
 
 // ---------- 小工具 ----------
 function L(api, zh, en) { return api.lang === "en" ? en : zh; }
@@ -164,6 +110,17 @@ function status(api) { return get(api, "status") || {}; }
 function gear(api) { return get(api, "gear"); }
 function caps(api) { const p = gear(api).pack; return { rations: 8 + 4 * p, potions: 3 + p }; }
 function abilText(api) { const a = abil(api); return ABIL.map((k) => `${T2(api, ABIL_NAME[k])} ${a[k]}(${sign(mod(a[k]))})`).join(" · "); }
+// 英文模式下把中文标点换成英文标点（日志、面板、事件卡都经过这里）
+function en(api, t) {
+  if (api.lang !== "en" || typeof t !== "string") return t;
+  return t.replace(/（/g, " (").replace(/）/g, ")").replace(/：/g, ": ").replace(/，/g, ", ").replace(/。/g, ".").replace(/、/g, ", ").replace(/【/g, "[").replace(/】/g, "]").replace(/「|」/g, "\"").replace(/ {2,}/g, " ").replace(/\( /g, "(");
+}
+function log(api, t) { api.log(en(api, t)); }
+function enSpec(api, n) {
+  if (Array.isArray(n)) return n.map((x) => enSpec(api, x));
+  if (!n || typeof n !== "object") return n;
+  const o = {}; for (const k in n) o[k] = (k === "text" || k === "sub") ? en(api, n[k]) : enSpec(api, n[k]); return o;
+}
 function clip(s, n) { return String(s || "").replace(/\s+/g, " ").trim().slice(0, n); }
 
 // d20：叠加祝福、诅咒、幸运符
@@ -184,7 +141,7 @@ function hurt(api, n) {
   const hp = Math.max(0, get(api, "hp") - n);
   if (hp <= 0 && has(api, "undying_ember")) {
     set(api, "hp", 1); set(api, "relics", get(api, "relics").filter((r) => r !== "undying_ember"));
-    api.log(L(api, "🔥 不灭余烬燃尽了——你没有倒下，剩下 1 点生命。", "🔥 The undying ember burns out — you stay standing with 1 HP."));
+    log(api, L(api, "🔥 不灭余烬燃尽了——你没有倒下，剩下 1 点生命。", "🔥 The undying ember burns out — you stay standing with 1 HP."));
     return;
   }
   set(api, "hp", hp);
@@ -197,7 +154,7 @@ function gain(api, k, n) {
   if (k === "rations" || k === "potions") {
     const cur = get(api, k), v = Math.min(c[k], cur + n), lost = cur + n - v;
     set(api, k, v);
-    if (lost > 0) api.log(L(api, `🎒 背包装不下，丢掉了 ${lost} ${k === "rations" ? "份口粮" : "瓶药水"}。`, `🎒 Your pack is full — ${lost} ${k} left behind.`));
+    if (lost > 0) log(api, L(api, `🎒 背包装不下，丢掉了 ${lost} ${k === "rations" ? "份口粮" : "瓶药水"}。`, `🎒 Your pack is full — ${lost} ${k} left behind.`));
     return v - cur;
   }
   api.state.inc(k, n); return n;
@@ -349,7 +306,7 @@ function spawn(api, kind, tier, boss) {
   }
   set(api, "card", card);
   set(api, "phase", "card");
-  api.log(`${KIND_ICON[kind]} ${T2(api, KIND_NAME[kind])}${boss ? L(api, "：守关者挡住了去路", ": a warden blocks the road") : ""}（${L(api, "威胁", "threat")} ${threat}）`);
+  log(api, `${KIND_ICON[kind]} ${T2(api, KIND_NAME[kind])}${boss ? L(api, "：守关者挡住了去路", ": a warden blocks the road") : ""}（${L(api, "威胁", "threat")} ${threat}）`);
 }
 
 // 用模板（或 AI 的草稿）填好卡片
@@ -365,8 +322,8 @@ function fillCard(api, draft, fromAi) {
     (draft.options || []).slice(0, 3).forEach((o, i) => { const f = finalizeOption(api, Object.assign({}, o, { label: clip(T2(api, o.label), 40) || L(api, "试试看", "Try it") }), kind, i + 1, card); if (f) opts.push(f); });
     if (kind === "combat" && !opts.some((o) => o.verb === "fight")) opts.unshift({ id: "o0", label: L(api, "动手", "Fight"), verb: "fight" });
     if (!opts.length || (kind === "combat" && opts.length < 2)) {
-      // AI 没给出能用的选项：标题和描述用 AI 的，选项借用内置模板
-      const tpl = kind === "combat" ? combatTemplate(api, card) : TEMPLATES[kind] ? api.random.pick(TEMPLATES[kind]) : null;
+      // AI 给出的选项都不合规：标题和描述用 AI 的，选项由规则补一组通用的
+      const tpl = kind === "combat" ? combatTemplate(api, card) : genericOptions(api, kind);
       if (tpl) tpl.options.forEach((o, i) => { if (opts.some((x) => x.verb === "fight") && o.verb === "fight") return; const f = finalizeOption(api, Object.assign({}, o, { label: T2(api, o.label) }), kind, i + 4, card); if (f) opts.push(f); });
     }
   }
@@ -375,7 +332,7 @@ function fillCard(api, draft, fromAi) {
   if (draft.sprite && (KIND_SPRITES[kind] || []).indexOf(draft.sprite) >= 0) { const s = sfx(api); if (s.cur) { s.cur.sprite = draft.sprite; saveFx(api, s); } }
   set(api, "card", card);
   reveal(api);
-  if (card.text) api.log(`📖 ${card.title}：${card.text}`);
+  if (card.text) log(api, `📖 ${card.title}：${card.text}`);
   if (kind === "trade") set(api, "phase", "shop");
   if (kind === "combat" && card.boss) { /* 守关者卡片只有迎战 */ }
 }
@@ -387,11 +344,13 @@ function combatTemplate(api, card) {
       { label: ["丢下金币引开它", "Toss gold as a distraction"], verb: "pay", cost: "gold", reward: "none" }],
   };
 }
-function useTemplate(api) {
-  const card = get(api, "card"); if (!card || !card.pending) return;
-  if (card.kind === "combat") fillCard(api, combatTemplate(api, card), false);
-  else if (card.kind === "quest") { const q = get(api, "quest") || {}; const t = api.random.pick(TEMPLATES.quest); fillCard(api, Object.assign({}, t, { title: q.title || t.title }), false); }
-  else fillCard(api, api.random.pick(TEMPLATES[card.kind]), false);
+const GENERIC_ABIL = { encounter: "cha", discovery: "int", hazard: "dex", mystic: "wis", dilemma: "wis", quest: "cha" };
+const GENERIC_REWARD = { encounter: "gold", discovery: "gold", hazard: "xp", mystic: "blessing", dilemma: "xp", quest: "relic" };
+function genericOptions(api, kind) {
+  return { options: [
+    { label: ["谨慎应对", "Handle it carefully"], verb: "check", ability: GENERIC_ABIL[kind] || "wis", diff: "easy", reward: GENERIC_REWARD[kind] || "gold", risk: "hurt" },
+    { label: ["放手一搏", "Go all in"], verb: "check", ability: GENERIC_ABIL[kind] || "wis", diff: "hard", reward: kind === "quest" ? "relic" : "gold", risk: "hurt" },
+  ] };
 }
 
 function startBattle(api, name, free) {
@@ -399,7 +358,7 @@ function startBattle(api, name, free) {
   const f = foeFor(api, name || card.foe || T2(api, defaultFoe(api)), card.boss, card.threat);
   set(api, "foe", f); set(api, "event_kind", "combat"); set(api, "phase", "battle");
   reveal(api);
-  api.log(`⚔ ${L(api, "战斗开始", "Battle")}：${f.name}（${L(api, "生命", "HP")} ${f.hp} · AC ${f.ac}）`);
+  log(api, `⚔ ${L(api, "战斗开始", "Battle")}：${f.name}（${L(api, "生命", "HP")} ${f.hp} · AC ${f.ac}）`);
   if (free) enemyTurn(api);
 }
 function endEvent(api, dying) {
@@ -453,13 +412,13 @@ function chooseOption(api, id) {
   if (id === "camp") { campHere(api, true); return; }
   if (id === "leave") return leaveCard(api);
   const o = card.options.filter((x) => x.id === id)[0]; if (!o) return;
-  if (!canAfford(api, o)) { api.log(L(api, "付不起这个代价。", "You can't afford that.")); return; }
-  api.log(`➤ ${o.label}`);
+  if (!canAfford(api, o)) { log(api, L(api, "付不起这个代价。", "You can't afford that.")); return; }
+  log(api, `➤ ${o.label}`);
   if (o.verb === "fight") { startBattle(api, card.foe, false); return; }
   if (o.verb === "quest") {
     const due = get(api, "distance") + api.random.int(4, 8);
     set(api, "quest", { title: card.title, due });
-    api.log(L(api, `📜 接下委托「${card.title}」——第 ${due} 里左右回来领赏。`, `📜 Accepted "${card.title}" — come back around mile ${due}.`));
+    log(api, L(api, `📜 接下委托「${card.title}」——第 ${due} 里左右回来领赏。`, `📜 Accepted "${card.title}" — come back around mile ${due}.`));
     endEvent(api); return;
   }
   let ok;
@@ -469,23 +428,23 @@ function chooseOption(api, id) {
     ok = true;
   } else if (o.verb === "gamble") {
     const r = api.random.int(1, 100); ok = r <= o.chance;
-    api.log(`🎲 ${L(api, "赌运气", "Gamble")}：${r} ${ok ? L(api, "→ 成功", "→ win") : L(api, "→ 失败", "→ lose")}`);
+    log(api, `🎲 ${L(api, "赌运气", "Gamble")}：${r} ${ok ? L(api, "→ 成功", "→ win") : L(api, "→ 失败", "→ lose")}`);
   } else {
     const r = d20(api); const m = abilMod(api, o.ability) + prof(get(api, "level"));
     const total = r.nat + m + r.bonus;
     ok = r.nat === 20 || (r.nat !== 1 && total >= o.dc);
-    api.log(`🎲 ${T2(api, ABIL_NAME[o.ability])} ${L(api, "检定", "check")}：d20=${r.nat} ${sign(m)}${bonusText(r.bonus)} = ${total} ${L(api, "对", "vs")} DC ${o.dc} → ${ok ? L(api, "成功", "success") : L(api, "失败", "failure")}`);
+    log(api, `🎲 ${T2(api, ABIL_NAME[o.ability])} ${L(api, "检定", "check")}：d20=${r.nat} ${sign(m)}${bonusText(r.bonus)} = ${total} ${L(api, "对", "vs")} DC ${o.dc} → ${ok ? L(api, "成功", "success") : L(api, "失败", "failure")}`);
     pop(api, ok ? L(api, "成功", "pass") : L(api, "失败", "fail"), ok ? "#9aff8a" : "#ff8a7a", false);
   }
   if (ok) {
     const msg = applyReward(api, o);
-    api.log(`✔ ${msg}${card.kind === "combat" ? L(api, "，避开了战斗", ", and avoided the fight") : ""}。`);
+    log(api, `✔ ${msg}${card.kind === "combat" ? L(api, "，避开了战斗", ", and avoided the fight") : ""}。`);
     if (card.kind === "quest") set(api, "quest", {});
     endEvent(api);
   } else {
     const msg = applyRisk(api, o);
-    if (msg === "ambush") { api.log(L(api, "✘ 被发现了！", "✘ You're spotted!")); startBattle(api, card.foe, true); return; }
-    api.log(`✘ ${msg}。`);
+    if (msg === "ambush") { log(api, L(api, "✘ 被发现了！", "✘ You're spotted!")); startBattle(api, card.foe, true); return; }
+    log(api, `✘ ${msg}。`);
     if (card.kind === "quest") set(api, "quest", {});
     endEvent(api);
   }
@@ -493,16 +452,16 @@ function chooseOption(api, id) {
 function leaveCard(api) {
   const card = get(api, "card");
   if (card.kind === "hazard") {
-    if (get(api, "rations") > 0) { api.state.inc("rations", -1); api.log(L(api, "你绕了远路，多吃掉 1 份口粮。", "You take the long way around, eating 1 extra ration.")); }
-    else { hurt(api, 2); api.log(L(api, "你饿着肚子绕了远路，失去 2 生命。", "You detour on an empty stomach and lose 2 HP.")); }
+    if (get(api, "rations") > 0) { api.state.inc("rations", -1); log(api, L(api, "你绕了远路，多吃掉 1 份口粮。", "You take the long way around, eating 1 extra ration.")); }
+    else { hurt(api, 2); log(api, L(api, "你饿着肚子绕了远路，失去 2 生命。", "You detour on an empty stomach and lose 2 HP.")); }
   } else if (card.kind === "combat" && !card.boss) {
     // 想溜走：敏捷检定，失败就被追上
     const r = d20(api), m = abilMod(api, "dex") + prof(get(api, "level")), dc = 10 + Math.floor(card.threat / 2), total = r.nat + m + r.bonus;
-    if (!(r.nat === 20 || (r.nat !== 1 && total >= dc))) { api.log(L(api, `🏃 想溜走（${total} 对 DC ${dc}）——被追上了！`, `🏃 You try to slip away (${total} vs DC ${dc}) — caught!`)); startBattle(api, card.foe, true); return; }
-    api.log(L(api, `🏃 你悄悄退开，换了条小路（${total} 对 DC ${dc}）。`, `🏃 You back off quietly and take a side path (${total} vs DC ${dc}).`));
+    if (!(r.nat === 20 || (r.nat !== 1 && total >= dc))) { log(api, L(api, `🏃 想溜走（${total} 对 DC ${dc}）——被追上了！`, `🏃 You try to slip away (${total} vs DC ${dc}) — caught!`)); startBattle(api, card.foe, true); return; }
+    log(api, L(api, `🏃 你悄悄退开，换了条小路（${total} 对 DC ${dc}）。`, `🏃 You back off quietly and take a side path (${total} vs DC ${dc}).`));
   } else if (card.kind === "quest") {
-    api.log(L(api, "你放弃了这个委托。", "You abandon the errand.")); set(api, "quest", {});
-  } else api.log(L(api, "你没有停留，继续上路。", "You don't linger, and move on."));
+    log(api, L(api, "你放弃了这个委托。", "You abandon the errand.")); set(api, "quest", {});
+  } else log(api, L(api, "你没有停留，继续上路。", "You don't linger, and move on."));
   endEvent(api);
 }
 
@@ -512,13 +471,13 @@ function enemyTurn(api) {
   const roll = api.random.int(1, 20), total = roll + f.atk, ac = calcAc(api);
   if (roll === 1 || (roll !== 20 && total < ac)) {
     pop(api, L(api, "闪开", "dodge"), "#c8d8ff", false);
-    api.log(L(api, `🛡 ${f.name}攻击落空（d20=${roll}，${total} 对 AC ${ac}）`, `🛡 ${f.name} misses (d20=${roll}, ${total} vs AC ${ac})`));
+    log(api, L(api, `🛡 ${f.name}攻击落空（d20=${roll}，${total} 对 AC ${ac}）`, `🛡 ${f.name} misses (d20=${roll}, ${total} vs AC ${ac})`));
     return;
   }
   const dmg = d(api, roll === 20 ? f.dice * 2 : f.dice, f.sides) + f.bonus;
   hurt(api, dmg); anim(api, "hhurt", 400);
   pop(api, `-${dmg}`, roll === 20 ? "#ffdd44" : "#ff5a4a", false);
-  api.log(L(api, `🩸 ${f.name}${roll === 20 ? "暴击！" : "击中了你"}（d20=${roll}），造成 ${dmg} 点伤害。`, `🩸 ${f.name} ${roll === 20 ? "lands a CRITICAL hit" : "hits you"} (d20=${roll}) for ${dmg} damage.`));
+  log(api, L(api, `🩸 ${f.name}${roll === 20 ? "暴击！" : "击中了你"}（d20=${roll}），造成 ${dmg} 点伤害。`, `🩸 ${f.name} ${roll === 20 ? "lands a CRITICAL hit" : "hits you"} (d20=${roll}) for ${dmg} damage.`));
 }
 function victory(api, f) {
   const xp = 20 * f.threat * (f.boss ? 3 : 1);
@@ -529,7 +488,7 @@ function victory(api, f) {
   if (beast || api.random.int(1, 100) <= 50) { const n = gain(api, "rations", beast ? 2 : 1); if (n) parts.push(L(api, `${n} 份口粮`, `${n} ration(s)`)); }
   if (api.random.int(1, 100) <= 50) { const n = 1 + Math.floor(f.threat / 5); gain(api, "iron", n); parts.push(L(api, `${n} 铁料`, `${n} iron`)); }
   if (f.boss) { gain(api, "essence", 2); gain(api, "potions", 1); parts.push(L(api, "2 魔晶、1 瓶药水", "2 essence, 1 potion")); parts.push(giveRelic(api, null)); }
-  api.log(L(api, `🏆 你击败了${f.name}！${parts.join("、")}。`, `🏆 You defeated ${f.name}! ${parts.join(", ")}.`));
+  log(api, L(api, `🏆 你击败了${f.name}！${parts.join("、")}。`, `🏆 You defeated ${f.name}! ${parts.join(", ")}.`));
   endEvent(api, true);
   gainXp(api, xp);
 }
@@ -544,7 +503,7 @@ function gainXp(api, n) {
     let extra = "";
     if (lv % 4 === 0) { const a = abil(api); const k = a.str >= a.dex ? "str" : "dex"; a[k] = Math.min(20, a[k] + 2); set(api, "abil", a); extra = L(api, `，${ABIL_NAME[k][0]} +2`, `, ${ABIL_NAME[k][1]} +2`); }
     if (lv === 5) extra += L(api, "，学会了额外攻击（每回合攻击两次）", ", and gained Extra Attack");
-    api.log(L(api, `⭐ 升到 ${lv} 级！最大生命 +${g}${extra}。`, `⭐ Level ${lv}! Max HP +${g}${extra}.`));
+    log(api, L(api, `⭐ 升到 ${lv} 级！最大生命 +${g}${extra}。`, `⭐ Level ${lv}! Max HP +${g}${extra}.`));
   }
 }
 
@@ -552,23 +511,23 @@ function gainXp(api, n) {
 function refresh(api) {
   set(api, "ac", calcAc(api));
   const c = caps(api), g = gear(api), st = status(api);
-  set(api, "pack_text", L(api,
+  set(api, "pack_text", en(api, L(api,
     `口粮 ${get(api, "rations")}/${c.rations} · 药水 ${get(api, "potions")}/${c.potions} · 金币 ${get(api, "gold")}\n铁料 ${get(api, "iron")} · 魔晶 ${get(api, "essence")}`,
-    `Rations ${get(api, "rations")}/${c.rations} · Potions ${get(api, "potions")}/${c.potions} · Gold ${get(api, "gold")}\nIron ${get(api, "iron")} · Essence ${get(api, "essence")}`));
-  set(api, "gear_text", Object.keys(GEAR).map((k) => `${T2(api, GEAR[k].name)} ${k === "weapon" || k === "armor" ? "+" : "Lv"}${g[k]}`).join(" · "));
+    `Rations ${get(api, "rations")}/${c.rations} · Potions ${get(api, "potions")}/${c.potions} · Gold ${get(api, "gold")}\nIron ${get(api, "iron")} · Essence ${get(api, "essence")}`)));
+  set(api, "gear_text", en(api, Object.keys(GEAR).map((k) => `${T2(api, GEAR[k].name)} ${k === "weapon" || k === "armor" ? "+" : "Lv"}${g[k]}`).join(" · ")));
   const rel = get(api, "relics") || [];
-  set(api, "relic_text", rel.length ? rel.map((r) => `${T2(api, RELICS[r])}：${L(api, RELICS[r][2], RELICS[r][3])}`).join("\n") : L(api, "（还没有）", "(none yet)"));
-  const sts = Object.keys(st).filter((k) => st[k] > 0).map((k) => `${L(api, STATUS[k][0], STATUS[k][1])}${k === "exhausted" ? "" : ` ${st[k]}${L(api, "里", "mi")}`}（${STATUS[k][2]}）`);
+  set(api, "relic_text", en(api, rel.length ? rel.map((r) => `${T2(api, RELICS[r])}：${L(api, RELICS[r][2], RELICS[r][3])}`).join("\n") : L(api, "（还没有）", "(none yet)")));
+  const sts = Object.keys(st).filter((k) => st[k] > 0).map((k) => `${L(api, STATUS[k][0], STATUS[k][1])}${k === "exhausted" ? "" : ` ${st[k]}${L(api, "里", "mi")}`}（${L(api, STATUS[k][2], STATUS[k][3])}）`);
   const q = get(api, "quest");
   if (q && q.due) sts.push(L(api, `📜 委托「${q.title}」：第 ${q.due} 里`, `📜 Errand "${q.title}": mile ${q.due}`));
   if (has(api, "star_chart") && get(api, "next_kind")) sts.push(L(api, `🗺 下一里：${KIND_NAME[get(api, "next_kind")][0]}`, `🗺 Next mile: ${KIND_NAME[get(api, "next_kind")][1]}`));
-  set(api, "status_text", sts.length ? sts.join("\n") : L(api, "（无）", "(none)"));
+  set(api, "status_text", en(api, sts.length ? sts.join("\n") : L(api, "（无）", "(none)")));
   const ph = get(api, "phase"), card = get(api, "card") || {};
   let s;
   if (ph === "battle") { const f = get(api, "foe"); s = `⚔ ${f.name}${f.boss ? L(api, "（守关者）", " (Warden)") : ""}\n${L(api, "生命", "HP")} ${f.hp}/${f.max_hp} · AC ${f.ac} · ${L(api, "命中", "to hit")} ${sign(f.atk)}`; }
   else if (ph === "card" || ph === "shop") s = `${KIND_ICON[card.kind]} ${card.pending ? L(api, "前方有动静……", "Something ahead…") : card.title}`;
   else s = L(api, `前路漫漫。你身在${biomeName(api)}，第 ${get(api, "distance")} 里。`, `The road goes on. You are in the ${biomeName(api)}, mile ${get(api, "distance")}.`);
-  set(api, "situation", s);
+  set(api, "situation", en(api, s));
   set(api, "event_title", ph === "none" ? "" : card.title || "");
   showUi(api);
 }
@@ -579,9 +538,11 @@ function showUi(api) {
   const head = { type: "rich", spans: [{ text: `${KIND_ICON[card.kind]} ${T2(api, KIND_NAME[card.kind])} · `, style: { color: "#c8b89a", size: 13 } }, { text: card.pending ? L(api, "前方有动静……", "Something ahead…") : card.title, style: { bold: true, color: "#e0a84a", size: 17 } }] };
   if (card.pending) {
     api.overlay.hide("shop");
-    api.overlay.show("card", { anchor: "bottom", z: 1, style: PANEL, children: [head,
-      { type: "text", text: L(api, "（AI 正在描绘这一幕……）", "(The AI is painting this scene…)"), style: { color: "#c8b89a", size: 14 } },
-      { type: "row", children: [{ type: "space" }, { type: "button", id: "skip", text: L(api, "不等了，直接开始", "Don't wait") }] }] });
+    const kids = [head, { type: "text", text: card.stale
+      ? L(api, "AI 还没有回应。请检查“设置”里的 AI 服务商和 API Key，然后点重试。", "The AI hasn't answered. Check your AI provider and API key in Settings, then retry.")
+      : L(api, "（AI 正在描绘这一幕……）", "(The AI is painting this scene…)"), style: { color: "#c8b89a", size: 14 } }];
+    if (card.stale) kids.push({ type: "row", children: [{ type: "space" }, { type: "button", id: "retry", text: L(api, "重试", "Retry") }] });
+    api.overlay.show("card", enSpec(api, { anchor: "bottom", z: 1, style: PANEL, children: kids }));
     return;
   }
   if (ph === "shop") { api.overlay.hide("card"); showShop(api, head, card); return; }
@@ -590,7 +551,7 @@ function showUi(api) {
   if (card.kind === "rest") items.push({ id: "camp", text: L(api, "🔥 扎营休息", "🔥 Make camp"), sub: L(api, "免费，完全恢复，解除疲惫", "free, full heal, clears exhaustion") });
   if (get(api, "potions") > 0 && get(api, "hp") < get(api, "max_hp")) items.push({ id: "potion", text: L(api, "🧪 先喝一瓶药水", "🧪 Drink a potion first"), sub: L(api, "不结束这个事件", "doesn't end the event") });
   if (!card.boss) items.push({ id: "leave", text: L(api, "↩ 离开", "↩ Leave"), sub: card.kind === "hazard" ? L(api, "绕路：多耗 1 份口粮", "detour: costs 1 extra ration") : card.kind === "combat" ? L(api, `🎲 敏捷 DC ${10 + Math.floor(card.threat / 2)} 溜走，失败会被追上`, `🎲 DEX DC ${10 + Math.floor(card.threat / 2)} to slip away; fail and it attacks`) : "" });
-  api.overlay.show("card", { anchor: "bottom", z: 1, style: PANEL, children: [head, { type: "text", text: card.text, style: { color: "#efe6d6", size: 14 } }, { type: "list", id: "opts", items }] });
+  api.overlay.show("card", enSpec(api, { anchor: "bottom", z: 1, style: PANEL, children: [head, { type: "text", text: card.text, style: { color: "#efe6d6", size: 14 } }, { type: "list", id: "opts", items }] }));
 }
 function gearCost(api, k) {
   const g = gear(api), lv = g[k], def = GEAR[k];
@@ -610,11 +571,11 @@ function showShop(api, head, card) {
       sub: cost.max ? "" : `${cost.gold}g · ${L(api, "铁料", "iron")} ${cost.iron}${cost.essence ? ` · ${L(api, "魔晶", "essence")} ${cost.essence}` : ""} · ${T2(api, GEAR[k].desc)}`, disabled: !okay });
   }
   items.push({ id: "leave", text: L(api, "↩ 告别行商", "↩ Say goodbye"), sub: "" });
-  api.overlay.show("shop", { anchor: "bottom", z: 1, style: PANEL, children: [head, { type: "text", text: card.text, style: { color: "#efe6d6", size: 14 } }, { type: "list", id: "shop", items }] });
+  api.overlay.show("shop", enSpec(api, { anchor: "bottom", z: 1, style: PANEL, children: [head, { type: "text", text: card.text, style: { color: "#efe6d6", size: 14 } }, { type: "list", id: "shop", items }] }));
 }
 function shopBuy(api, id) {
   const gold = get(api, "gold"), c = caps(api);
-  if (id === "leave") { api.log(L(api, "你向行商道别。", "You bid the peddler farewell.")); endEvent(api); return; }
+  if (id === "leave") { log(api, L(api, "你向行商道别。", "You bid the peddler farewell.")); endEvent(api); return; }
   if (id === "buy_ration" && gold >= PRICE.ration && get(api, "rations") < c.rations) { api.state.inc("gold", -PRICE.ration); gain(api, "rations", 1); }
   else if (id === "buy_potion" && gold >= PRICE.potion && get(api, "potions") < c.potions) { api.state.inc("gold", -PRICE.potion); gain(api, "potions", 1); }
   else if (id === "sell_iron" && get(api, "iron") > 0) { api.state.inc("iron", -1); api.state.inc("gold", PRICE.iron_sell); }
@@ -624,7 +585,7 @@ function shopBuy(api, id) {
     if (cost.max || gold < cost.gold || get(api, "iron") < cost.iron || get(api, "essence") < cost.essence) return;
     api.state.inc("gold", -cost.gold); api.state.inc("iron", -cost.iron); api.state.inc("essence", -cost.essence);
     const g = gear(api); g[k] += 1; set(api, "gear", g);
-    api.log(L(api, `⚒ ${GEAR[k].name[0]}强化到 ${g[k]} 级：${GEAR[k].desc[0]}。`, `⚒ ${GEAR[k].name[1]} upgraded to ${g[k]}: ${GEAR[k].desc[1]}.`));
+    log(api, L(api, `⚒ ${GEAR[k].name[0]}强化到 ${g[k]} 级：${GEAR[k].desc[0]}。`, `⚒ ${GEAR[k].name[1]} upgraded to ${g[k]}: ${GEAR[k].desc[1]}.`));
     pop(api, "⚒", "#ffd890", false);
   }
 }
@@ -642,8 +603,8 @@ export function setup(api) {
   set(api, "scene_fx", { scroll: 0, target: 0, prev: null, cur: null, fx: [], busy: false });
   set(api, "art", { time: "day", weather: "clear" });
   const best = api.storage.get("best"); if (typeof best === "number") set(api, "best", best);
-  api.log(L(api, `🎲 掷出属性：${abilText(api)}`, `🎲 Rolled abilities: ${abilText(api)}`));
-  api.log(L(api, `生命 ${hp} · AC ${calcAc(api)} · 长剑 1d10${sign(atkMod(api))}`, `HP ${hp} · AC ${calcAc(api)} · Longsword 1d10${sign(atkMod(api))}`));
+  log(api, L(api, `🎲 掷出属性：${abilText(api)}`, `🎲 Rolled abilities: ${abilText(api)}`));
+  log(api, L(api, `生命 ${hp} · AC ${calcAc(api)} · 长剑 1d10${sign(atkMod(api))}`, `HP ${hp} · AC ${calcAc(api)} · Longsword 1d10${sign(atkMod(api))}`));
   refresh(api);
   return true;
 }
@@ -656,18 +617,18 @@ export function walk_rules(api) {
   if (dist % BIOME_EVERY === 0) {
     const cur = get(api, "biome"); const next = api.random.pick(Object.keys(BIOMES).filter((b) => b !== cur));
     set(api, "biome", next); set(api, "art", { time: get(api, "art").time, weather: BIOME_WEATHER[next] });
-    api.log(L(api, `🗺 道路把你带进了${biomeName(api)}。`, `🗺 The road leads you into the ${biomeName(api)}.`));
+    log(api, L(api, `🗺 道路把你带进了${biomeName(api)}。`, `🗺 The road leads you into the ${biomeName(api)}.`));
   }
   { const art = get(api, "art"); art.time = ["day", "day", "dusk", "night"][Math.floor(dist / 3) % 4]; set(api, "art", art); }
-  api.log(L(api, `—— 第 ${dist} 里 · ${biomeName(api)} ——`, `—— Mile ${dist} · ${biomeName(api)} ——`));
+  log(api, L(api, `—— 第 ${dist} 里 · ${biomeName(api)} ——`, `—— Mile ${dist} · ${biomeName(api)} ——`));
   // 口粮
-  if (get(api, "rations") > 0) { if (has(api, "traveler_boots") && api.random.int(1, 100) <= 25) api.log(L(api, "👢 旅人靴：这一里没耗口粮。", "👢 Traveler's boots: no ration needed this mile.")); else api.state.inc("rations", -1); }
-  else { const dmg = d(api, 1, 4) + Math.floor(dist / 25); hurt(api, dmg); api.log(L(api, `🍖 口粮吃完了，饥饿让你失去 ${dmg} 生命。`, `🍖 Out of rations — hunger costs you ${dmg} HP.`)); }
+  if (get(api, "rations") > 0) { if (has(api, "traveler_boots") && api.random.int(1, 100) <= 25) log(api, L(api, "👢 旅人靴：这一里没耗口粮。", "👢 Traveler's boots: no ration needed this mile.")); else api.state.inc("rations", -1); }
+  else { const dmg = d(api, 1, 4) + Math.floor(dist / 25); hurt(api, dmg); log(api, L(api, `🍖 口粮吃完了，饥饿让你失去 ${dmg} 生命。`, `🍖 Out of rations — hunger costs you ${dmg} HP.`)); }
   // 采集：平原、森林、丘陵有时能在路边找到吃的
-  if (["plains", "forest", "hills"].indexOf(get(api, "biome")) >= 0 && api.random.int(1, 100) <= 20 && gain(api, "rations", 1)) api.log(L(api, "🫐 路边采到一些浆果和蘑菇（+1 口粮）。", "🫐 You forage berries and mushrooms by the road (+1 ration)."));
+  if (["plains", "forest", "hills"].indexOf(get(api, "biome")) >= 0 && api.random.int(1, 100) <= 20 && gain(api, "rations", 1)) log(api, L(api, "🫐 路边采到一些浆果和蘑菇（+1 口粮）。", "🫐 You forage berries and mushrooms by the road (+1 ration)."));
   // 状态效果
   const st = status(api);
-  if (st.poisoned) { const dmg = d(api, 1, 4); hurt(api, dmg); api.log(L(api, `🤢 毒性发作，失去 ${dmg} 生命。`, `🤢 Poison burns: -${dmg} HP.`)); }
+  if (st.poisoned) { const dmg = d(api, 1, 4); hurt(api, dmg); log(api, L(api, `🤢 毒性发作，失去 ${dmg} 生命。`, `🤢 Poison burns: -${dmg} HP.`)); }
   for (const k of Object.keys(st)) if (k !== "exhausted" && st[k] > 0) st[k] -= 1;
   set(api, "status", st);
   if (get(api, "hp") <= 0) { refresh(api); return { died: true }; }
@@ -689,16 +650,13 @@ export function walk_rules(api) {
 export function apply_ai(api) {
   const p = api.params, card = get(api, "card");
   if (!card || get(api, "phase") !== "card" && get(api, "phase") !== "shop") return false;
-  if (!card.pending && card.ai) return false;      // 已经用过 AI 的结果
-  if (!card.pending && card.touched) return false; // 玩家已经在内置卡片上做了选择
-  set(api, "ai_mode", "yes");
+  if (!card.pending) return false; // 这张卡已经写好了（重试时可能收到两份结果）
   const draft = { title: p.title, text: p.text, foe: p.foe, options: [] };
   for (const i of [1, 2, 3]) {
     const verb = p[`o${i}_verb`]; if (!verb || verb === "none") continue;
     draft.options.push({ label: p[`o${i}_label`], verb, ability: p[`o${i}_ability`], diff: p[`o${i}_diff`], reward: p[`o${i}_reward`], risk: p[`o${i}_risk`], cost: p[`o${i}_cost`], relic: p.relic });
   }
   if (card.kind === "combat" || card.kind === "quest") { if (!draft.foe && card.kind === "combat") draft.foe = card.foe; }
-  card.pending = true; set(api, "card", card); // 允许覆盖内置卡片
   fillCard(api, draft, true);
   // 画面模块
   const s = sfx(api);
@@ -719,19 +677,19 @@ export function apply_ai(api) {
 // 界面层的按钮 / 列表点击
 export function on_ui(api) {
   const p = api.params;
-  if (p.overlay === "card" && p.type === "button" && p.id === "skip") { if ((get(api, "ai_mode") || "unknown") === "unknown") set(api, "ai_mode", "no"); useTemplate(api); }
-  else if (p.overlay === "card" && p.type === "select") { const c = get(api, "card"); c.touched = true; set(api, "card", c); chooseOption(api, p.id); }
+  if (p.overlay === "card" && p.type === "button" && p.id === "retry") {
+    const c = get(api, "card");
+    if (c && c.pending) { c.stale = false; c.born = api.time; set(api, "card", c); api.events.emit("encounter"); }
+  } else if (p.overlay === "card" && p.type === "select") chooseOption(api, p.id);
   else if (p.overlay === "shop" && p.type === "select") shopBuy(api, p.id);
   refresh(api);
 }
-// 定时检查：AI 太慢就用内置模板
+// 定时检查：AI 太久没回应，就在卡上提示并显示“重试”
 export function watch(api) {
   const card = get(api, "card");
-  if (!card || !card.pending || (get(api, "phase") !== "card" && get(api, "phase") !== "shop")) return;
-  const mode = get(api, "ai_mode") || "unknown";
-  if (api.time - card.born < AI_WAIT[mode]) return;
-  if (mode === "unknown") set(api, "ai_mode", "no");
-  useTemplate(api); refresh(api);
+  if (!card || !card.pending || card.stale || get(api, "phase") !== "card") return;
+  if (api.time - card.born < AI_STALE_MS) return;
+  card.stale = true; set(api, "card", card); refresh(api);
 }
 // 读档后（或窗口变化）把界面层重新显示出来
 export function resize(api) { refresh(api); }
@@ -745,14 +703,14 @@ export function attack(api) {
     const f = get(api, "foe"); const r = d20(api); const total = r.nat + bonus + r.bonus;
     if (r.nat === 1 || (r.nat !== 20 && total < f.ac)) {
       pop(api, L(api, "未命中", "miss"), "#e8e8e8", true);
-      api.log(L(api, `🗡 攻击落空（d20=${r.nat}，${total} 对 AC ${f.ac}）`, `🗡 You miss (d20=${r.nat}, ${total} vs AC ${f.ac})`));
+      log(api, L(api, `🗡 攻击落空（d20=${r.nat}，${total} 对 AC ${f.ac}）`, `🗡 You miss (d20=${r.nat}, ${total} vs AC ${f.ac})`));
       continue;
     }
     const dmg = Math.max(1, d(api, r.nat === 20 ? 2 : 1, 10) + atkMod(api) + g.weapon);
     f.hp = Math.max(0, f.hp - dmg); set(api, "foe", f);
     anim(api, "fhurt", 300);
     pop(api, r.nat === 20 ? `${dmg}!` : String(dmg), r.nat === 20 ? "#ffdd44" : "#ffffff", true);
-    api.log(L(api, `🗡 ${r.nat === 20 ? "暴击！" : "命中！"}（d20=${r.nat}）对${f.name}造成 ${dmg} 点伤害。`, `🗡 ${r.nat === 20 ? "CRITICAL!" : "Hit!"} (d20=${r.nat}) ${dmg} damage to ${f.name}.`));
+    log(api, L(api, `🗡 ${r.nat === 20 ? "暴击！" : "命中！"}（d20=${r.nat}）对${f.name}造成 ${dmg} 点伤害。`, `🗡 ${r.nat === 20 ? "CRITICAL!" : "Hit!"} (d20=${r.nat}) ${dmg} damage to ${f.name}.`));
     if (has(api, "vampiric_blade")) heal(api, 2);
     if (f.hp <= 0) { victory(api, f); refresh(api); return { won: true }; }
   }
@@ -766,10 +724,10 @@ export function flee(api) {
   const dc = 10 + Math.floor(f.threat / 2) + (f.boss ? 3 : 0);
   const r = d20(api), total = r.nat + abilMod(api, "dex") + prof(get(api, "level")) + r.bonus;
   if (r.nat === 20 || (r.nat !== 1 && total >= dc)) {
-    api.log(L(api, `🏃 敏捷检定 ${total} 对 DC ${dc}：你甩掉了${f.name}。`, `🏃 DEX check ${total} vs DC ${dc}: you shake off ${f.name}.`));
+    log(api, L(api, `🏃 敏捷检定 ${total} 对 DC ${dc}：你甩掉了${f.name}。`, `🏃 DEX check ${total} vs DC ${dc}: you shake off ${f.name}.`));
     endEvent(api); refresh(api); return { fled: true };
   }
-  api.log(L(api, `🏃 敏捷检定 ${total} 对 DC ${dc}：没能逃掉！`, `🏃 DEX check ${total} vs DC ${dc}: you fail to escape!`));
+  log(api, L(api, `🏃 敏捷检定 ${total} 对 DC ${dc}：没能逃掉！`, `🏃 DEX check ${total} vs DC ${dc}: you fail to escape!`));
   enemyTurn(api); refresh(api);
   return { fled: false };
 }
@@ -781,7 +739,7 @@ export function potion(api) {
   const st = status(api); let cure = "";
   if (st.poisoned) { st.poisoned = 0; set(api, "status", st); cure = L(api, "，解了毒", ", and cures the poison"); }
   pop(api, `+${h}`, "#7aff8a", false);
-  api.log(L(api, `🧪 你喝下治疗药水，恢复 ${h} 生命${cure}。`, `🧪 You drink a healing potion and recover ${h} HP${cure}.`));
+  log(api, L(api, `🧪 你喝下治疗药水，恢复 ${h} 生命${cure}。`, `🧪 You drink a healing potion and recover ${h} HP${cure}.`));
   if (get(api, "phase") === "battle") enemyTurn(api);
   refresh(api);
   return { healed: h };
@@ -793,15 +751,15 @@ function campHere(api, safe) {
   if (safe) {
     const h = heal(api, get(api, "max_hp"));
     const r = gain(api, "rations", 1);
-    api.log(L(api, `🔥 你在安全的地方睡了个好觉，恢复 ${h} 生命${r ? "，还找到了 1 份存粮" : ""}。`, `🔥 You sleep soundly in safety and recover ${h} HP${r ? ", and find 1 stored ration" : ""}.`));
+    log(api, L(api, `🔥 你在安全的地方睡了个好觉，恢复 ${h} 生命${r ? "，还找到了 1 份存粮" : ""}。`, `🔥 You sleep soundly in safety and recover ${h} HP${r ? ", and find 1 stored ration" : ""}.`));
     endEvent(api); return { healed: h };
   }
   const kit = gear(api).kit;
   api.state.inc("rations", -1);
   const h = heal(api, Math.ceil(get(api, "max_hp") * KIT_HEAL[kit]));
-  api.log(L(api, `🔥 你在路边扎营，吃掉 1 份口粮，恢复 ${h} 生命。`, `🔥 You make camp by the road, eat 1 ration and recover ${h} HP.`));
+  log(api, L(api, `🔥 你在路边扎营，吃掉 1 份口粮，恢复 ${h} 生命。`, `🔥 You make camp by the road, eat 1 ration and recover ${h} HP.`));
   if (api.random.int(1, 100) <= KIT_AMBUSH[kit]) {
-    api.log(L(api, "夜里有动静……", "Something stirs in the night…"));
+    log(api, L(api, "夜里有动静……", "Something stirs in the night…"));
     spawn(api, "combat", 0, false);
     const card = get(api, "card"); card.pending = false; card.title = card.foe; set(api, "card", card);
     startBattle(api, card.foe, false);
