@@ -1,6 +1,6 @@
 // 游玩页面：按作者的 ui 渲染布局与组件（没写 ui 用简约模板），驱动引擎和 AI。
 import { Game, entriesFor, runEntries, parseChoices, createQuickJsRunner, type LLM, type ScriptRunner, type EntryRunResult } from "@my-oasis/engine";
-import type { Story, StoryFiles } from "@my-oasis/schema";
+import { localizeStory, type Story, type StoryFiles } from "@my-oasis/schema";
 import { h, toast, fmtVal } from "./dom";
 import { AssetBox } from "./assets";
 import { RealtimeDriver } from "./realtime";
@@ -76,8 +76,11 @@ export class PlaySession {
     });
   }
 
+  /** 作者原始的双语故事（存档、引擎用它）；this.story 是按玩家语言展开后的 */
+  private raw: Story;
   constructor(public story: Story, public files: StoryFiles, public storyId: string, private onExit: () => void) {
     this.settings = loadSettings();
+    this.raw = story; this.story = story = localizeStory(story, this.settings.lang);
     this.ui = story.ui?.components ? story.ui : { ...defaultUi(story), ...(story.ui ?? {}), components: defaultUi(story).components };
     this.assets = new AssetBox(files, (story as any).assets ?? {});
     this.sound = new Sound(this.settings);
@@ -94,7 +97,7 @@ export class PlaySession {
       `本局 ${fmtNum(se.input + se.output)} tokens${est}` + (cost && !cost.startsWith("费用") ? ` ${cost}` : "") + ` · 本故事累计 ${fmtNum(st.input + st.output)}`);
   }
   async init(save?: any) {
-    beginSession(this.storyId, this.story.meta.title);
+    beginSession(this.storyId, String(this.story.meta.title));
     this.offUsage?.(); this.offUsage = onUsage(() => { const el = document.getElementById("usage-line"); const n = this.usageEl(); if (el && n) el.replaceWith(n); });
     try { this.scripts = await createQuickJsRunner(); } catch { /* 没用脚本的故事不需要 */ }
     const s = this.settings;
@@ -104,12 +107,12 @@ export class PlaySession {
       else this.aiNotice = "还没有填写 API Key：AI 部分会跳过（显示作者写的替代文字）。去“设置”填写后重新开始即可。";
     }
     if (save) {
-      const r = Game.load(this.story, save, { files: this.files, scripts: this.scripts });
+      const r = Game.load(this.raw, save, { lang: this.settings.lang, files: this.files, scripts: this.scripts });
       this.game = r.game; r.warnings.forEach((w) => toast(w, "err"));
       this.feed = (this.game.extra.ui_feed ?? []) as Feed[]; this.seq = this.feed.length + 1; this.shown = this.game.log.length;
       this.startRealtime(); this.render(); this.rt?.start(); return;
     }
-    this.game = new Game(this.story, { files: this.files, scripts: this.scripts });
+    this.game = new Game(this.raw, { lang: this.settings.lang, files: this.files, scripts: this.scripts });
     this.game.start();
     this.startRealtime();
     if (this.story.start?.intro) this.push("log", this.story.start.intro, "rule");
@@ -238,7 +241,7 @@ export class PlaySession {
   async loadFrom(json: string) {
     let data: any; try { data = JSON.parse(json); } catch { toast("这不是有效的存档文件", "err"); return; }
     try {
-      const r = Game.load(this.story, data, { files: this.files, scripts: this.scripts });
+      const r = Game.load(this.raw, data, { lang: this.settings.lang, files: this.files, scripts: this.scripts });
       this.game = r.game; this.feed = (r.game.extra.ui_feed ?? []) as Feed[]; this.seq = this.feed.length + 1; this.shown = r.game.log.length; this.aiChoices = {};
       r.warnings.forEach((w) => toast(w, "err")); toast("已读档"); this.render();
     } catch (e: any) { toast(e.message, "err"); }
@@ -307,7 +310,7 @@ export class PlaySession {
     const end = this.game.ending ? this.story.endings.list.find((e) => e.id === this.game.ending) : undefined;
     const bar = h("div", { class: "topbar" },
       h("button", { onclick: () => { this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.offUsage?.(); this.onExit(); } }, "← 故事库"),
-      h("b", { class: "title" }, this.story.meta.title),
+      h("b", { class: "title" }, String(this.story.meta.title)),
       h("span", { class: "muted" }, `第 ${this.game.turn} 回合`),
       this.busy ? h("span", { class: "busy" }, "AI 思考中…") : null,
       this.usageEl(),

@@ -134,7 +134,7 @@ my-story.oasis
 | `version` | 字符串 | **必填** | 语义化版本 `主.次.修`，如 `1.0.0`；再次上传必须更大 |
 | `summary` | 字符串 | **必填** | 1–200 字 |
 | `language` | 字符串 | **必填** | 如 `zh-CN` `en` `ja` |
-| `rating` | 字符串 | **必填** | `all-ages` \| `teen` \| `mature`；**不接受成人内容**；（暂定）主库暂不收 `mature`，可本地导入游玩 |
+| `rating` | 字符串 | **必填** | `all-ages` \| `teen` \| `mature`；**不接受成人内容**；公开故事库只收 `all-ages`；`teen`、`mature` 只能本地导入游玩 |
 | `authors` | 字符串列表 | 可选 | 作者名 |
 | `tags` | 字符串列表 | 可选 | ≤ 10 个，每个 ≤ 12 字 |
 | `content_warnings` | 字符串列表 | 可选 | 如 `[恐怖, 暴力]`；`mature` 时**必填** |

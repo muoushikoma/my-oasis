@@ -46,7 +46,7 @@ export interface UiDef {
 }
 export interface Story {
   spec: "oasis/0.3" | "oasis/0.4";
-  meta: { id: string; title: string; version: string; summary: string; language: string; rating: string; [k: string]: any };
+  meta: { id: string; title: import("./i18n.js").LocalText; version: string; summary: import("./i18n.js").LocalText; language: string; languages?: ("zh" | "en")[]; tags?: import("./i18n.js").LocalText[]; rating: string; [k: string]: any };
   uses?: string[]; random?: { seed?: "auto" | number }; start?: { intro?: string; do?: Step[] };
   state: Record<string, StateDef>; actions?: Record<string, ActionDef>; events?: EventDef[];
   endings: { check_on?: "state_change" | "turn_end" | "manual"; list: EndingDef[]; script?: string };

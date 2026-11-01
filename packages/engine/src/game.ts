@@ -1,4 +1,4 @@
-import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit } from "@my-oasis/schema";
+import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit, localizeStory, type Lang } from "@my-oasis/schema";
 import { Rng, rollDice } from "./rng.js";
 import { FAIL_MARK, ScriptError, type ScriptRunner } from "./script.js";
 
@@ -25,7 +25,7 @@ export function saveCheck(d: Omit<SaveData, "check">): string {
   const s = SAVE_SALT + JSON.stringify({ ...d, check: undefined });
   return fnv(s).toString(16).padStart(8, "0") + fnv(s, 0x9e3779b9).toString(16).padStart(8, "0");
 }
-export interface GameOptions { seed?: number; scripts?: ScriptRunner; files?: StoryFiles }
+export interface GameOptions { /** 玩家选的语言（zh/en），默认 zh */ lang?: Lang; seed?: number; scripts?: ScriptRunner; files?: StoryFiles }
 
 class StepFail extends Error {}
 const LIMITS = { callDepth: 8, eventChain: 16, eventRepeat: 10 };
@@ -59,8 +59,12 @@ export class Game {
   firedHooks: string[] = [];
   drainHooks() { const h = [...new Set(this.firedHooks)]; this.firedHooks = []; return h; }
 
+  /** 作者原始的（可能是双语的）故事；存档校验用它 */
+  readonly source: Story;
+  readonly lang: Lang;
   constructor(public story: Story, public opts: GameOptions = {}) {
-    this.story = story = normalizeStory(story);
+    this.source = story; this.lang = opts.lang === "en" ? "en" : "zh";
+    this.story = story = normalizeStory(localizeStory(story, this.lang));
     const seed = opts.seed ?? (typeof story.random?.seed === "number" ? story.random.seed : undefined);
     this.rng = Rng.seed(seed); this.seed = this.rng.s;
     for (const [k, d] of Object.entries(story.state)) this.state[k] = clone(d.init);
@@ -335,6 +339,7 @@ export class Game {
           case "log": this.log.push({ turn: this.turn, kind: "rule", text: String(a[0]) }); return null;
           case "input": return clone(this.input);
           case "time": return [this.rtDt, this.rtTime];
+          case "lang": return this.lang;
           case "draw.commit": if (!ctx.render) throw new Error("api.draw 只能在画布的 render 函数里用"); this.drawBuf = a[0]; return null;
           case "sound.play": case "sound.stop": {
             if (ctx.render) throw new Error("render 函数里不能播放声音");
@@ -562,7 +567,7 @@ export class Game {
 
   // ---------- 存档 ----------
   save(): SaveData {
-    const d: SaveData = { format: "oasis-save/1", story: { id: this.story.meta.id, version: this.story.meta.version, hash: storyHash(this.story) },
+    const d: SaveData = { format: "oasis-save/1", story: { id: this.story.meta.id, version: this.story.meta.version, hash: storyHash(this.source) },
       state: clone(this.state), rng: this.rng.s, seed: this.seed, turn: this.turn, fired: [...this.fired], ending: this.ending,
       cooldowns: { ...this.cooldowns }, log: clone(this.log), violations: clone(this.violations), extra: clone(this.extra), savedAt: new Date().toISOString() };
     d.check = saveCheck(d);

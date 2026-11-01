@@ -12,6 +12,24 @@ const only = process.argv.slice(2);
 const ids = only.length ? only : storyDirs();
 let bad = 0;
 const files_ok = (dir) => listFiles(dir).length;
+const isLT = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0 && Object.keys(v).every((k) => (k === "zh" || k === "en") && typeof v[k] === "string");
+const both = (v) => isLT(v) && !!v.zh?.trim() && !!v.en?.trim();
+/** 粗略找出只有一种语言的玩家可见文字（只提醒） */
+function singleLangTexts(d) {
+  const out = [], KEYS = new Set(["label", "desc", "text", "title", "intro", "placeholder", "reject", "require_message", "opening", "fallback", "alt"]);
+  const walk = (o, p) => {
+    if (Array.isArray(o)) return o.forEach((x, i) => walk(x, `${p}[${i}]`));
+    if (!o || typeof o !== "object") return;
+    for (const [k, v] of Object.entries(o)) {
+      const q = p ? `${p}.${k}` : k;
+      if (q.startsWith("meta.") || q.startsWith("ai.images") && k === "fallback") continue;
+      if (KEYS.has(k) && typeof v === "string" && v.trim() && !(k === "fallback" && /^(asset:|none$)/.test(v))) out.push(q);
+      else if (KEYS.has(k) && isLT(v) && !(v.zh && v.en)) out.push(q);
+      else if (k !== "steps" || true) walk(v, q);
+    }
+  };
+  walk(d, ""); return out;
+}
 const fail = (id, msg) => { bad++; console.log(`❌ [${id}] ${msg}`); };
 
 // stories/ 下只允许文件夹（和 .gitkeep）
@@ -29,7 +47,14 @@ for (const id of ids) {
   if (!check(st.data)) for (const e of check.errors.slice(0, 20)) fail(id, `格式不对：${e.instancePath || "(根)"} ${e.message}`);
   const meta = st.data?.meta ?? {};
   if (meta.id !== id) fail(id, `meta.id 必须和文件夹名一样（现在是 "${meta.id}"）`);
-  if (meta.rating && !["all-ages", "teen"].includes(meta.rating)) fail(id, `故事库只收 all-ages 或 teen 分级的故事（现在是 "${meta.rating}"）`);
+  if (meta.rating !== "all-ages") fail(id, `故事库只收全年龄的故事，rating 必须是 all-ages（现在是 "${meta.rating ?? ""}"）`);
+  // 中英双语：名称、简介、3 个标签都必须同时有中文和英文
+  if (!both(meta.title)) fail(id, "故事名称 meta.title 要同时写中文和英文，例如 title: { zh: 雨夜书店, en: Rainy Bookshop }");
+  if (!both(meta.summary)) fail(id, "简介 meta.summary 要同时写中文和英文：summary: { zh: …, en: … }");
+  if (!Array.isArray(meta.tags) || meta.tags.length !== 3) fail(id, `标签 meta.tags 必须正好 3 个（现在 ${Array.isArray(meta.tags) ? meta.tags.length : 0} 个）`);
+  else meta.tags.forEach((t, i) => { if (!both(t)) fail(id, `第 ${i + 1} 个标签要同时写中文和英文，例如 { zh: 悬疑, en: Mystery }`); });
+  const oneLang = singleLangTexts(st.data);
+  if (oneLang.length) console.log(`⚠️  [${id}] 提醒：有 ${oneLang.length} 处玩家可见文字只有一种语言（不影响通过），例如 ${oneLang.slice(0, 5).join("、")}`);
   let total = 0;
   for (const f of listFiles(dir)) {
     total += f.size;

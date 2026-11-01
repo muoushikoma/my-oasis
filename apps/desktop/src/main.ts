@@ -2,7 +2,7 @@ import "./style.css";
 import { validateFiles, filesToZip, filesFromZip, type StoryFiles, type ValidationResult } from "@my-oasis/schema";
 import { h, toast } from "./dom";
 import { bridge, isTauri, filesFromSingle, b64ToBytes } from "./bridge";
-import { loadSettings, saveSettings } from "./settings";
+import { loadSettings, saveSettings, tr, trList } from "./settings";
 import { PlaySession } from "./play";
 import { issuesView } from "./issues";
 import { providerSetup, showWizard } from "./setup";
@@ -40,7 +40,7 @@ async function showLibrary(tab = playTab) {
     h("button", { class: tab === "local" ? "on" : "", onclick: () => showLibrary("local") }, "📚 我的故事库"),
     h("button", { class: tab === "online" ? "on" : "", onclick: () => showLibrary("online") }, "🌐 在线故事库"));
   if (tab === "online") {
-    app.replaceChildren(nav("play"), h("main", { class: "page" }, h("h2", {}, "游玩"), tabs, onlineView(async (st, files) => { await importFiles(st.title, files); })));
+    app.replaceChildren(nav("play"), h("main", { class: "page" }, h("h2", {}, "游玩"), tabs, onlineView(async (st, files) => { await importFiles(tr(st.title), files); })));
     return;
   }
   const entries = await loadEntries();
@@ -48,16 +48,16 @@ async function showLibrary(tab = playTab) {
     const m = e.res.story?.meta;
     const cover = (() => { const ref: any = m?.cover; if (!ref) return; const p = ref.startsWith("asset:") ? (e.res.story as any).assets?.[ref.slice(6)]?.path : ref; const d = p && e.files.get(p); return d ? URL.createObjectURL(new Blob([d as BlobPart])) : undefined; })();
     return h("div", { class: "story-card" },
-      cover ? h("img", { src: cover, class: "cover" }) : h("div", { class: "cover ph" }, (m?.title ?? "?").slice(0, 1)),
+      cover ? h("img", { src: cover, class: "cover" }) : h("div", { class: "cover ph" }, (tr(m?.title) || "?").slice(0, 1)),
       h("div", { class: "info" },
-        h("h3", {}, m?.title ?? e.id, e.res.story?.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
-        h("p", { class: "muted" }, m?.summary ?? ""),
+        h("h3", {}, tr(m?.title) || e.id, e.res.story?.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
+        h("p", { class: "muted" }, tr(m?.summary)), trList(m?.tags).length ? h("p", { class: "small muted" }, trList(m?.tags).join(" · ")) : null,
         h("p", { class: "small muted" }, `版本 ${m?.version ?? "?"}${m?.author ? ` · 作者 ${m.author}` : ""}`),
         e.res.ok ? null : h("p", { class: "err small" }, "这个故事有错误，不能游玩"),
         h("div", { class: "row" },
           h("button", { class: "primary", disabled: !e.res.ok, onclick: () => play(e.id, e.files) }, "开始"),
           h("button", { disabled: !e.res.ok, onclick: () => resume(e) }, "继续"),
-          h("button", { onclick: async () => { if (confirm(`删除故事「${m?.title}」？存档不会删除。`)) { await bridge.libraryDelete(e.id); showLibrary(); } } }, "删除"))));
+          h("button", { onclick: async () => { if (confirm(`删除故事「${tr(m?.title)}」？存档不会删除。`)) { await bridge.libraryDelete(e.id); showLibrary(); } } }, "删除"))));
   };
   const drop = h("div", { class: "drop" }, h("p", {}, "把 .oasis 文件、story.yaml 或故事文件夹拖到这里"),
     h("div", { class: "row" }, h("button", { class: "primary", onclick: () => importPicked(false) }, "导入故事文件"), isTauri ? h("button", { onclick: () => importPicked(true) }, "导入文件夹") : null),
@@ -85,9 +85,9 @@ async function importFiles(name: string, files: StoryFiles) {
   const res = validateFiles(files);
   if (!res.ok || !res.story) return showIssues(name, res);
   const id = res.story.meta.id;
-  if ((await bridge.libraryList()).includes(id) && !confirm(`故事库里已经有「${res.story.meta.title}」，要用新版本替换吗？`)) return;
+  if ((await bridge.libraryList()).includes(id) && !confirm(`故事库里已经有「${tr(res.story.meta.title)}」，要用新版本替换吗？`)) return;
   await bridge.libraryPut(id, filesToZip(files));
-  toast(`已导入「${res.story.meta.title}」${res.issues.length ? `（有 ${res.issues.length} 条提醒）` : ""}`);
+  toast(`已导入「${tr(res.story.meta.title)}」${res.issues.length ? `（有 ${res.issues.length} 条提醒）` : ""}`);
   if (res.issues.length) return showIssues(name, res, true);
   showLibrary();
 }
@@ -125,6 +125,9 @@ function showSettings() {
       chk("merge", "同一次操作的多个 AI 环节尽量合并成一次请求（更快、更省）"),
       chk("imageGen", "允许故事使用 AI 生图（尚未开放；关闭时显示故事自带的替代图）"),
       chk("muted", "静音"),
+      h("label", {}, "故事语言 / Story language ", h("select", { onchange: (ev: any) => { saveSettings({ ...loadSettings(), lang: ev.target.value }); showSettings(); } },
+        h("option", { value: "zh", selected: s.lang === "zh" }, "中文"), h("option", { value: "en", selected: s.lang === "en" }, "English"))),
+      h("p", { class: "small muted" }, "故事里的文字和 AI 回复都会用这种语言；作者没写这种语言时显示另一种。"),
       h("div", { class: "row" }, h("button", { onclick: () => showWizard(() => showSettings()) }, "重新打开新手向导"))),
     usageCard(),
     h("p", { class: "small muted" }, "我的绿洲 · 单机版 0.1（内部测试）")));
@@ -152,8 +155,8 @@ function usageCard() {
     line("全部累计", u.total),
     h("p", { class: "small muted" }, `从 ${new Date(u.since).toLocaleDateString("zh-CN")} 开始统计，共 ${u.total.calls} 次 AI 调用`),
     stories.length ? h("details", {}, h("summary", {}, "按故事查看"),
-      ...stories.map(([id, t]) => h("div", { class: "usage-row" }, h("b", {}, t.title ?? id), h("span", {}, fmtTokens(t)), h("span", { class: "muted" }, fmtCost(t)),
-        h("button", { class: "small", onclick: () => { if (confirm(`清零《${t.title ?? id}》的用量？`)) { resetUsage(id); showSettings(); } } }, "清零")))) : null,
+      ...stories.map(([id, t]) => h("div", { class: "usage-row" }, h("b", {}, tr(t.title) || id), h("span", {}, fmtTokens(t)), h("span", { class: "muted" }, fmtCost(t)),
+        h("button", { class: "small", onclick: () => { if (confirm(`清零《${tr(t.title) || id}》的用量？`)) { resetUsage(id); showSettings(); } } }, "清零")))) : null,
     h("h4", {}, `单价（当前模型：${s.model || "未选择"}）`),
     h("p", { class: "small muted" }, "单位：每 100 万 token 多少钱。默认不预填（各家价格常变、还分档），请照服务商官网价格表自己填；本机模型（Ollama / LM Studio）默认按 0 计算。留空就只记 token 不算钱。"),
     h("div", { class: "row wrap" }, h("label", {}, "输入 ", inIn), h("label", {}, "输出 ", inOut), cur, h("button", { onclick: savePrice }, "保存单价")),

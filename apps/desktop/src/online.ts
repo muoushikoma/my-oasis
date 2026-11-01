@@ -3,9 +3,10 @@ import { filesFromZip, validateFiles, type StoryFiles } from "@my-oasis/schema";
 import { bridge } from "./bridge";
 const dec = new TextDecoder();
 import { h, toast } from "./dom";
-import { loadSettings, saveSettings } from "./settings";
+import { loadSettings, saveSettings, tr, trList } from "./settings";
+import type { LocalText } from "@my-oasis/schema";
 
-export interface OnlineStory { id: string; title: string; summary?: string; author?: string; version?: string; rating?: string; language?: string; tags?: string[]; ai?: boolean; cover?: string; files: { path: string; size?: number }[]; updated?: string }
+export interface OnlineStory { id: string; title: LocalText; summary?: LocalText; author?: string; version?: string; rating?: string; language?: string; tags?: LocalText[]; ai?: boolean; cover?: string; files: { path: string; size?: number }[]; updated?: string }
 export interface OnlineIndex { format: string; updated?: string; stories: OnlineStory[] }
 
 export const REPO = "muoushikoma/my-oasis";
@@ -105,7 +106,7 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
   const draw = () => {
     if (!idx) return;
     const k = q.value.trim();
-    const items = idx.stories.filter((x) => !k || [x.title, x.summary, ...(x.tags ?? [])].join(" ").includes(k));
+    const items = idx.stories.filter((x) => !k || [x.title, x.summary, ...(x.tags ?? [])].flatMap((v) => (v && typeof v === "object" ? Object.values(v) : [v ?? ""])).join(" ").includes(k));
     list.replaceChildren(items.length ? h("div", { class: "cards" }, ...items.map((st) => {
       const btn = h("button", { class: "primary" }, "下载并加入故事库") as HTMLButtonElement;
       btn.onclick = async () => {
@@ -115,13 +116,13 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
         btn.disabled = false; btn.textContent = "下载并加入故事库";
       };
       const size = st.files.reduce((a, f) => a + (f.size ?? 0), 0);
-      const ph = h("div", { class: "cover ph" }, (st.title.replace(/^[\s(（【\[]*(?:[^)）】\]]*[)）】\]])?\s*/, "") || st.title).slice(0, 1));
+      const ph = h("div", { class: "cover ph" }, (tr(st.title).replace(/^[\s(（【\[]*(?:[^)）】\]]*[)）】\]])?\s*/, "") || tr(st.title)).slice(0, 1));
       const cover = st.cover && /^stories\/[a-z0-9-]+\/[^?#]+$/.test(st.cover) && !st.cover.includes("..") ? (() => { const img = h("img", { class: "cover", alt: "" }) as HTMLImageElement; bridge.netGet(source().file(st.cover!)).then((b) => { img.src = URL.createObjectURL(new Blob([b as BlobPart])); }).catch(() => img.replaceWith(ph)); return img; })() : ph;
       return h("div", { class: "story-card" }, cover,
         h("div", { class: "info" },
-          h("h3", {}, st.title, st.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
-          h("p", { class: "muted" }, st.summary ?? ""),
-          h("p", { class: "small muted" }, `作者 ${st.author ?? "未署名"} · 版本 ${st.version ?? "?"}${size ? ` · ${size < 1048576 ? Math.max(1, Math.round(size / 1024)) + " KB" : (size / 1048576).toFixed(1) + " MB"}` : ""}${st.tags?.length ? ` · ${st.tags.join("、")}` : ""}`),
+          h("h3", {}, tr(st.title), st.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
+          h("p", { class: "muted" }, tr(st.summary)),
+          h("p", { class: "small muted" }, `作者 ${st.author ?? "未署名"} · 版本 ${st.version ?? "?"}${size ? ` · ${size < 1048576 ? Math.max(1, Math.round(size / 1024)) + " KB" : (size / 1048576).toFixed(1) + " MB"}` : ""}${st.tags?.length ? ` · ${trList(st.tags).join("、")}` : ""}`),
           h("div", { class: "row" }, btn)));
     })) : h("p", { class: "muted" }, idx.stories.length ? "没有找到匹配的故事。" : "在线故事库里还没有故事。欢迎到“创作 → 投稿”成为第一个投稿的作者！"));
   };
@@ -142,7 +143,7 @@ export function submitGuide(): HTMLElement {
   const step = (n: number, title: string, ...kids: any[]) => h("div", { class: "card step" }, h("h3", {}, `第 ${n} 步：${title}`), ...kids);
   return h("div", {},
     h("p", {}, "写好的故事可以投稿到公开的在线故事库，审核通过后所有玩家都能在“游玩 → 在线故事库”里下载。整个过程不需要会编程，只需要一个免费的 GitHub 账号。"),
-    h("div", { class: "notice" }, "投稿须知：只收全年龄或青少年级别的内容，不收色情内容；不要包含别人的版权素材、真实个人信息或任何 Key。版权归你，投稿即授权本平台公开分发（详见仓库 stories/LICENSE.md）。"),
+    h("div", { class: "notice" }, "投稿须知：只收全年龄的故事，不收色情内容；故事名称、简介和 3 个标签都要同时写中文和英文；不要包含别人的版权素材、真实个人信息或任何 Key。版权归你，投稿即授权本平台公开分发（详见仓库 stories/LICENSE.md）。"),
     step(1, "检查并导出", h("p", {}, "在“用 AI 写故事”的草稿里点“校验”，没有错误后点“导出 .oasis”；或者在“导入检查”里检查你自己写的故事。记下故事的 id（story.yaml 里 meta.id，例如 rainy-bookstore）。")),
     step(2, "注册 GitHub 并 Fork 故事库", h("ol", {},
       h("li", {}, "打开 https://github.com 注册账号（免费）。"),

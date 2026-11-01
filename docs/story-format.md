@@ -51,12 +51,14 @@ id 的通用格式：状态、动作、素材、接入点、组件这些的 id �
 | 字段 | 必填 | 格式 |
 |---|---|---|
 | `id` | ✅ | `^[a-z][a-z0-9-]{2,63}$`，例如 `rainy-bookshop`。投稿时必须和文件夹名一样 |
-| `title` | ✅ | 字符串 |
+| `title` | ✅ | 故事名称。字符串，或中英双语 `{ zh: 雨夜书店, en: Rainy Bookshop }`（**投稿故事库必须中英都写**） |
 | `version` | ✅ | `x.y.z` 格式 |
-| `summary` | ✅ | 字符串 |
-| `language` | ✅ | 例如 `zh-CN`、`en`、`ja` |
-| `rating` | ✅ | `all-ages`、`teen` 或 `mature`（`mature` 时 `content_warnings` 必填；公开故事库只收 `all-ages`、`teen`） |
-| `authors` / `tags` / `content_warnings` | | 字符串数组 |
+| `summary` | ✅ | 简介。字符串或 `{ zh: …, en: … }`（**投稿故事库必须中英都写**） |
+| `language` | ✅ | 主要语言，例如 `zh-CN`、`en` |
+| `languages` | | 故事支持的语言，例如 `[zh, en]`（见第 11 节） |
+| `rating` | ✅ | `all-ages`、`teen` 或 `mature`（`mature` 时 `content_warnings` 必填）。**公开故事库只收 `all-ages`（全年龄）**，其他分级只能本地导入 |
+| `tags` | | 标签数组，每项是字符串或 `{ zh, en }`。**投稿故事库必须正好 3 个，每个中英都写** |
+| `authors` / `content_warnings` | | 字符串数组（`content_warnings` 每项也可写 `{ zh, en }`） |
 | `cover` | | 包内图片的路径 |
 | `setting` | | 包内文件的路径，内容是世界观设定文本 |
 | `est_minutes` | | 整数 |
@@ -191,11 +193,16 @@ export function run(api) {
 spec: oasis/0.3
 meta:
   id: my-story
-  title: 示例故事
+  title: { zh: 示例故事, en: Sample Story }
   version: 1.0.0
-  summary: 一句话简介。
+  summary: { zh: 一句话简介。, en: A one-line summary. }
   language: zh-CN
+  languages: [zh, en]
   rating: all-ages
+  tags:
+    - { zh: 悬疑, en: Mystery }
+    - { zh: 短篇, en: Short }
+    - { zh: 纯规则, en: Rules only }
   cover: assets/cover.png
 assets:
   cover:
@@ -353,6 +360,7 @@ ui:
 ### 10.6 脚本 API 补充与沙箱
 
 - 实时脚本还可以读取：`api.dt`（这一步的毫秒数）、`api.time`（游戏开始后的毫秒数）、`api.input`。
+- 任何脚本都可以读 `api.lang`：玩家选的语言，`"zh"` 或 `"en"`（见第 11 节）。
 - 脚本在沙箱里运行：不能联网、不能读写文件、不能读取真实时间，也不能用 `Math.random`，随机数请用 `api.random`。
 - 每次调用受 `realtime.tick_ms` 的时间上限和 `scripts.limits.memory_mb` 的内存上限约束（默认 16 MB），超出会被中止。
 - 脚本文件每次调用都会重新执行，顶层常量可以随便用；需要保存的数据请写进状态（`json` 类型最方便）。
@@ -360,3 +368,34 @@ ui:
 ### 10.7 实时示例
 
 仓库 `tests/fixtures/realtime-mini/` 是一个完整的小示例《星星收集者》：方向键、WASD 或虚拟摇杆移动，按住空格或“冲”加速；定时生成星星，倒计时 60 秒；带相机跟随的图块地图；吃到星星有音效；第 5 颗星时异步请求 AI 打气。截图见 `docs/images/realtime-mini-desktop.png`、`docs/images/realtime-mini-mobile.png`。
+
+## 11. 中英双语
+
+所有故事都可以同时写中文和英文。玩家在客户端“设置 → 故事语言”里选 中文 / English，发布页也可以切换。
+
+**写法**：任何玩家能看到的文字，既可以写普通字符串（老写法，照样有效），也可以写成按语言分开的对象：
+
+```yaml
+label: { zh: 灯油, en: Lamp oil }
+text:
+  zh: 雨下得更大了。
+  en: The rain grows heavier.
+```
+
+可以这样写的字段：`meta.title`、`meta.summary`、`meta.tags` 每一项、`meta.content_warnings` 每一项、`start.intro`、状态的 `label`/`desc`、动作的 `label`/`desc`/`require_message`、参数的 `desc`、结局的 `label`/`text`、`fail` 步骤、AI 接入点的 `opening`/`fallback`、素材和生图点的 `alt`、组件的 `label`/`placeholder`/`title`/`text`、`choices[].label`、`input.reject`、`input.buttons[].label`。
+
+**显示规则**：按玩家选的语言显示；作者没写这种语言时，显示另一种。普通字符串在两种语言下都原样显示。
+
+**`meta.languages`**：写上故事支持的语言，例如 `[zh, en]`。
+
+**脚本**：`api.lang` 返回 `"zh"` 或 `"en"`，画布和实时脚本可以按它画不同的文字。
+
+**AI**：引擎会自动告诉 AI 玩家选了哪种语言，AI 写给玩家的文字会跟着用这种语言；JSON 输出的键名不变。作者写给 AI 的 `system`、`task`、`prompt`、`must`、`forbid` 只给 AI 看，不需要写两种语言。
+
+**投稿故事库的要求**（不满足就不能合并）：
+- `meta.title`（名称）和 `meta.summary`（简介）都必须同时写 `zh` 和 `en`；
+- `meta.tags` 必须**正好 3 个**，每个都同时写 `zh` 和 `en`；
+- `meta.rating` 必须是 `all-ages`（全年龄）。
+
+其他文字缺某种语言只会提醒，不会拦下；但建议全部写成中英双语。
+
