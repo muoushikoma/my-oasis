@@ -302,10 +302,10 @@ function finalizeOption(api, o, kind, idx, card) {
   const allowed = VERBS[kind] || [];
   if (allowed.indexOf(o.verb) < 0) return null;
   const opt = { id: `o${idx}`, label: o.label, verb: o.verb, win: clip(o.win, 140), lose: clip(o.lose, 140) };
-  if (o.verb === "fight") return opt;
+  if (o.verb === "fight") { sysOpt(api, o, opt); return opt; }
   if (o.verb === "quest") {
     if (get(api, "quest") && get(api, "quest").due) return null; // 同时只能接一个委托
-    return opt;
+    sysOpt(api, o, opt); return opt;
   }
   let rsize = "medium", ksize = "medium";
   if (o.verb === "check") {
@@ -336,7 +336,15 @@ function finalizeOption(api, o, kind, idx, card) {
     if (kind === "combat") rk = "ambush";
     opt.risk = rk; opt.kamt = riskAmount(api, rk, ksize, T);
   }
+  sysOpt(api, o, opt);
   return opt;
+}
+// 事件选项和 AI 发明的系统挂钩：成功时改变计数器；付出代价时可以花计数器
+function sysOpt(api, o, opt) {
+  const sy = o.sys && sysById(api, String(o.sys)); const n = Math.max(-3, Math.min(3, Math.round(Number(o.sysn) || 0)));
+  if (!sy || !n) return;
+  if (opt.verb === "pay" && n < 0) { opt.cost = "sys"; opt.sys = sy.id; opt.camt = -n; return; }
+  opt.sys = sy.id; opt.sysn = n;
 }
 function costAmount(api, c, T) {
   return { gold: 8 + 3 * T, rations: 2, potion: 1, hp: Math.max(2, Math.round(get(api, "max_hp") * 0.25)), iron: 2, essence: 1 }[c];
@@ -368,6 +376,7 @@ function riskAmount(api, r, size, T) {
 }
 function canAfford(api, o) {
   if (o.verb !== "pay") return true;
+  if (o.cost === "sys") return sysVal(api, o.sys) >= o.camt;
   const have = { gold: get(api, "gold"), rations: get(api, "rations"), potion: get(api, "potions"), hp: get(api, "hp") - 1, iron: get(api, "iron"), essence: get(api, "essence") }[o.cost];
   return have >= o.camt;
 }
@@ -385,7 +394,7 @@ function optText(api, o, kind) {
   if (o.verb === "camp") return o.note || "";
   if (o.verb === "potion") return o.note || "";
   const win = o.reward === "none" ? (kind === "combat" ? L(api, "避开战斗", "avoid the fight") : L(api, "安全通过", "get through safely")) : amtText(api, o.reward, o.ramt, o.relic) + (kind === "combat" ? L(api, "，并避开战斗", " & avoid the fight") : "");
-  if (o.verb === "pay") return `${L(api, "付出", "Pay")} ${T2(api, R_NAME[o.cost === "potion" ? "potion" : o.cost])} ${o.camt} → ${win}`;
+  if (o.verb === "pay") return `${L(api, "付出", "Pay")} ${o.cost === "sys" ? sysName(api, o.sys) : T2(api, R_NAME[o.cost === "potion" ? "potion" : o.cost])} ${o.camt} → ${win}`;
   const lose = amtText(api, o.risk, o.kamt);
   if (o.verb === "gamble") return `🎲 ${L(api, "五五开", "50/50")} · ${L(api, "成", "win")}：${win} · ${L(api, "败", "lose")}：${lose}`;
   return `🎲 ${T2(api, ABIL_NAME[o.ability])} DC ${o.dc} · ${L(api, "成", "pass")}：${win} · ${L(api, "败", "fail")}：${lose}`;
@@ -398,12 +407,13 @@ function optTags(api, o, kind) {
   const win = () => (!o.reward || o.reward === "none") ? (kind === "combat" ? L(api, "避开战斗", "avoid the fight") : L(api, "安全通过", "get through")) : amtText(api, o.reward, o.ramt, o.relic);
   if (o.verb === "fight") t.push({ k: "bad", t: L(api, "进入战斗", "start a fight") });
   else if (o.verb === "quest") t.push({ k: "info", t: L(api, "几里后回访领赏", "reward a few miles later") });
-  else if (o.verb === "pay") { t.push({ k: "bad", t: `${L(api, "付出", "pay")} ${T2(api, R_NAME[o.cost])} ${o.camt}` }); t.push({ k: "good", t: win() }); }
+  else if (o.verb === "pay") { t.push({ k: "bad", t: `${L(api, "付出", "pay")} ${o.cost === "sys" ? "✦ " + sysName(api, o.sys) : T2(api, R_NAME[o.cost])} ${o.camt}` }); t.push({ k: "good", t: win() }); }
   else {
     t.push({ k: "dc", t: o.verb === "gamble" ? L(api, "五五开", "50 / 50") : `${T2(api, ABIL_NAME[o.ability])} DC ${o.dc}` });
     t.push({ k: "good", t: win() });
     if (o.risk && o.risk !== "none") t.push({ k: "bad", t: amtText(api, o.risk, o.kamt) });
   }
+  if (o.sys && o.sysn) t.push({ k: o.sysn > 0 ? "good" : "bad", t: `✦ ${sysName(api, o.sys)} ${sign(o.sysn)}${o.verb === "fight" ? L(api, "（获胜后）", " (on victory)") : o.verb === "check" || o.verb === "gamble" ? L(api, "（成功时）", " (on success)") : ""}` });
   return t.map((x) => ({ k: x.k, t: en(api, x.t) }));
 }
 
@@ -576,9 +586,10 @@ function chooseOption(api, id) {
   if (!o) { log(api, L(api, "这张卡上没有这个选项。", "There is no such option on this card.")); return; }
   if (!canAfford(api, o)) { log(api, L(api, "付不起这个代价。", "You can't afford that.")); return; }
   log(api, `➤ ${o.label}`);
-  if (o.verb === "fight") { if (o.win) log(api, `✦ ${o.win}`); startBattle(api, card.foe, false); return; }
+  if (o.verb === "fight") { if (o.win) log(api, `✦ ${o.win}`); if (o.sys && o.sysn) { card.winSys = { sys: o.sys, n: o.sysn }; set(api, "card", card); } startBattle(api, card.foe, false); return; }
   if (o.verb === "quest") {
     if (o.win) log(api, `✦ ${o.win}`);
+    if (o.sys && o.sysn) sysAdd(api, o.sys, o.sysn);
     const due = get(api, "distance") + api.random.int(4, 8);
     set(api, "quest", { title: card.title, due });
     log(api, L(api, `📜 接下委托「${card.title}」——第 ${due} 里左右回来领赏。`, `📜 Accepted "${card.title}" — come back around mile ${due}.`));
@@ -587,7 +598,7 @@ function chooseOption(api, id) {
   let ok;
   if (o.verb === "pay") {
     const c = o.cost === "potion" ? "potions" : o.cost;
-    if (c === "hp") hurt(api, o.camt); else api.state.inc(c, -o.camt);
+    if (c === "hp") hurt(api, o.camt); else if (c === "sys") sysAdd(api, o.sys, -o.camt); else api.state.inc(c, -o.camt);
     ok = true;
   } else if (o.verb === "gamble") {
     const r = api.random.int(1, 100); ok = r <= o.chance;
@@ -600,6 +611,7 @@ function chooseOption(api, id) {
     pop(api, ok ? "v" : "x", ok ? "#9aff8a" : "#ff8a7a", false);
   }
   if (ok) {
+    if (o.sys && o.sysn) sysAdd(api, o.sys, o.sysn);
     const msg = applyReward(api, o);
     if (o.win) log(api, `✦ ${o.win}`);
     log(api, `✔ ${msg}${card.kind === "combat" ? L(api, "，避开了战斗", ", and avoided the fight") : ""}。`);
@@ -652,6 +664,7 @@ const CONDS = {
   biome: [(v) => `在${(BIOMES[v] || BIOMES.plains)[0]}`, (v) => `in the ${(BIOMES[v] || BIOMES.plains)[1]}`, () => 0.25], night: [() => "夜里", () => "at night", () => 0.3],
   no_rations: [() => "口粮吃光时", () => "while out of rations", () => 0.15], gold_above: [(v) => `金币多于 ${v}`, (v) => `with over ${v} gold`, (v) => Math.max(0.2, 1 - v / 120)],
   fatigue_above: [(v) => `疲劳高于 ${v}`, (v) => `fatigue above ${v}`, (v) => Math.max(0.2, 1 - v / 12)], first_turn: [() => "战斗第一回合", () => "on the first turn", () => 0.3],
+  counter: [(v) => `≥ ${v}`, (v) => `≥ ${v}`, () => 0.4], counter_below: [(v) => `< ${v}`, (v) => `< ${v}`, () => 0.5],
   foe_charging: [() => "敌人正在蓄力时", () => "while the foe charges", () => 0.15], has_block: [() => "有格挡时", () => "while you have block", () => 0.3], foe_poisoned: [() => "敌人中毒时", () => "while the foe is poisoned", () => 0.25],
 };
 // 效果：[权重（每点的强度成本）, 单位（每点、按等级）, 中文, 英文, 是否只能在战斗里, 是否按几率]
@@ -666,6 +679,7 @@ const ACTS = {
   bless: [0.6, () => 1, "祝福 {n} 里", "blessed {n} mi"], luck_fight: [1.3, () => 0.5, "本场所有 d20 +{n}", "+{n} to every d20 this fight", true], ac_fight: [1.2, () => 0.5, "本场 AC +{n}", "AC +{n} this fight", true],
   extra_attack: [1.6, () => 15, "{n}% 几率立刻再攻击一次", "{n}% chance to strike again at once", true, true], double_next: [1.4, () => 18, "{n}% 几率让下一击伤害翻倍", "{n}% chance your next hit deals double", true, true],
   reflect: [0.8, (lv) => 1 + lv * 0.4, "下次受伤时反弹 {n} 点伤害", "reflect {n} damage next time you're hit", true],
+  counter: [0.5, () => 1, "{sys} {n}", "{sys} {n}"],   // 改变某个 AI 发明的系统的计数器（数值不缩放）
   // 常驻
   ac: [1.2, () => 1, "AC +{n}", "AC +{n}"], luck: [1.3, () => 1, "所有 d20 +{n}", "+{n} to every d20"], maxhp: [0.25, () => 2, "最大生命 +{n}", "+{n} max HP"], res_max: [1.2, () => 1, "职业资源上限 +{n}", "+{n} max class resource"],
   // 缺陷（AI 设计，给道具换来更多强度）
@@ -685,8 +699,10 @@ function cleanRule(r, isFlaw, kind) {
   let when = TRIGS.indexOf(r.when) >= 0 ? r.when : kind === "consumable" ? "use" : "battle_start";
   if (kind === "consumable") when = "use"; else if (when === "use") when = "battle_start";
   const acts = (Array.isArray(r.do) ? r.do : [r.do]).filter((a) => a && ACTS[a.act || a.a]).slice(0, 3).map((a) => {
-    const act = a.act || a.a; return { a: act, n: Math.max(1, Math.min(5, Math.round(Number(a.n) || 2))) };
-  }).filter((a) => (ACTS[a.a][0] < 0) === !!isFlaw);
+    const act = a.act || a.a;
+    if (act === "counter") { const n = Math.max(-3, Math.min(3, Math.round(Number(a.n) || 1))); return n && a.sys ? { a: act, n, sys: String(a.sys).slice(0, 24) } : null; }
+    return { a: act, n: Math.max(1, Math.min(5, Math.round(Number(a.n) || 2))) };
+  }).filter((a) => a && (a.a === "counter" || (ACTS[a.a][0] < 0) === !!isFlaw));
   if (!acts.length) return null;
   const isPassive = acts.every((a) => PASSIVE_ACTS.indexOf(a.a) >= 0);
   if (isPassive) when = "passive"; else if (when === "passive") when = "battle_start";
@@ -695,6 +711,7 @@ function cleanRule(r, isFlaw, kind) {
   // 只能在战斗里生效的效果，配上了战斗外的时机 → 改成战斗开始时
   if (out.when !== "passive" && BATTLE_TRIGS.indexOf(out.when) < 0 && out.acts.some((a) => ACTS[a.a][4])) out.when = "battle_start";
   if (r.if && typeof r.if === "object" && CONDS[r.if.k || r.if.cond]) out.cond = { k: r.if.k || r.if.cond, v: Math.max(0, Math.min(200, Number(r.if.v) || (r.if.k === "hp_below" ? 50 : r.if.k === "hp_above" ? 70 : 0))) };
+  if (out.cond && (out.cond.k === "counter" || out.cond.k === "counter_below")) { if (!r.if.sys) delete out.cond; else { out.cond.sys = String(r.if.sys).slice(0, 24); out.cond.v = Math.max(1, Math.min(30, Math.round(Number(r.if.v) || 1))); } }
   if (out.cond && (out.cond.k === "foe_trait") && !TRAITS[r.if.v]) out.cond.v = "undead";
   if (out.cond && out.cond.k === "foe_trait") out.cond.v = TRAITS[r.if.v] ? r.if.v : "undead";
   if (out.cond && out.cond.k === "biome") out.cond.v = BIOMES[r.if.v] ? r.if.v : "forest";
@@ -705,7 +722,7 @@ function cleanRule(r, isFlaw, kind) {
   return out;
 }
 function ruleCost(r) {
-  const base = r.acts.reduce((a, x) => a + ACTS[x.a][0] * x.n, 0);
+  const base = r.acts.reduce((a, x) => a + (x.a === "counter" ? (x.n > 0 ? 0.5 * x.n : 0) : ACTS[x.a][0] * x.n), 0);
   if (r.when === "passive") return base;
   const cm = r.cond ? CONDS[r.cond.k][2](r.cond.v) : 1;
   return base * FREQ[r.when] * cm * (r.every ? 1 / r.every : 1) * (r.chance / 100);
@@ -737,6 +754,7 @@ function forge(spec, rarity) {
 }
 // 某个效果的最终数值
 function actAmt(api, it, x, flaw) {
+  if (x.a === "counter") return x.n;
   const A = ACTS[x.a], lv = get(api, "level"), dist = get(api, "distance");
   let v = A[1](lv, dist) * x.n * (flaw ? it.fscale || 1 : it.scale);
   if (A[5]) return Math.max(5, Math.min(100, Math.round(v)));
@@ -753,10 +771,10 @@ function actAmt(api, it, x, flaw) {
   return Math.max(1, Math.round(v));
 }
 function ruleText(api, it, r, flaw) {
-  const parts = r.acts.map((x) => { const A = ACTS[x.a]; return (api.lang === "en" ? A[3] : A[2]).replace("{n}", actAmt(api, it, x, flaw)); });
+  const parts = r.acts.map((x) => { if (x.a === "counter") return `${sysName(api, x.sys)} ${sign(x.n)}`; const A = ACTS[x.a]; return (api.lang === "en" ? A[3] : A[2]).replace("{n}", actAmt(api, it, x, flaw)); });
   let head = T2(api, TRIG_NAME[r.when]);
   if (r.every) head = L(api, `每第 ${r.every} 次${head.replace(/时$/, "")}`, `Every ${r.every}th time — ${head.toLowerCase()}`);
-  if (r.cond) head += L(api, `，若${CONDS[r.cond.k][0](r.cond.v)}`, `, if ${CONDS[r.cond.k][1](r.cond.v)}`);
+  if (r.cond) head += r.cond.sys ? L(api, `，若${sysName(api, r.cond.sys)} ${CONDS[r.cond.k][0](r.cond.v)}`, `, if ${sysName(api, r.cond.sys)} ${CONDS[r.cond.k][1](r.cond.v)}`) : L(api, `，若${CONDS[r.cond.k][0](r.cond.v)}`, `, if ${CONDS[r.cond.k][1](r.cond.v)}`);
   if (r.chance < 100) head += L(api, `，${r.chance}% 几率`, `, ${r.chance}% chance`);
   return `${head}：${parts.join(L(api, "，", ", "))}`;
 }
@@ -768,7 +786,7 @@ function effText(api, it) {
   return en(api, lines.join("\n"));
 }
 function heldItems(api) { return get(api, "items") || []; }
-function activeItems(api) { const l = heldItems(api).filter((x) => x.kind !== "consumable"); const o = get(api, "omen"); if (o && o.rules) l.push(o); return l; }
+function activeItems(api) { const l = heldItems(api).filter((x) => x.kind !== "consumable"); const o = get(api, "omen"); if (o && o.rules) l.push(o); return l.concat(sysPseudo(api)); }
 function passiveSum(api, a) { let s = 0; for (const it of activeItems(api)) { for (const r of it.rules) if (r.when === "passive") for (const x of r.acts) if (x.a === a) s += actAmt(api, it, x, false); } return s; }
 function buff(api) { return get(api, "buff") || {}; }
 function setBuff(api, k, v) { const b = buff(api); b[k] = v; set(api, "buff", b); }
@@ -781,6 +799,7 @@ function condOk(api, c) {
     case "biome": return get(api, "biome") === c.v; case "night": return (get(api, "art") || {}).time === "night";
     case "no_rations": return get(api, "rations") <= 0; case "gold_above": return get(api, "gold") > c.v; case "fatigue_above": return (get(api, "fatigue") || 0) > c.v;
     case "first_turn": return inb && !buff(api).turned; case "foe_charging": return inb && (!!f.charged || (f.intent || {}).t === "charge" || (f.intent || {}).wind);
+    case "counter": return sysVal(api, c.sys) >= c.v; case "counter_below": return sysVal(api, c.sys) < c.v;
     case "has_block": return (get(api, "hero_block") || 0) > 0; case "foe_poisoned": return inb && (f.poison || 0) > 0;
   }
   return true;
@@ -819,6 +838,7 @@ function doAct(api, it, x, flaw) {
     case "tire": api.state.inc("fatigue", n); return L(api, `疲劳 +${n}`, `fatigue +${n}`);
     case "foe_heal": { const f = foe(); if (!f.name) return ""; f.hp = Math.min(f.max_hp, f.hp + n); set(api, "foe", f); return L(api, `${f.name}回复 ${n}`, `${f.name} heals ${n}`); }
     case "curse_self": addStatus(api, "cursed", n); return L(api, `被诅咒 ${n} 里`, `cursed ${n} mi`);
+    case "counter": { const d0 = sysAdd(api, x.sys, x.n); return d0 ? `${sysName(api, x.sys)} ${sign(d0)}` : ""; }
   }
   return "";
 }
@@ -841,6 +861,7 @@ function fireItems(api, trig, only) {
       if (it.grow && !it.grow.done && it.grow.on === trig) { it.grow.cnt += 1; changed = true; if (it.grow.cnt >= it.grow.need) awaken(api, it); }
       if (changed && it.uid) set(api, "items", heldItems(api).map((x) => (x.uid === it.uid ? Object.assign({}, it) : x)));
       if (changed && it.omen) set(api, "omen", it);
+      if (changed && it.sysId) saveSysRules(api, it);
     }
   } finally { DEPTH--; }
 }
@@ -990,6 +1011,126 @@ function omenText(api, it) {
   return en(api, l.filter(Boolean).join("\n"));
 }
 
+// ---- AI 发明的玩法系统（创世规则）----
+// 底层只有一种积木：计数器。AI 给它取名、规定它代表什么（资源、声望、同伴的忠诚、腐化度……）、怎么涨怎么掉、
+// 到某个值会发生什么（门槛）、能花掉换什么（技能）。系统会进入整个游戏：事件卡、道具、敌人、异象都能改它、读它。
+// 规则只管总强度：按“这个计数器平均多久攒得起来”自动配平技能和门槛效果的数值。
+const SYS_KINDS = ["resource", "reputation", "companion", "meter", "other"];
+const ICONS = ["heart", "ration", "potion", "coin", "iron", "essence", "shield", "flag", "sword", "dice", "bag", "clover", "scroll", "star", "fire", "boot", "gem", "person", "pack", "skull", "check", "cross", "hammer", "map", "hourglass"];
+const MAX_SYSTEMS = 4, SYS_BUDGET = 2.4;
+function sysList(api) { return get(api, "systems") || []; }
+function sysById(api, id) { return sysList(api).filter((x) => x.id === id)[0]; }
+function sysVal(api, id) { return (get(api, "sysval") || {})[id] || 0; }
+function sysName(api, id) { const s0 = sysById(api, id); return s0 ? s0.name : id; }
+function sysAdd(api, id, n) {
+  const sy = sysById(api, id); if (!sy || !n) return 0;
+  const v = get(api, "sysval") || {}, old = v[id] || 0, nv = Math.max(0, Math.min(sy.max, old + n));
+  v[id] = nv; set(api, "sysval", v);
+  for (const t of sy.thresholds) {
+    if (old < t.at && nv >= t.at) log(api, `✦ ${sy.name}·${t.name}${L(api, " 生效", " is now active")}${t.desc ? "：" + t.desc : ""}`);
+    if (old >= t.at && nv < t.at) log(api, L(api, `${sy.name}·${t.name} 失效了。`, `${sy.name}·${t.name} fades.`));
+  }
+  return nv - old;
+}
+// 系统的规则、已达成的门槛 → 参与触发的“伪道具”
+function sysPseudo(api) {
+  const out = [];
+  for (const sy of sysList(api)) {
+    if (sy.rules.length || sy.flaws.length) out.push({ name: sy.name, rules: sy.rules, flaws: sy.flaws, scale: sy.scale, fscale: 1, rarity: "rare", kind: "system", sysId: sy.id, part: -1 });
+    sy.thresholds.forEach((t, i) => { if (sysVal(api, sy.id) >= t.at) out.push({ name: `${sy.name}·${t.name}`, rules: t.rules, flaws: t.flaws, scale: t.scale, fscale: 1, rarity: "rare", kind: "system", sysId: sy.id, part: i }); });
+  }
+  return out;
+}
+function saveSysRules(api, it) {
+  const list = sysList(api).map((sy) => {
+    if (sy.id !== it.sysId) return sy;
+    if (it.part < 0) { sy.rules = it.rules; sy.flaws = it.flaws; } else if (sy.thresholds[it.part]) { sy.thresholds[it.part].rules = it.rules; sy.thresholds[it.part].flaws = it.flaws; }
+    return sy;
+  });
+  set(api, "systems", list);
+}
+function slug(s, i) { const t = String(s || "").toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 16); return t || `sys${i}`; }
+function cleanSystem(api, raw, i) {
+  if (!raw || typeof raw !== "object" || !clip(raw.name, 10)) return null;
+  const sy = { id: slug(raw.id, i), name: clip(raw.name, 10), desc: clip(raw.desc, 140), kind: SYS_KINDS.indexOf(raw.kind) >= 0 ? raw.kind : "other",
+    icon: ICONS.indexOf(raw.icon) >= 0 ? raw.icon : "star", max: Math.max(3, Math.min(20, Math.round(Number(raw.max) || 10))) };
+  sy.start = Math.max(0, Math.min(sy.max, Math.round(Number(raw.start) || 0)));
+  const fix = (r) => { if (!r) return r; (Array.isArray(r.do) ? r.do : [r.do]).forEach((a) => { if (a && (a.act || a.a) === "counter" && !a.sys) a.sys = sy.id; }); if (r.if && (r.if.k === "counter" || r.if.k === "counter_below") && !r.if.sys) r.if.sys = sy.id; return r; };
+  const rulesOf = (arr, flaw) => (Array.isArray(arr) ? arr : arr ? [arr] : []).slice(0, 4).map((r) => cleanRule(fix(r), flaw, "system")).filter(Boolean);
+  sy.rules = rulesOf(raw.rules, false); sy.flaws = rulesOf(raw.flaws, true);
+  sy.thresholds = (Array.isArray(raw.thresholds) ? raw.thresholds : []).slice(0, 3).map((t) => t && clip(t.name, 10) ? { at: Math.max(1, Math.min(sy.max, Math.round(Number(t.at) || sy.max))), name: clip(t.name, 10), desc: clip(t.desc, 80), rules: rulesOf(t.rules, false), flaws: rulesOf(t.flaws, true) } : null).filter((t) => t && (t.rules.length || t.flaws.length));
+  sy.spends = (Array.isArray(raw.spends) ? raw.spends : []).slice(0, 2).map((sp) => {
+    if (!sp || !clip(sp.name, 10)) return null;
+    const r = cleanRule(fix({ when: "battle_start", do: sp.do }), false, "system"); if (!r) return null;
+    const where = ["battle", "road", "any"].indexOf(sp.where) >= 0 ? sp.where : r.acts.some((x) => ACTS[x.a][4]) ? "battle" : "any";
+    return { name: clip(sp.name, 10), desc: clip(sp.desc, 80), cost: Math.max(1, Math.min(sy.max, Math.round(Number(sp.cost) || 3))), acts: r.acts, where: r.acts.some((x) => ACTS[x.a][4]) ? "battle" : where };
+  }).filter(Boolean);
+  if (raw.decay && Number(raw.decay.every) >= 1) sy.decay = { every: Math.max(1, Math.min(6, Math.round(Number(raw.decay.every)))), n: Math.max(1, Math.min(3, Math.round(Number(raw.decay.n) || 1))) };
+  if (!sy.rules.length && !sy.spends.length && !sy.thresholds.length) return null;
+  return sy;
+}
+// 配平：收入（每里平均能攒多少）决定技能能放多频繁，从而决定每次的强度
+function forgeSystem(sy) {
+  let income = 0.2; // 事件卡和道具也会给
+  for (const r of sy.rules) for (const x of r.acts) if (x.a === "counter" && x.sys === sy.id && x.n > 0) income += x.n * (r.when === "passive" ? 0 : FREQ[r.when]) * (r.cond ? CONDS[r.cond.k][2](r.cond.v) : 1) * (r.every ? 1 / r.every : 1) * (r.chance / 100);
+  sy.income = Math.round(income * 100) / 100;
+  const k = Math.max(1, sy.spends.length);
+  for (const sp of sy.spends) {
+    const uses = Math.min(1.5, income / sp.cost / k), ac = sp.acts.reduce((a, x) => a + (x.a === "counter" ? 0 : ACTS[x.a][0] * x.n), 0);
+    sp.scale = Math.max(0.3, Math.min(8, (SYS_BUDGET * 0.6 / k) / Math.max(0.05, uses * Math.max(0.3, ac))));
+  }
+  const own = sy.rules.reduce((a, r) => a + ruleCost(r), 0) - sy.rules.reduce((a, r) => a + r.acts.filter((x) => x.a === "counter").reduce((b, x) => b + (x.n > 0 ? 0.5 * x.n : 0), 0) * (r.when === "passive" ? 1 : FREQ[r.when]), 0);
+  sy.scale = own > 0.01 ? Math.max(0.3, Math.min(5, (SYS_BUDGET * 0.25) / own)) : 1;
+  const nt = Math.max(1, sy.thresholds.length);
+  for (const t of sy.thresholds) { const c = t.rules.reduce((a, r) => a + ruleCost(r), 0); t.scale = c > 0.01 ? Math.max(0.3, Math.min(6, (SYS_BUDGET * 0.35 / nt) / c * (0.6 + t.at / sy.max))) : 1; }
+  return sy;
+}
+function installSystem(api, raw) {
+  const list = sysList(api); if (list.length >= MAX_SYSTEMS) return null;
+  const sy = cleanSystem(api, raw, list.length + 1); if (!sy) return null;
+  while (list.some((x) => x.id === sy.id)) sy.id += "_";
+  forgeSystem(sy);
+  set(api, "systems", list.concat([sy]));
+  const v = get(api, "sysval") || {}; v[sy.id] = sy.start; set(api, "sysval", v);
+  codexAdd(api, "system", sy.name, sysText(api, sy), sy.desc);
+  log(api, `✦ ${L(api, "新玩法", "New system")}【${sy.name}】：${sy.desc}`);
+  const t = get(api, "toast") || {};
+  set(api, "toast", { n: (t.n || 0) + 1, head: L(api, "✦ AI 为这段旅程创造了新玩法", "✦ The AI created a new system for this journey"), title: sy.name, rarity: "", rk: "legendary", eff: sysText(api, sy), desc: sy.desc, kind: "system" });
+  return sy;
+}
+function spendText(api, sy, sp) {
+  const it = { scale: sp.scale, rarity: "rare" };
+  return sp.acts.map((x) => x.a === "counter" ? `${sysName(api, x.sys)} ${sign(x.n)}` : (api.lang === "en" ? ACTS[x.a][3] : ACTS[x.a][2]).replace("{n}", actAmt(api, it, x, false))).join(L(api, "，", ", "));
+}
+function sysText(api, sy) {
+  const lines = [];
+  for (const r of sy.rules) lines.push(ruleText(api, sy, r, false));
+  for (const f of sy.flaws) lines.push(L(api, "⚠ ", "⚠ ") + ruleText(api, sy, f, true));
+  for (const t of sy.thresholds) lines.push(`${L(api, "达到", "At")} ${t.at}【${t.name}】：` + t.rules.map((r) => ruleText(api, t, r, false)).concat(t.flaws.map((f) => "⚠ " + ruleText(api, t, f, true))).join(L(api, "；", "; ")));
+  for (const sp of sy.spends) lines.push(`${L(api, "花", "Spend")} ${sp.cost}【${sp.name}】${sp.where === "battle" ? L(api, "（战斗中）", " (in battle)") : ""}：${spendText(api, sy, sp)}`);
+  if (sy.decay) lines.push(L(api, `每 ${sy.decay.every} 里自然减少 ${sy.decay.n}`, `Drops by ${sy.decay.n} every ${sy.decay.every} mi`));
+  return en(api, lines.join("\n"));
+}
+function sysHint(api) {
+  const l = sysList(api); if (!l.length) return "（还没有）";
+  return l.map((sy) => `${sy.id}「${sy.name}」${sysVal(api, sy.id)}/${sy.max}：${sy.desc}`).join("；");
+}
+function sysUi(api) {
+  const ph = get(api, "phase");
+  return sysList(api).map((sy) => ({ id: sy.id, name: sy.name, icon: sy.icon, kind: sy.kind, val: sysVal(api, sy.id), max: sy.max, desc: sy.desc, text: sysText(api, sy),
+    thr: sy.thresholds.map((t) => ({ at: t.at, name: t.name, on: sysVal(api, sy.id) >= t.at })),
+    spends: sy.spends.map((sp, i) => ({ key: `${sy.id}:${i}`, name: sp.name, cost: sp.cost, text: en(api, spendText(api, sy, sp)), battle: sp.where === "battle",
+      ok: sysVal(api, sy.id) >= sp.cost && (sp.where === "battle" ? ph === "battle" : sp.where === "road" ? ph === "none" : ["battle", "none", "card"].indexOf(ph) >= 0) })) }));
+}
+function sysDecay(api, dist) {
+  for (const sy of sysList(api)) if (sy.decay && dist % sy.decay.every === 0 && sysVal(api, sy.id) > 0) sysAdd(api, sy.id, -sy.decay.n);
+}
+function askGenesis(api) {
+  const req = api.ai.request("genesis", "", { hero: CLASSES[get(api, "hero_class")].name[0], skills: (SKILLS[get(api, "hero_class")] || []).map((k) => k.name[0]).join("、"),
+    codex: (api.storage.get("codex") || []).filter((c) => c.t === "system").slice(-12).map((c) => c.n).join("、") || "（还没有）" });
+  set(api, "genesis", { req: req == null ? 0 : req, born: api.time, done: false });
+}
+
 // ---- 造物池：后台提前让 AI 设计一批，用到时直接取 ----
 function pool(api) { const p = get(api, "pool"); return p && p.items ? p : { items: [], perks: [], foes: [], omens: [], req: 0, born: 0 }; }
 function ensurePool(api) {
@@ -1001,7 +1142,8 @@ function ensurePool(api) {
   const nb = (get(api, "next") || {}).biome || get(api, "biome");
   const req = api.ai.request("invent", "", { biome: biomeName(api), next_biome: T2(api, BIOMES[nb] || BIOMES.plains), mile: get(api, "distance"), hero: CLASSES[get(api, "hero_class")].name[0], level: get(api, "level"),
     skills: (SKILLS[get(api, "hero_class")] || []).map((k) => k.name[0]).join("、"), thread: get(api, "thread") || "（还没有）", path: PATHS[pathId(api)].n[0],
-    made: made.join("、") || "（还没有）", codex: cx.join("、") || "（还没有）", need: needText(api), inv: heldItems(api).map((x) => x.name).join("、") || "（无）" });
+    made: made.join("、") || "（还没有）", codex: cx.join("、") || "（还没有）", need: needText(api), inv: heldItems(api).map((x) => x.name).join("、") || "（无）",
+    systems: sysHint(api), room: sysList(api).length + (pool(api).systems || []).length < MAX_SYSTEMS ? "可以" : "不要" });
   p.req = req == null ? 0 : req; p.born = api.time; set(api, "pool", p);
 }
 function needText(api) {
@@ -1022,6 +1164,7 @@ function takeInvent(api, d) {
   { const s = cleanSpec(d.insight, "insight"); if (s) { p.perks.push(s); got++; } }
   for (const raw of (Array.isArray(d.foes) ? d.foes : []).slice(0, 3)) { const f = cleanFoe(api, raw); if (f) { p.foes.push(f); got++; } }
   { const o = cleanOmen(api, d.omen); if (o) { (p.omens = p.omens || []).push(o); got++; } }
+  if (d.system && typeof d.system === "object" && sysList(api).length + (p.systems || []).length < MAX_SYSTEMS) { (p.systems = p.systems || []).push(d.system); got++; }
   p.items = p.items.slice(-8); p.perks = p.perks.slice(-3); p.foes = p.foes.slice(-5); p.omens = (p.omens || []).slice(-2);
   p.req = 0; set(api, "pool", p);
   return got;
@@ -1149,6 +1292,7 @@ function victory(api, f) {
   const c = get(api, "card"); if (c && c.foe_end) log(api, `✦ ${c.foe_end}`);
   set(api, "hero_block", 0); set(api, "evade", false);
   fireItems(api, "on_kill");
+  { const c2 = get(api, "card"); if (c2 && c2.winSys) sysAdd(api, c2.winSys.sys, c2.winSys.n); }
   endEvent(api, true);
   gainXp(api, xp);
   settle(api);
@@ -1198,6 +1342,7 @@ function refresh(api) {
   set(api, "ui_battle", ph === "battle" ? battleUi(api) : {});
   set(api, "items_ui", heldItems(api).map((it) => ({ uid: it.uid, name: it.name, kind: it.kind, rk: it.rarity, rarity: T2(api, RARITY[it.rarity]), eff: effText(api, it), desc: it.desc,
     usable: it.kind === "consumable" && (ph === "battle" || (["none", "card"].indexOf(ph) >= 0 && !battleOnly(it))) })));
+  set(api, "sys_ui", sysUi(api));
   { const om = get(api, "omen"); set(api, "omen_ui", om && om.omen ? { name: om.name, desc: om.desc, text: omenText(api, om) } : {}); }
   showUi(api);
   set(api, "situation", en(api, s));
@@ -1365,6 +1510,7 @@ export function pick_class(api) {
   log(api, L(api, `🧭 你是一名${c.name[0]}。${abilText(api)}`, `🧭 You are a ${c.name[1]}. ${abilText(api)}`));
   log(api, L(api, `生命 ${hp} · AC ${calcAc(api)} · ${c.weapon[0]} 1d${c.die}${sign(atkMod(api))}`, `HP ${hp} · AC ${calcAc(api)} · ${c.weapon[1]} 1d${c.die}${sign(atkMod(api))}`));
   log(api, L(api, `技能：${SKILLS[id].map((k) => k.name[0]).join("、")}（消耗${RES_NAME[RES[id].k][0]}）`, `Skills: ${SKILLS[id].map((k) => k.name[1]).join(", ")} (cost ${RES_NAME[RES[id].k][1]})`));
+  askGenesis(api);
   ensurePool(api);
   rollNext(api, 1, 0);
   refresh(api);
@@ -1408,7 +1554,7 @@ function askAi(api, which) {
   const tierName = ev.boss ? "boss" : ["weak", "normal", "tough", "elite"][(ev.tier || 0) + 1] || "normal";
   const q = get(api, "quest") || {};
   const req = api.ai.request("road_event", "", { mile: ev.mile, kind: ev.kind, tier: tierName, threat: ev.threat, biome: ev.biome || get(api, "biome"), boss: !!ev.boss, quest: q.title || "", hero: CLASSES[get(api, "hero_class")] ? CLASSES[get(api, "hero_class")].name[0] : "", path: PATHS[ev.path || pathId(api)].n[0], thread: get(api, "thread") || "（还没有，由你开启）", perks: (get(api, "perks") || []).map((k) => PERKS[k].n[0]).join("、") || "无",
-    item: itemHint(ev.item), sig: foeHint(ev.sig), wares: (ev.wares || []).map((w) => w.name).join("、") || "（无）", inv: heldItems(api).map((x) => x.name).join("、") || "（无）" });
+    item: itemHint(ev.item), sig: foeHint(ev.sig), wares: (ev.wares || []).map((w) => w.name).join("、") || "（无）", inv: heldItems(api).map((x) => x.name).join("、") || "（无）", systems: sysHint(api) });
   if (req == null) { ev.failed = true; } else { ev.req = req; ev.born = api.time; ev.failed = false; }
   set(api, which, ev);
 }
@@ -1417,7 +1563,7 @@ function draftFrom(p, card) {
   const draft = { title: p.title, text: p.text, foe: p.foe, options: [] };
   for (const i of [1, 2, 3]) {
     const verb = p[`o${i}_verb`]; if (!verb || verb === "none") continue;
-    draft.options.push({ label: p[`o${i}_label`], verb, ability: p[`o${i}_ability`], diff: p[`o${i}_diff`], reward: p[`o${i}_reward`], risk: p[`o${i}_risk`], cost: p[`o${i}_cost`], relic: p.relic, win: p[`o${i}_win`], lose: p[`o${i}_lose`] });
+    draft.options.push({ label: p[`o${i}_label`], verb, ability: p[`o${i}_ability`], diff: p[`o${i}_diff`], reward: p[`o${i}_reward`], risk: p[`o${i}_risk`], cost: p[`o${i}_cost`], relic: p.relic, win: p[`o${i}_win`], lose: p[`o${i}_lose`], sys: p[`o${i}_sys`], sysn: p[`o${i}_sys_n`] });
   }
   if (card.kind === "combat" && !draft.foe) draft.foe = card.foe;
   return draft;
@@ -1459,7 +1605,7 @@ export function walk_rules(api) {
   if (ev.biome !== get(api, "biome")) {
     set(api, "biome", ev.biome); set(api, "art", { time: get(api, "art").time, weather: BIOME_WEATHER[ev.biome] });
     log(api, L(api, `🗺 道路把你带进了${biomeName(api)}。`, `🗺 The road leads you into the ${biomeName(api)}.`));
-    { const P = pool(api); const o = (P.omens || []).shift(); set(api, "pool", P); startOmen(api, o || null); }
+    { const P = pool(api); const o = (P.omens || []).shift(); const ns = (P.systems || []).shift(); set(api, "pool", P); startOmen(api, o || null); if (ns) installSystem(api, ns); }
   }
   { const art = get(api, "art"); art.time = ["day", "day", "dusk", "night"][Math.floor(dist / 3) % 4]; set(api, "art", art); }
   log(api, L(api, `—— 第 ${dist} 里 · ${biomeName(api)} · ${PATHS[path].n[0]} ——`, `—— Mile ${dist} · ${biomeName(api)} · ${PATHS[path].n[1]} ——`));
@@ -1476,6 +1622,7 @@ export function walk_rules(api) {
   if (api.random.int(1, 100) <= forage && gain(api, "rations", 1)) log(api, L(api, "🫐 路边采到一些浆果和蘑菇（+1 口粮）。", "🫐 You forage berries and mushrooms by the road (+1 ration)."));
   // 道具：每里触发、诅咒
   fireItems(api, "on_mile");
+  sysDecay(api, dist);
   // 状态效果
   const st = status(api);
   if (st.poisoned) { const dmg = d(api, 1, 4); hurt(api, dmg); log(api, L(api, `🤢 毒性发作，失去 ${dmg} 生命。`, `🤢 Poison burns: -${dmg} HP.`)); }
@@ -1504,6 +1651,14 @@ export function on_ai(api) {
   const p = api.params, data = p.data;
   const card = get(api, "card"), next = get(api, "next");
   const ok = !p.error && data && typeof data === "object";
+  const G = get(api, "genesis") || {};
+  if (G.req && G.req === p.request) {
+    const d = p.error ? null : parseLoose(data || p.text); let n = 0;
+    if (d) { for (const raw of (Array.isArray(d.systems) ? d.systems : []).slice(0, 3)) if (installSystem(api, raw)) n++; if (clip(d.thread, 90) && !get(api, "thread")) { set(api, "thread", clip(d.thread, 90)); log(api, `✦ ${L(api, "旅途主线", "The journey")}：${get(api, "thread")}`); } }
+    set(api, "genesis", { req: 0, born: api.time, done: n > 0, tries: (G.tries || 0) + 1 });
+    if (!n) log(api, L(api, `（AI 这次没能创造出可用的玩法${p.error ? "：" + p.error : ""}）`, `(The AI's new systems were unusable${p.error ? ": " + p.error : ""})`));
+    refresh(api); return;
+  }
   const P = pool(api);
   if (P.req && P.req === p.request) {
     const d = p.error ? null : parseLoose(data || p.text);
@@ -1541,6 +1696,7 @@ export function watch(api) {
   if (card && card.pending && !card.stale && get(api, "phase") === "card" && api.time - card.born >= AI_STALE_MS) { card.stale = true; set(api, "card", card); refresh(api); }
   if (next && next.kind && !next.draft && (next.failed || (next.req && api.time - next.born >= AI_STALE_MS * 2))) askAi(api, "next");
   if (get(api, "phase") !== "class" && get(api, "hp") > 0) ensurePool(api);
+  { const G = get(api, "genesis") || {}; if (get(api, "phase") !== "class" && !G.done && (G.tries || 0) < 3 && (!G.req || api.time - G.born > 90000) && api.time - (G.born || 0) > 3000) { askGenesis(api); const g2 = get(api, "genesis"); g2.tries = (G.tries || 0) + 1; set(api, "genesis", g2); } }
 }
 
 // 一次武器攻击（技能也用）：extra 额外伤害骰 [n, sides]，auto 必中
@@ -1671,6 +1827,23 @@ export function use_item(api) {
   fireItems(api, "use", it);
   const cur = heldItems(api).filter((x) => x.uid === uid)[0] || it; cur.charges -= 1;
   set(api, "items", heldItems(api).map((x) => (x.uid === uid ? cur : x)).filter((x) => x.kind !== "consumable" || x.charges > 0));
+  if (battle) return turnEnd(api);
+  refresh(api); return true;
+}
+// 发动 AI 发明的系统技能（花掉计数器）
+export function invoke(api) {
+  const key = String(api.params.id || ""), [id, idx] = key.split(":"), sy = sysById(api, id), sp = sy && sy.spends[Number(idx)];
+  if (!sp) api.fail(L(api, "没有这个技能。", "No such ability."));
+  const ph = get(api, "phase");
+  if (sp.where === "battle" && ph !== "battle") api.fail(L(api, "只能在战斗中使用。", "Only usable in battle."));
+  if (sp.where === "road" && ph !== "none") api.fail(L(api, "只能在赶路时使用。", "Only usable while travelling."));
+  if (sysVal(api, id) < sp.cost) api.fail(L(api, `${sy.name}不够。`, `Not enough ${sy.name}.`));
+  const battle = ph === "battle";
+  if (battle) turnStart(api);
+  sysAdd(api, id, -sp.cost);
+  const it = { name: sp.name, scale: sp.scale, fscale: 1, rarity: "rare" };
+  const msgs = sp.acts.map((x) => doAct(api, it, x, false)).filter(Boolean);
+  log(api, `✦ ${sy.name}·${sp.name}${msgs.length ? "：" + msgs.join(L(api, "，", ", ")) : ""}`);
   if (battle) return turnEnd(api);
   refresh(api); return true;
 }

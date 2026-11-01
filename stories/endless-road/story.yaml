@@ -8,8 +8,8 @@ meta:
     en: An endless road where AI invents every monster, trap and wonder (AI required). Light D&D rules — manage supplies, upgrade gear, see how far you get.
   languages: [zh, en]
   ai_role:
-    zh: AI 是这个世界的造物者：用机制语言设计新道具、怪物招式、地区异象和旅途感悟，并写下每个事件与旅途主线；规则执行机制，只负责配平强度。
-    en: The AI designs new item mechanics, monster moves, regional omens and insights, and writes every event and the thread; rules run them and balance power.
+    zh: AI 按创世规则为每一局发明全新的玩法系统，并设计道具、怪物、地区异象，写下每个事件与主线；规则执行这些机制，只负责配平强度。
+    en: Each run the AI invents new game systems from a creation rulebook, plus items, monsters and omens, and writes every event; rules run them and balance power.
   est_tokens_per_min: 7000
   platforms: [desktop, mobile]
   description:
@@ -23,7 +23,7 @@ meta:
       - 管好口粮、药水和金币；收集铁料和魔晶，在行商那里强化武器、护甲、背包和营具。
       - 最多带 3 件遗物；接下委托，几里后回来领取丰厚报酬。
 
-      AI 是这个世界的造物者：每一局它都会像游戏设计师一样设计新东西——带条件、连锁、代价和成长的道具，有专属招式和被动的怪物，改变一片土地规则的地区异象，以及升级时的“旅途感悟”。规则读懂这些机制并执行，只负责把总强度配平。见过的造物会记进跨局的图鉴。
+      AI 是这个世界的造物者：开局时它按“创世规则”为这一局发明 2~3 个全新的玩法系统——资源、声望、同伴、计量，或者任何它想得到的东西——它们会进入事件、道具和战斗。之后它还会像游戏设计师一样设计新东西——带条件、连锁、代价和成长的道具，有专属招式和被动的怪物，改变一片土地规则的地区异象，以及升级时的“旅途感悟”。规则读懂这些机制并执行，只负责把总强度配平。见过的造物会记进跨局的图鉴。
 
       每张事件卡都由 AI 写成，平均每走一里调用一次，另外每几里发明一批新东西。
     en: |
@@ -36,7 +36,7 @@ meta:
       - Manage rations, potions and gold; gather iron and essence to upgrade weapon, armor, pack and camp kit at peddlers.
       - Carry up to 3 relics; accept errands and come back a few miles later for big rewards.
 
-      The AI is this world's maker: every run it designs new things like a game designer — items with conditions, chains, costs and growth; monsters with their own moves and passives; omens that rewrite a region's rules; and level-up insights. The rules run these mechanics and only balance their overall power. Everything you meet goes into a codex that lasts across runs.
+      The AI is this world's maker: at the start of each run it invents 2–3 brand-new game systems from a creation rulebook — resources, reputations, companions, meters, anything — which flow into events, items and combat. Then it designs new things like a game designer — items with conditions, chains, costs and growth; monsters with their own moves and passives; omens that rewrite a region's rules; and level-up insights. The rules run these mechanics and only balance their overall power. Everything you meet goes into a codex that lasts across runs.
 
       The AI writes every event card — about one call per mile walked — plus a batch of new inventions every few miles.
   rating: all-ages
@@ -157,6 +157,10 @@ state:
   defer:     { type: json, init: [], visible: none }
   omen:      { type: json, init: {}, visible: ai, desc: 当前地区的异象（AI 写的这片土地的法则） }
   omen_ui:   { type: json, init: {}, visible: player, desc: 地区异象的显示内容 }
+  systems:   { type: json, init: [], visible: ai, desc: AI 为这段旅程创造的玩法系统（计数器、规则、门槛、技能） }
+  sysval:    { type: json, init: {}, visible: both, desc: 各个系统计数器的当前值 }
+  sys_ui:    { type: json, init: [], visible: player, desc: 玩法系统的显示内容 }
+  genesis:   { type: json, init: {}, visible: none }
   # 世界
   biome:
     type: enum
@@ -289,6 +293,14 @@ actions:
     require_message: { zh: 现在不能使用道具。, en: You can't use items right now. }
     callable_by: [player]
     script: scripts/road.js#use_item
+  invoke:
+    label: { zh: 发动, en: Invoke }
+    params:
+      id: { type: string }
+    require: "state.phase == 'battle' || state.phase == 'none' || state.phase == 'card'"
+    require_message: { zh: 现在不能发动。, en: "You can't do that right now." }
+    callable_by: [player]
+    script: scripts/road.js#invoke
   drop_item:
     label: { zh: 道具取舍, en: Choose item }
     params:
@@ -398,6 +410,9 @@ ai:
           - 怪物：{{event.sig}}。如果有，这就是 combat 里的敌人：描述它的样子，foe 填它的名字，foe_line 写它的台词。
           - 行商的独特货品：{{event.wares}}。trade 时可以在描述里提到它们。
           - 冒险者现在带着的道具：{{event.inv}}——可以让它们在故事里产生呼应。
+        - 这段旅程的玩法系统（AI 创造的，格式：id「名字」当前值/上限：说明）：{{event.systems}}
+          让事件和这些系统互动：选项可以用 o1_sys 填系统 id、o1_sys_n 填 -3~3，表示成功（或打赢）时这个计数器的变化；pay 选项填负数表示“花掉这个计数器”来换收获。
+          比如声望系统让人物态度不同，资源系统让人愿意收购或交换，同伴系统让同伴在事件里有戏份。不是每张卡都要用，但要让这些系统感觉活在世界里。
         - relic（可选，只在没有 AI 道具时用）：如果有选项给 relic，挑一件：lucky_charm 幸运符、vampiric_blade 吸血之刃、traveler_boots 旅人靴、guardian_amulet 守护护符、hunter_horn 猎人号角、alchemist_flask 炼金瓶、star_chart 星图、undying_ember 不灭余烬。
 
         画面由模块拼成，请挑最贴切的组合：
@@ -424,6 +439,8 @@ ai:
             o1_cost: "enum:[gold,rations,potion,hp,iron,essence]"
             o1_win: string
             o1_lose: string
+            o1_sys: string
+            o1_sys_n: number
             o2_label: string
             o2_verb: "enum:[none,check,pay,gamble,fight,quest]"
             o2_ability: "enum:[wis,str,dex,con,int,cha]"
@@ -433,6 +450,8 @@ ai:
             o2_cost: "enum:[gold,rations,potion,hp,iron,essence]"
             o2_win: string
             o2_lose: string
+            o2_sys: string
+            o2_sys_n: number
             o3_label: string
             o3_verb: "enum:[none,check,pay,gamble,fight,quest]"
             o3_ability: "enum:[wis,str,dex,con,int,cha]"
@@ -442,6 +461,8 @@ ai:
             o3_cost: "enum:[gold,rations,potion,hp,iron,essence]"
             o3_win: string
             o3_lose: string
+            o3_sys: string
+            o3_sys_n: number
             foe_trait: "enum:[none,armored,swift,venomous,brute,regenerating,arcane,undead,thief]"
             foe_line: string
             foe_end: string
@@ -451,8 +472,62 @@ ai:
             time: "enum:[day,dusk,night]"
             weather: "enum:[clear,rain,snow,fog,embers,fireflies,leaves]"
       context:
-        state: [distance, hero_class, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art, fatigue, path, thread, perks]
+        state: [distance, hero_class, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art, fatigue, path, thread, perks, sysval]
         history_turns: 6
+        setting: false
+      temperature: 1.0
+    genesis:
+      kind: generate
+      trigger: script
+      prompt: |
+        一段新的旅程开始了。冒险者：{{event.hero}}（技能：{{event.skills}}）。
+        你是这个世界的造物者。在开路之前，请为这一局创造 2~3 个全新的玩法系统，让这次冒险和以往任何一次都不一样，并写下旅途的开端。
+        以前的冒险里出现过这些系统（不要重复）：{{event.codex}}
+
+        ## 创世规则（规则引擎能读懂并执行的东西）
+        游戏的基础已经有了：沿路一里一里走、事件卡、回合制战斗（敌人会预告意图）、口粮、药水、金币、疲劳、职业资源和技能、道具。
+        你创造的每个系统都建立在一个**计数器**上。你决定它代表什么、怎么涨、怎么掉、到某个值会发生什么、能花掉换什么：
+        - 资源（resource）：比如“月之碎片”——在夜里击败敌人时掉落，能花掉召唤月光护盾。
+        - 声望（reputation）：比如“盗贼公会”——帮盗贼会涨，到 5 时行商给你黑市折扣（事件里体现），到 8 时每里送金币。
+        - 同伴（companion）：比如“流浪狗阿黄”的忠诚——喂它口粮会涨，忠诚高时它在战斗开始时扑咬敌人，忠诚满时还会叼回口粮。
+        - 计量（meter）：比如“腐化”——用诅咒之力时上涨，越高越强也越危险，满了会反噬。
+        - 其他（other）：任何你想得到的东西：星象、债务、预言的进度、一首未完成的歌……
+        系统会进入整个游戏：之后写事件卡的 AI 会看到它们并让事件和它们互动；之后发明的道具也能给它们充能或读取它们。
+
+        ## 机制语言
+        一条规则 = {"when": 时机, "if": 条件（可选）, "every": N（可选）, "chance": 百分比（可选）, "do": [效果, ...]}，效果 = {"act": 名字, "n": 1~5}
+        - 时机：passive / battle_start / turn_start / on_attack / on_hit / on_crit / on_miss / on_hurt / on_block / low_hp / on_kill / on_skill / on_potion / on_mile / on_camp / on_level
+        - 条件：{"k": "hp_below", "v": 50} / hp_above / foe_trait（v：armored swift venomous brute regenerating arcane undead thief）/ foe_boss / biome（v：plains forest hills swamp mountains ashlands）/ night / no_rations / gold_above / fatigue_above / first_turn / foe_charging / has_block / foe_poisoned / {"k": "counter", "v": N}（这个系统的计数器 ≥ N）/ counter_below
+        - 效果：heal / block / damage / damage_pct / poison / stun / weaken / expose / resource / gold / ration / potion / xp / fatigue / cleanse / bless / luck_fight / ac_fight / extra_attack / double_next / reflect；常驻（passive）：ac / luck / maxhp / res_max
+          {"act": "counter", "n": -3~3} 改变这个系统的计数器（n 就是实际变化量）
+          负面效果（放在 flaws 里）：self_hurt / lose_gold / hunger / tire / foe_heal / curse_self / frail
+
+        ## 输出（只输出一个 JSON 对象，不要别的文字）
+        {
+          "thread": "旅途的开端，一句话（不超过 40 字），之后的事件会沿着它展开",
+          "systems": [2~3 个系统，每个：
+            {"id": 英文短名, "name": 不超过 6 个字, "desc": 一句话说清它是什么、怎么玩, "kind": resource/reputation/companion/meter/other,
+             "icon": heart ration potion coin iron essence shield flag sword dice bag clover scroll star fire boot gem person pack skull check cross hammer map hourglass 选一个,
+             "max": 3~20, "start": 初始值,
+             "rules": [这个系统自己的规则——至少一条用 counter 正数表示它怎么涨；也可以有平时就生效的效果],
+             "flaws": [可选：负面规则，制造张力],
+             "thresholds": [0~3 个门槛 {"at": 值, "name": 名字, "desc": 一句话, "rules": [达到后持续生效的规则], "flaws": [可选]}],
+             "spends": [0~2 个可以花掉计数器发动的能力 {"name": 名字, "desc": 一句话, "cost": 花多少, "do": [效果]}],
+             "decay": 可选 {"every": 几里, "n": 减多少}}]
+        }
+        数值由规则自动配平：越难攒的计数器，花掉时效果越强；门槛越高，效果越强。所以只管把玩法设计得有趣、彼此有联系、和职业有化学反应。
+      card:
+        task: 为这段新旅程创造 2~3 个全新的玩法系统（基于计数器的资源、声望、同伴、计量等），并写下旅途的开端。
+        authority: 0
+        must:
+          - 这次要输出的“文字”就是提示里描述的那一个 JSON 对象：从 { 开始到 } 结束，不要代码块，不要 JSON 以外的任何文字
+        output:
+          format: text
+          to: none
+          max_chars: 6000
+      context:
+        state: [hero_class, abil]
+        history_turns: 0
         setting: false
       temperature: 1.0
     invent:
@@ -476,6 +551,9 @@ ai:
           代价（只放在 flaws 里）：self_hurt 自伤 / lose_gold / hunger 多吃口粮 / tire 加疲劳 / foe_heal 敌人回血 / curse_self 诅咒自己 / frail 最大生命降低（passive）
         - 成长 grow（可选）：{"on": 时机, "need": 3~15, "name": "觉醒后的名字", "desc": "觉醒后的描写"}——达到次数后觉醒，变得更强。
 
+        - 这段旅程的玩法系统（id「名字」当前值/上限：说明）：{{event.systems}}
+          道具和感悟可以和它们联动：效果 {"act": "counter", "sys": 系统 id, "n": -3~3} 改变计数器；条件 {"k": "counter", "sys": 系统 id, "v": N}（计数器 ≥ N）或 counter_below。
+
         ## 要设计的东西（只输出一个 JSON 对象，不要别的文字）
         {
           "items": [三件道具，每件 {"name": 不超过 8 个字, "desc": 一句来历或用法（不写数字）, "kind": "trinket" 随身饰品 或 "consumable" 消耗品, "rules": [1~3 条规则], "flaws": [0~2 条代价规则], "grow": 可选}],
@@ -484,8 +562,11 @@ ai:
              "moves": [1~2 个招式 {"name": 不超过 6 个字, "hits": 1~3 段, "windup": 是否要先蓄力一回合（会被预告，更痛）, "unblockable": 是否无视格挡, "then": [0~2 个附带效果]}],
              "passive": 可选 {"when": battle_start/turn_end/on_hurt 被击中时/low_hp 生命低于 40% 时, "do": [1~2 个效果]},
              "line": 开打时的台词或动静, "end": 被打败时的描写}],
+          "system": 可选——{{event.room}}在下一片地区引入一个新的玩法系统（格式见下面），和这片地区、主线有关,
           "omen": {下一片地区（{{event.next_biome}}）的异象——这片土地的特殊法则，"name", "desc": 一句描写, "rules": [0~2 条对冒险者生效的规则], "flaws": [0~1 条代价], "foes": {"dmg": -2~3 敌人伤害变化, "hp": -30~60 敌人生命百分比变化}}
         }
+        玩法系统的格式：{"id": 英文短名, "name": 不超过 6 个字, "desc": 一句话说清它是什么、怎么玩, "kind": resource/reputation/companion/meter/other, "icon": 图标, "max": 3~20, "start": 初始值,
+          "rules": [规则，其中用 {"act": "counter", "n": 正数} 表示什么时候涨], "flaws": [可选的负面规则], "thresholds": [{"at": 值, "name", "desc", "rules": [...], "flaws": [...]}], "spends": [{"name", "desc", "cost": 花多少, "do": [效果]}], "decay": 可选 {"every": 几里, "n": 减多少}}
         怪物的效果 act：poison / curse / weaken 削弱你的伤害 / expose 降低你的护甲 / steal 偷金币 / drain 吸血 / burn_rations 烧口粮 / tire 加疲劳 / drain_res 吸走职业资源 / heal_self / block_self / enrage 增伤 / harden 加护甲 / regen 持续再生；n 取 1~4。
 
         ## 设计要点
@@ -503,7 +584,7 @@ ai:
           to: none
           max_chars: 6000
       context:
-        state: [distance, hero_class, level, hp, max_hp, rations, gold, relics, thread, biome]
+        state: [distance, hero_class, level, hp, max_hp, rations, gold, relics, thread, biome, sysval]
         history_turns: 1
         setting: false
       temperature: 1.0
@@ -543,7 +624,7 @@ ui:
       type: custom
       region: screen
       src: ui/game.html
-      actions: [pick_class, walk, camp, potion, attack, defend, skill, flee, choose, trade, pick_perk, go, use_item, drop_item]
+      actions: [pick_class, walk, camp, potion, attack, defend, skill, flee, choose, trade, pick_perk, go, use_item, drop_item, invoke]
       height: 720
       player_can_hide: false
       fallback: { zh: 这个故事的整个游戏画面是自定义组件，请在设置里打开“自定义组件”后游玩。, en: "This story's whole game screen is a custom component — please turn custom components on in Settings to play." }

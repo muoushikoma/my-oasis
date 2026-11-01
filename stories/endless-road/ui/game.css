@@ -118,6 +118,14 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .banner .omen { margin-top: 3px; font-size: 13px; color: #ffc8a0; max-width: min(620px, 46vw); } .banner .omen b { color: #ff9a6a; }
 .toast small { color: #e8d6b0; letter-spacing: 1px; } .toast h3 { margin: 4px 0; font-size: 26px; color: #fff1c8; } .toast .eff { color: #b8f0a0; font-weight: 700; } .toast p { margin: 6px 0 0; font-style: italic; color: #e2d2b0; }
 
+/* AI 创造的玩法系统 */
+.syspanel { position: absolute; left: 14px; top: 200px; display: flex; flex-direction: column; gap: 8px; width: 250px; }
+.sys { background: #160f0ad9; box-shadow: inset 0 0 0 2px #6a4a8a, 0 2px 0 #0008; padding: 6px 8px; }
+.sys .shead { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13.5px; } .sys .shead b { flex: 1; color: #e8c8ff; } .sys .shead em { font-style: normal; color: #f4e8cf; font-weight: 800; }
+.sbar { position: relative; height: 8px; margin: 4px 0 2px; background: #2a1e30; box-shadow: inset 0 0 0 1px #000; } .sbar > i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(#e8b8ff, #8a4ac8); transition: width .3s; }
+.sbar .tick { position: absolute; top: -3px; width: 2px; height: 14px; background: #8a7a9a; transform: translateX(-1px); } .sbar .tick.on { background: #ffd84a; }
+.sbtns { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; } .sbtn { font-size: 12px; padding: 1px 6px; border-width: 6px; } .sbtn.ready { border-image-source: url(btn_gold.png); background-color: #f2cc54; color: #3a2208; text-shadow: none; }
+
 /* 底部中间：行动按钮 */
 .actions { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 8px; align-items: stretch; }
 .act { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 92px; padding: 6px 12px; font-weight: 800; font-size: 14.5px; text-shadow: 0 1px 0 #0009; }
@@ -190,6 +198,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .card { top: 43%; right: 8px; left: 8px; width: auto; max-height: 38%; transform: none; animation: none; }
   .actions { bottom: 74px; left: 8px; right: 8px; transform: none; } .act { min-width: 0; flex: 1; padding: 4px; font-size: 12.5px; } .act.gold { min-width: 0; flex: 1.6; font-size: 14px; }
   .msg { bottom: 140px; }
+  .syspanel { right: 8px; left: auto; top: 112px; width: 46vw; gap: 4px; } .sys { padding: 3px 6px; } .sys .shead { font-size: 12px; }
   .itembar { left: 8px; top: auto; bottom: calc(58% + 30px); max-width: 96vw; } .slot2 { width: 34px; height: 34px; } .slot2 .tip { top: auto; bottom: 40px; }
   .actions.battle { left: 8px; right: 8px; bottom: 70px; } .actions.battle .act { flex: 1 1 22%; min-width: 0; font-size: 12px; padding: 2px; }
   .banner .thread { max-width: 92vw; font-size: 12px; }
