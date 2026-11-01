@@ -61,11 +61,11 @@ export class PlaySession {
   llm?: LLM; scripts?: ScriptRunner; assets: AssetBox; sound: Sound; settings: Settings;
   aiChoices: Record<string, string[]> = {}; lastTools: EntryRunResult["toolLog"] = []; root = h("div", { class: "play" });
   aiNotice = "";
-  rt?: RealtimeDriver; private rtEnded = false; private endHandled = false;
+  rt?: RealtimeDriver; private rtEnded = false;
 
   /** oasis/0.4：有 realtime 的故事启动实时循环 */
   private startRealtime() {
-    this.rt?.stop(); this.rt = undefined; this.rtEnded = false; this.endHandled = false;
+    this.rt?.stop(); this.rt = undefined; this.rtEnded = false;
     if (!this.story.realtime) return;
     const self = this;
     this.rt = new RealtimeDriver({
@@ -237,9 +237,7 @@ export class PlaySession {
     await runHooks();
     if (endTurn && !this.game.ending) { this.game.endTurn(); this.sound.effect(this.effectUrl("turn_end")); this.flushLog(); await runHooks(); }
     this.flushLog();
-    // 结局只处理一次：实时故事里，玩家操作和画布循环都可能先发现结局
-    if (this.game.ending && !this.endHandled) {
-      this.endHandled = true; this.rtEnded = true;
+    if (this.game.ending) {
       const end = this.story.endings.list.find((e) => e.id === this.game.ending);
       this.sound.effect(this.effectUrl(`ending:${this.game.ending}`) ?? this.effectUrl("game_end"));
       await this.runAi(entriesFor(this.game, "game_end"), "");
