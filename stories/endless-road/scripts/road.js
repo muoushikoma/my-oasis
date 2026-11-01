@@ -729,6 +729,43 @@ export function choose(api) {
   refresh(api);
   return true;
 }
+// ===== 弹出面板（客户端画的浮动层 api.overlay）：角色 / 行囊与强化 / 遗物与状态 / 旅程 =====
+const PANELS = ["char", "pack", "relic", "trip"];
+const PANEL_NAME = { char: ["🧝 角色", "🧝 Character"], pack: ["🎒 行囊与强化", "🎒 Pack & upgrades"], relic: ["💎 遗物与状态", "💎 Relics & status"], trip: ["🗺 旅程", "🗺 Journey"] };
+function panelBody(api, id) {
+  if (id === "char") return [
+    L(api, `等级 ${get(api, "level")} · 经验 ${get(api, "xp")} / ${get(api, "xp_next")}`, `Level ${get(api, "level")} · XP ${get(api, "xp")} / ${get(api, "xp_next")}`),
+    L(api, `生命 ${get(api, "hp")} / ${get(api, "max_hp")} · 护甲等级 ${get(api, "ac")}`, `HP ${get(api, "hp")} / ${get(api, "max_hp")} · Armor Class ${get(api, "ac")}`),
+    get(api, "abilities"),
+    L(api, `长剑 1d10${sign(atkMod(api) + gear(api).weapon)} · 命中 ${sign(atkMod(api) + prof(get(api, "level")) + gear(api).weapon)}${get(api, "level") >= 5 ? " · 每回合攻击两次" : ""}`, `Longsword 1d10${sign(atkMod(api) + gear(api).weapon)} · to hit ${sign(atkMod(api) + prof(get(api, "level")) + gear(api).weapon)}${get(api, "level") >= 5 ? " · two attacks per turn" : ""}`),
+  ];
+  if (id === "pack") return [get(api, "pack_text"), get(api, "gear_text"),
+    L(api, "强化要在路上遇到的行商那里进行（金币 + 铁料，高级还要魔晶）。", "Upgrades are done at peddlers on the road (gold + iron; essence at higher levels).")];
+  if (id === "relic") return [L(api, "遗物（最多 3 件）", "Relics (up to 3)"), get(api, "relic_text"), L(api, "状态", "Status"), get(api, "status_text")];
+  return [L(api, `已走 ${get(api, "distance")} 里 · 最远纪录 ${get(api, "best")} 里 · 击败敌人 ${get(api, "kills")}`, `Walked ${get(api, "distance")} mi · best ${get(api, "best")} mi · foes defeated ${get(api, "kills")}`),
+    L(api, `现在在${biomeName(api)}。每 10 里换一个地区，每 25 里有一个守关者。`, `You are in the ${biomeName(api)}. The region changes every 10 miles; a warden waits every 25 miles.`)];
+}
+function showPanel(api, id) {
+  if (PANELS.indexOf(id) < 0) id = "char";
+  const tabs = PANELS.map((k) => ({ type: "button", id: `tab_${k}`, text: T2(api, PANEL_NAME[k]), style: k === id ? { bg: "#e0a84a", color: "#1b1611", bold: true } : { bg: "#2a2219", color: "#efe6d6" } }));
+  const body = panelBody(api, id).filter(Boolean).map((t) => ({ type: "text", text: t, style: { color: "#efe6d6", size: 15 } }));
+  api.overlay.show("info", enSpec(api, { anchor: "center", modal: true, z: 5,
+    style: { color: "#efe6d6", bg: "#1d1813", padding: 18, radius: 14, width: "min(600px, 92vw)", border: 1, border_color: "#e0a84a66", gap: 12 },
+    children: [
+      { type: "row", style: { gap: 6 }, children: tabs },
+      { type: "column", style: { gap: 8, scroll: true }, children: body },
+      { type: "row", children: [{ type: "space" }, { type: "button", id: "close", text: L(api, "关闭", "Close"), style: { bg: "#e0a84a", color: "#1b1611", bold: true } }] },
+    ] }));
+}
+export function open_panel(api) { showPanel(api, String(api.params.id || "char")); return true; }
+// 弹出面板里的按钮
+export function on_ui(api) {
+  const p = api.params;
+  if (p.overlay !== "info" || p.type !== "button") return;
+  if (p.id === "close") api.overlay.hide("info");
+  else if (p.id.indexOf("tab_") === 0) showPanel(api, p.id.slice(4));
+}
+
 // 商店里的购买 / 强化
 export function trade(api) { shopBuy(api, String(api.params.id || "")); refresh(api); return true; }
 // 定时检查：眼前的卡太久没写好就提示重试；提前写的请求丢了（比如读档后）就重发

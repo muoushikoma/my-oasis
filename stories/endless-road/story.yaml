@@ -43,7 +43,6 @@ meta:
 
 assets:
   cover: { type: image, path: assets/cover.png, use: illustration, alt: { zh: 通往远方的路, en: A road to the horizon } }
-  vista: { type: image, path: assets/vista.png, use: illustration, alt: { zh: 远方的风景, en: A distant view } }
   # 背景：每个地区 4 层（天空 / 远景 / 中景 / 地面与路），画面里按不同速度视差卷动
   plains_sky: { type: image, path: assets/bg/plains_sky.png, use: background }
   plains_far: { type: image, path: assets/bg/plains_far.png, use: background }
@@ -161,6 +160,7 @@ realtime:
   interpolate: true
   on_tick: scripts/scene.js#tick
   on_ai: scripts/road.js#on_ai
+  on_ui: scripts/road.js#on_ui
   timers:
     card_watch: { every_ms: 500, script: scripts/road.js#watch }
 
@@ -221,6 +221,13 @@ actions:
     require_message: { zh: 现在没有事件卡。, en: There is no event card right now. }
     callable_by: [player]
     script: scripts/road.js#choose
+  open_panel:
+    label: { zh: 查看, en: View }
+    desc: { zh: 打开角色 / 行囊 / 遗物 / 旅程面板（不消耗时间）, en: "Open the character / pack / relics / journey panel (takes no time)" }
+    params:
+      id: { type: enum, values: [char, pack, relic, trip] }
+    callable_by: [player]
+    script: scripts/road.js#open_panel
   trade:
     label: { zh: 交易, en: Trade }
     desc: { zh: 在行商处购买或强化, en: Buy or upgrade at the peddler }
@@ -351,15 +358,6 @@ ai:
         history_turns: 0
         setting: false
       fallback: { zh: 路还在，传说也还在。, en: "The road remains, and so does the legend." }
-  images:
-    vista:
-      trigger: event:milestone
-      prompt: 一条古老的道路穿过奇幻世界中的地区（{{state.biome}}），远处是地平线，冒险者的背影很小。
-      style: painterly fantasy landscape, wide shot, warm light, no text
-      size: 1536x1024
-      cache: { by_state: [biome] }
-      fallback: asset:vista
-      alt: { zh: AI 绘制的远方风景, en: An AI-painted view ahead }
 
 ui:
   theme:
@@ -379,16 +377,16 @@ ui:
       height: 144
       pixelated: true
       render: scripts/scene.js#draw
-    # 三个自定义面板共用 ui/panel.html，用 config.view 区分
+    # 两个自定义面板共用 ui/panel.html，用 config.view 区分；角色等详情是点按钮弹出的浮动面板（api.overlay）
     action_bar:
       type: custom
       region: side
       src: ui/panel.html
       config: { view: bar }
-      actions: [walk, camp, potion, attack, flee]
+      actions: [walk, camp, potion, attack, flee, open_panel]
       height: 96
       player_can_hide: false
-      fallback: { zh: 行动栏（自定义组件）已关闭，请用左下方的备用按钮。, en: "The action bar (a custom component) is off — use the backup buttons at the bottom left." }
+      fallback: { zh: 行动栏是故事自带的自定义组件，请在设置里打开“自定义组件”后游玩。, en: "The action bar is a custom component — please turn custom components on in Settings to play." }
     event_panel:
       type: custom
       region: side
@@ -397,40 +395,8 @@ ui:
       actions: [choose, trade]
       height: 260
       player_can_hide: false
-      fallback: { zh: 事件面板（自定义组件）已关闭。每张事件卡的选项会写在日志里，请用备用按钮按编号选择。, en: "The event panel (a custom component) is off. Each card's options are written to the log; pick by number with the backup buttons." }
-    info_panel:
-      type: custom
-      region: side
-      src: ui/panel.html
-      config: { view: info }
-      height: 300
-      fallback: { zh: 信息面板（自定义组件）已关闭。, en: The info panel (a custom component) is off. }
-    vista_img:
-      type: image
-      region: side
-      label: { zh: 远方（每进入新地区由 AI 绘制）, en: Ahead (painted by the AI for each new region) }
-      generated: vista
-      fit: cover
+      fallback: { zh: 事件面板是故事自带的自定义组件，请在设置里打开“自定义组件”后游玩。, en: "The event panel is a custom component — please turn custom components on in Settings to play." }
     log:
       type: text-log
       region: log
       content: ai
-    # 备用按钮：只在设置里关掉自定义组件时需要（平时可在“外观”里隐藏）
-    backup:
-      type: choice-buttons
-      region: side
-      label: { zh: 备用按钮（关闭自定义组件时用）, en: Backup buttons (when custom components are off) }
-      choices:
-        - { label: { zh: 前进, en: Walk }, action: walk }
-        - { label: { zh: 扎营, en: Camp }, action: camp }
-        - { label: { zh: 药水, en: Potion }, action: potion }
-        - { label: { zh: 攻击, en: Attack }, action: attack }
-        - { label: { zh: 逃跑, en: Flee }, action: flee }
-        - { label: { zh: 选项1, en: Opt 1 }, action: choose, params: { id: o1 } }
-        - { label: { zh: 选项2, en: Opt 2 }, action: choose, params: { id: o2 } }
-        - { label: { zh: 选项3, en: Opt 3 }, action: choose, params: { id: o3 } }
-        - { label: { zh: 离开, en: Leave }, action: choose, params: { id: leave } }
-        - { label: { zh: 重试AI, en: Retry AI }, action: choose, params: { id: retry } }
-        - { label: { zh: 买口粮, en: Ration }, action: trade, params: { id: buy_ration } }
-        - { label: { zh: 买药水, en: Potion }, action: trade, params: { id: buy_potion } }
-        - { label: { zh: 告别行商, en: Leave shop }, action: trade, params: { id: leave } }

@@ -1,11 +1,9 @@
-// 《无尽之路》面板：一个组件文件，三种用法（config.view）
-//   bar   行动栏：生命条、资源、行动按钮
+// 《无尽之路》面板：一个组件文件，两种用法（config.view）
+//   bar   行动栏：生命条、资源、行动按钮，以及打开详情弹窗的小按钮（角色 / 行囊 / 遗物 / 旅程）
 //   event 事件：事件卡 / 商店 / 赶路时的提示
-//   info  信息：角色、行囊与强化、遗物与状态、旅程（可折叠）
 // 组件在沙箱里运行，只能读玩家可见的状态、调用 story.yaml 里给这个组件声明过的动作。
 const T = (zh, en) => (oasis.lang === "en" ? en : zh);
 const root = document.getElementById("root");
-const closed = new Set(["trip"]); // 信息面板里折叠了哪些分组（默认收起“旅程”；只在本次打开期间记住）
 let pending = false, msg = "";
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -42,7 +40,13 @@ function bar(s) {
     b.addEventListener("click", () => run(id));
     acts.append(b);
   }
-  p.append(hud, acts, el("p", "msg", msg));
+  const more = el("div", "more");
+  for (const [id, label] of [["char", T("🧝 角色", "🧝 Character")], ["pack", T("🎒 行囊与强化", "🎒 Pack")], ["relic", T("💎 遗物与状态", "💎 Relics")], ["trip", T("🗺 旅程", "🗺 Journey")]]) {
+    const b = el("button", "mini", label); b.disabled = busy();
+    b.addEventListener("click", () => run("open_panel", { id }));
+    more.append(b);
+  }
+  p.append(hud, acts, more, el("p", "msg", msg));
   return p;
 }
 
@@ -73,28 +77,7 @@ function event(s) {
   return p;
 }
 
-// ---------- 信息 ----------
-function sec(id, title, body) {
-  const box = el("section", "sec" + (closed.has(id) ? " closed" : ""));
-  const h = el("h3", "", title); h.addEventListener("click", () => { closed.has(id) ? closed.delete(id) : closed.add(id); render(oasis.state); });
-  const b = el("div", "body"); if (typeof body === "string") b.textContent = body; else b.append(body);
-  box.append(h, b); return box;
-}
-function kv(pairs) { const d = el("dl", "kv"); for (const [k, v] of pairs) d.append(el("dt", "", k), el("dd", "", String(v ?? ""))); return d; }
-function info(s) {
-  const p = el("div", "info");
-  const ch = el("div");
-  ch.append(kv([[T("等级", "Level"), s.level], [T("经验", "XP"), `${s.xp ?? 0} / ${s.xp_next ?? 0}`], [T("护甲等级", "Armor Class"), s.ac], [T("生命", "HP"), `${s.hp} / ${s.max_hp}`]]));
-  const xp = el("div", "xp"); const xi = el("i"); xi.style.width = `${Math.min(100, (100 * (s.xp || 0)) / (s.xp_next || 1))}%`; xp.append(xi); ch.append(xp);
-  ch.append(el("div", "muted", s.abilities || ""));
-  p.append(sec("char", T("🧝 角色", "🧝 Character"), ch));
-  p.append(sec("pack", T("🎒 行囊与强化", "🎒 Pack & upgrades"), `${s.pack_text || ""}\n${s.gear_text || ""}`));
-  p.append(sec("relic", T("💎 遗物与状态", "💎 Relics & status"), `${s.relic_text || ""}\n${s.status_text || ""}`));
-  p.append(sec("trip", T("🗺 旅程", "🗺 Journey"), kv([[T("已走里程", "Miles walked"), s.distance], [T("最远纪录", "Best record"), s.best], [T("击败敌人", "Foes defeated"), s.kills]])));
-  return p;
-}
-
-const VIEWS = { bar, event, info };
+const VIEWS = { bar, event };
 function render(s) {
   const view = VIEWS[(oasis.config && oasis.config.view) || "event"] || event;
   root.replaceChildren(view(s || {}));

@@ -39,14 +39,8 @@ button { font: inherit; color: inherit; }
 .dots::after { content: "…"; animation: dots 1.2s steps(3) infinite; }
 @keyframes dots { 0% { content: "."; } 33% { content: ".."; } 66% { content: "..."; } }
 
-/* 信息：可折叠分组 */
-.info { display: flex; flex-direction: column; gap: 8px; padding: 0; background: transparent; border: none; }
-.sec { border-radius: 12px; background: #1d1813; border: 1px solid #e0a84a26; overflow: hidden; }
-.sec > h3 { margin: 0; padding: 9px 14px; font-size: 13.5px; font-weight: 600; color: #e0c48a; cursor: pointer; display: flex; justify-content: space-between; user-select: none; }
-.sec > h3::after { content: "▾"; color: #b3a58c; transition: transform .15s; }
-.sec.closed > h3::after { transform: rotate(-90deg); }
-.sec .body { padding: 0 14px 11px; white-space: pre-wrap; }
-.sec.closed .body { display: none; }
-.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
-.kv dt { color: #b3a58c; } .kv dd { margin: 0; font-weight: 600; }
-.xp { height: 6px; border-radius: 3px; background: #2a2219; overflow: hidden; margin: 6px 0 2px; } .xp i { display: block; height: 100%; background: #e0a84a; }
+/* 打开详情弹窗的小按钮 */
+.more { display: flex; flex-wrap: wrap; gap: 6px; }
+.mini { flex: 1 1 auto; padding: 5px 8px; border-radius: 7px; border: 1px solid #ffffff1c; background: #0000004d; color: #c8b89a; font-size: 13px; cursor: pointer; }
+.mini:hover:not(:disabled) { border-color: #e0a84a; color: #efe6d6; }
+.mini:disabled { opacity: .4; cursor: default; }
