@@ -47,5 +47,8 @@ API keys and GitHub tokens live only in the OS secure store (Windows Credential 
 | [Milestones](docs/mvp.md) | Done and planned features |
 | [Server API (on hold)](docs/server-api.md) | Draft API for a future server; no server for now |
 | [Story copyright & license](stories/LICENSE.md) | Copyright and license terms for submitted stories |
+| [Contributing](CONTRIBUTING.md) | How to contribute code and stories: setup, commands, PR requirements, and hard rules |
+| [Code of conduct](CODE_OF_CONDUCT.md) | How we treat each other in this community |
+| [Security policy](SECURITY.md) | How to report vulnerabilities privately |
 
 Documents are in Simplified Chinese unless noted.
