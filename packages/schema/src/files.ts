@@ -5,10 +5,19 @@ export type StoryFiles = Map<string, Uint8Array>;
 export const ALLOWED_EXT = [".yaml", ".yml", ".json", ".md", ".txt", ".js", ".ts", ".lua", ".py", ".webp", ".png", ".jpg", ".jpeg", ".woff2", ".ogg", ".mp3", ".m4a"];
 export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg"];
 export const AUDIO_EXT = [".ogg", ".mp3", ".m4a"];
-export const LIMITS = { packageBytes: 20 * 1024 * 1024, imageBytes: 1024 * 1024, audioBytes: 5 * 1024 * 1024, fileCount: 200 };
+/** 体积上限（与 tools/stories/common.mjs、Rust package.rs 保持一致）。单个文件必须小于 100 MB（GitHub 硬性限制）。 */
+export const LIMITS = { packageBytes: 300 * 1024 * 1024, imageBytes: 10 * 1024 * 1024, audioBytes: 30 * 1024 * 1024, textBytes: 2 * 1024 * 1024, fileCount: 2000, fileBytes: 100 * 1024 * 1024 - 1 };
 
 export function filesFromZip(data: Uint8Array): StoryFiles {
-  const raw = unzipSync(data);
+  // 防 zip 炸弹：解压前按中央目录里的原始大小检查，超出上限直接拒绝
+  let n = 0, total = 0;
+  const raw = unzipSync(data, { filter: (f) => {
+    if (++n > LIMITS.fileCount + 50) throw new Error(`压缩包里文件太多（超过 ${LIMITS.fileCount} 个）`);
+    if (f.originalSize > LIMITS.fileBytes) throw new Error(`压缩包里的「${f.name}」太大（单个文件必须小于 100 MB）`);
+    total += f.originalSize;
+    if (total > LIMITS.packageBytes) throw new Error("压缩包解压后超过 300 MB");
+    return true;
+  } });
   const m: StoryFiles = new Map();
   let entries = Object.entries(raw).filter(([p]) => !p.endsWith("/"));
   // 允许 zip 里多包了一层文件夹

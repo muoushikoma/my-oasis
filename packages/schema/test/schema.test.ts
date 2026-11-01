@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { validateFiles, filesFromText, filesToZip, filesFromZip, aiFixRequest, formatIssues, parseExpr, evaluate, builtinFuncs } from "../src/index.js";
 import { loadFromPath } from "../src/node.js";
+import { zipSync, strToU8 } from "fflate";
 
 const root = new URL("../../../", import.meta.url).pathname;
 const lighthouse = readFileSync(root + "examples/lighthouse-mini/story.yaml", "utf8");
@@ -149,10 +150,23 @@ ui:
     expect(codes(v(base.replace("pic: { type: image, region: status, bind: place, images: { hall: asset:hall_bg, yard: asset:yard_bg", "pic: { type: image, region: status, bind: place, images: { hall: asset:hall_bg, yard: asset:yard_pic"), bin))).toContain("unknown_asset");
     expect(codes(v(base.replace("path: audio/bgm.ogg", "path: art/hall.webp"), bin))).toContain("asset_format");
   });
-  it("图片超过 1 MB 报错", () => {
+  it("图片超过 10 MB 报错，10 MB 以内可以", () => {
     const files = filesFromText(base, bin);
-    files.set("art/hall.webp", new Uint8Array(1024 * 1024 + 1));
+    files.set("art/hall.webp", new Uint8Array(5 * 1024 * 1024));
+    expect(validateFiles(files).issues.map((i) => i.code)).not.toContain("image_too_big");
+    files.set("art/hall.webp", new Uint8Array(10 * 1024 * 1024 + 1));
     expect(validateFiles(files).issues.map((i) => i.code)).toContain("image_too_big");
+  });
+  it("文件数上限 2000", () => {
+    const files = filesFromText(base, bin);
+    for (let i = 0; i < 2001; i++) files.set(`notes/n${i}.txt`, new Uint8Array(1));
+    expect(validateFiles(files).issues.map((i) => i.code)).toContain("too_many_files");
+  });
+  it("解压前拦住 zip 炸弹（解压后超过上限）", () => {
+    const big = new Uint8Array(301 * 1024 * 1024);
+    const z = zipSync({ "story.yaml": strToU8("x"), "a.txt": big }, { level: 9 });
+    expect(z.length).toBeLessThan(2 * 1024 * 1024);
+    expect(() => filesFromZip(z)).toThrow(/100 MB|300 MB/);
   });
 });
 

@@ -23,7 +23,11 @@ export const MIRRORS: { id: string; name: string; note: string }[] = [
 ];
 
 /** 一条线路：目录从哪读、文件从哪下、读不到目录时怎么列出 stories/ */
-interface Source { indexUrls: string[]; file: (path: string) => string; zip?: (id: string) => string; list: () => Promise<{ path: string; size?: number }[]> }
+interface Source { indexUrls: string[]; file: (path: string, size?: number) => string; zip?: (id: string) => string; list: () => Promise<{ path: string; size?: number }[]> }
+/** jsDelivr 不接收超过 20 MB 的单个文件；更大的文件自动改走 GitHub 直连 */
+export const JSD_FILE_MAX = 20 * 1024 * 1024;
+/** 发布页只给不超过这个体积的故事打 .oasis 包（与 tools/stories/build-site.mjs 一致） */
+export const PAGES_ZIP_MAX = 50 * 1024 * 1024;
 const enc = (p: string) => p.split("/").map(encodeURIComponent).join("/");
 const mirrorId = () => ((loadSettings() as any).storeMirror ?? "jsdelivr") as string;
 export function source(id = mirrorId()): Source {
@@ -32,7 +36,7 @@ export function source(id = mirrorId()): Source {
     return (j.tree ?? []).filter((e: any) => e.type === "blob" && String(e.path).startsWith("stories/")).map((e: any) => ({ path: e.path, size: e.size }));
   };
   if (id === "jsdelivr") return {
-    indexUrls: [RELEASE_INDEX], file: (p) => `${JSD}/${enc(p)}`,
+    indexUrls: [RELEASE_INDEX], file: (p, size) => (size ?? 0) > JSD_FILE_MAX ? `${RAW}/${enc(p)}` : `${JSD}/${enc(p)}`,
     list: async () => {
       const j = JSON.parse(dec.decode(await bridge.netGet(`https://data.jsdelivr.com/v1/packages/gh/${REPO}@main?structure=flat`)));
       return (j.files ?? []).map((f: any) => ({ path: String(f.name).replace(/^\//, ""), size: f.size })).filter((f: any) => f.path.startsWith("stories/"));
@@ -82,13 +86,21 @@ export async function fetchIndex(src = source()): Promise<OnlineIndex & { fallba
 }
 export async function downloadStory(st: OnlineStory, onProgress?: (n: number, all: number) => void, src = source()): Promise<StoryFiles> {
   const prefix = `stories/${st.id}/`;
-  if (src.zip) { try { onProgress?.(0, 1); const f = filesFromZip(await bridge.netGet(src.zip(st.id))); onProgress?.(1, 1); return f; } catch { /* 发布页没有就逐个下载 */ } }
+  const sizeOf = st.files.reduce((a, f) => a + (f.size ?? 0), 0);
+  if (src.zip && sizeOf <= PAGES_ZIP_MAX) { try { onProgress?.(0, 1); const f = filesFromZip(await bridge.netGet(src.zip(st.id))); onProgress?.(1, 1); return f; } catch { /* 发布页没有就逐个下载 */ } }
   const files: StoryFiles = new Map();
-  let n = 0;
+  // 进度按字节算（目录里有大小时），大素材也能看出下载到哪了；单个文件断线由 Rust 端自动重试续传
+  const all = sizeOf || st.files.length;
+  let got = 0;
+  onProgress?.(0, all);
   for (const f of st.files) {
     if (!f.path.startsWith(prefix) || f.path.includes("..")) throw new Error("故事文件路径不对");
-    files.set(f.path.slice(prefix.length), await bridge.netGet(src.file(f.path)));
-    onProgress?.(++n, st.files.length);
+    let d: Uint8Array | undefined, err: any;
+    for (let i = 0; i < 2 && !d; i++) { try { d = await bridge.netGet(src.file(f.path, f.size), 120000); } catch (e) { err = e; } }
+    if (!d) throw new Error(`下载 ${f.path} 失败：${err?.message ?? err}`);
+    files.set(f.path.slice(prefix.length), d);
+    got += sizeOf ? (f.size ?? d.length) : 1;
+    onProgress?.(got, all);
   }
   return files;
 }
@@ -111,7 +123,7 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
       const btn = h("button", { class: "primary" }, "下载并加入故事库") as HTMLButtonElement;
       btn.onclick = async () => {
         btn.disabled = true;
-        try { const f = await downloadStory(st, (n, all) => (btn.textContent = `下载中 ${n}/${all}`)); await onGet(st, f); }
+        try { const f = await downloadStory(st, (n, all) => (btn.textContent = all > 1048576 ? `下载中 ${(n / 1048576).toFixed(1)}/${(all / 1048576).toFixed(1)} MB（${Math.floor((n / all) * 100)}%）` : `下载中 ${Math.floor((n / Math.max(1, all)) * 100)}%`)); await onGet(st, f); }
         catch (e: any) { toast(`下载失败：${e.message}。可以在上方换一个线路再试`, "err"); }
         btn.disabled = false; btn.textContent = "下载并加入故事库";
       };

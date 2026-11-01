@@ -5,7 +5,8 @@ import YAML from "yaml";
 
 export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
 export const STORIES = path.join(ROOT, "stories");
-export const LIMITS = { total: 20 * 1024 * 1024, image: 1024 * 1024, audio: 5 * 1024 * 1024, text: 2 * 1024 * 1024 };
+// 与 packages/schema/src/files.ts 的 LIMITS 保持一致。单个文件必须小于 100 MB（GitHub 硬性限制）。
+export const LIMITS = { total: 300 * 1024 * 1024, image: 10 * 1024 * 1024, audio: 30 * 1024 * 1024, text: 2 * 1024 * 1024, files: 2000, file: 100 * 1024 * 1024 - 1 };
 export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg"];
 export const AUDIO_EXT = [".ogg", ".mp3", ".m4a"];
 export const TEXT_EXT = [".yaml", ".yml", ".json", ".md", ".txt"];

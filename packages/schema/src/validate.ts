@@ -91,10 +91,11 @@ export function validateFiles(files: StoryFiles): ValidationResult {
     if (p.startsWith("/") || p.split("/").includes("..")) push({ level: "error", code: "bad_path", file: p, path: [], message: `文件路径「${p}」不安全。`, fix: "只用包内相对路径，不要以 / 开头、不要含 ..。", ref: "§1" });
     const ext = (p.match(/\.[^./]+$/)?.[0] ?? "").toLowerCase();
     if (!ALLOWED_EXT.includes(ext)) push({ level: "error", code: "bad_file_type", file: p, path: [], message: `不支持的文件类型「${p}」。`, fix: `只能放这些类型：${ALLOWED_EXT.join(" ")}`, ref: "§1" });
-    if (IMAGE_EXT.includes(ext) && d.length > LIMITS.imageBytes) push({ level: "error", code: "image_too_big", file: p, path: [], message: `图片「${p}」有 ${(d.length / 1024).toFixed(0)} KB，超过 1 MB。`, fix: "压缩图片或转成 WebP。", ref: "§13.5" });
-    if (AUDIO_EXT.includes(ext) && d.length > LIMITS.audioBytes) push({ level: "error", code: "audio_too_big", file: p, path: [], message: `音频「${p}」有 ${(d.length / 1024 / 1024).toFixed(1)} MB，超过 5 MB。`, fix: "降低码率（如 96–128 kbps 的 OGG/MP3）或剪短。", ref: "§13.5" });
+    if (d.length > LIMITS.fileBytes) push({ level: "error", code: "file_too_big", file: p, path: [], message: `文件「${p}」有 ${(d.length / 1024 / 1024).toFixed(1)} MB，单个文件必须小于 100 MB（GitHub 限制）。`, fix: "压缩或拆分这个文件。", ref: "§1" });
+    if (IMAGE_EXT.includes(ext) && d.length > LIMITS.imageBytes) push({ level: "error", code: "image_too_big", file: p, path: [], message: `图片「${p}」有 ${(d.length / 1024).toFixed(0)} KB，超过 10 MB。`, fix: "压缩图片或转成 WebP。", ref: "§13.5" });
+    if (AUDIO_EXT.includes(ext) && d.length > LIMITS.audioBytes) push({ level: "error", code: "audio_too_big", file: p, path: [], message: `音频「${p}」有 ${(d.length / 1024 / 1024).toFixed(1)} MB，超过 30 MB。`, fix: "降低码率（如 96–128 kbps 的 OGG/MP3）或剪短。", ref: "§13.5" });
   }
-  if (total > LIMITS.packageBytes) push({ level: "error", code: "package_big", path: [], message: `故事包有 ${(total / 1024 / 1024).toFixed(1)} MB，超过 20 MB 上限。`, fix: "压缩图片和音频，或删掉没用到的素材。", ref: "§1" });
+  if (total > LIMITS.packageBytes) push({ level: "error", code: "package_big", path: [], message: `故事包有 ${(total / 1024 / 1024).toFixed(1)} MB，超过 300 MB 上限。`, fix: "压缩图片和音频，或删掉没用到的素材。", ref: "§1" });
 
   // ---------- 语法 ----------
   const src = strFromU8(files.get(mainFile)!).replace(/^\uFEFF/, "");
