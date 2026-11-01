@@ -1,6 +1,6 @@
 import { parseDocument, LineCounter, isMap, isSeq, isPair, isScalar, type Document } from "yaml";
-import Ajv2020Mod from "ajv/dist/2020.js";
-import schemaJson from "./story.schema.json" with { type: "json" };
+// 预编译的 Ajv 校验器（scripts/gen-validator.mjs 生成），运行时不用 new Function，符合客户端 CSP
+import storyValidate from "./story.validate.generated.js";
 import { strFromU8 } from "fflate";
 import { parseExpr, collectRefs, ExprError, BUILTIN_FUNCS, RANDOM_FUNCS, DICE_FUNCS } from "./expr.js";
 import { ALLOWED_EXT, IMAGE_EXT, AUDIO_EXT, LIMITS, type StoryFiles } from "./files.js";
@@ -21,11 +21,8 @@ export interface Issue {
 }
 export interface ValidationResult { ok: boolean; story?: Story; issues: Issue[]; mainFile: string }
 
-const Ajv2020: any = (Ajv2020Mod as any).default ?? Ajv2020Mod;
-let ajvValidate: any;
-function getAjv() {
-  if (!ajvValidate) ajvValidate = new Ajv2020({ allErrors: true, strict: false, verbose: true }).compile(schemaJson);
-  return ajvValidate;
+function getAjv(): any {
+  return storyValidate;
 }
 
 const SECTION_NAMES: Record<string, string> = {
