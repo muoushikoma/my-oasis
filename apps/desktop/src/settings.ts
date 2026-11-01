@@ -7,6 +7,7 @@ export interface Settings {
   theme: "story" | "light" | "dark" | "sepia"; fontSize: number;
   music: number; sfx: number; muted: boolean; imageGen: boolean; merge: boolean;
   /** 故事显示语言（中文/English）；缺这种语言时用另一种 */ lang: Lang; disabledEntries: Record<string, string[]>; hidden: Record<string, string[]>; onboarded?: boolean;
+  /** 屏幕虚拟摇杆：auto = 只在手机上显示（默认，电脑上不显示） */ virtualControls?: "auto" | "on" | "off";
 }
 const DEF: Settings = { provider: "deepseek", base_url: PROVIDERS[0].base_url, model: PROVIDERS[0].model, theme: "story", fontSize: 16, music: 0.6, sfx: 0.8, muted: false, imageGen: false, merge: true, lang: (typeof navigator !== "undefined" && !/^zh/i.test(navigator.language ?? "zh") ? "en" : "zh"), disabledEntries: {}, hidden: {} };
 export function loadSettings(): Settings { try { return { ...DEF, ...JSON.parse(localStorage.getItem("oasis.settings") ?? "{}") }; } catch { return { ...DEF }; } }

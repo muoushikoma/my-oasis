@@ -18,6 +18,7 @@ for (const id of storyDirs()) {
   stories.push({
     id, title: m.title ?? id, summary: m.summary ?? "", author: Array.isArray(m.authors) ? m.authors.join("、") : (m.author ?? ""), version: m.version ?? "",
     rating: m.rating ?? "", language: m.language ?? "", languages: Array.isArray(m.languages) ? m.languages : [], tags: Array.isArray(m.tags) ? m.tags : [],
+    platforms: Array.isArray(m.platforms) && m.platforms.length ? m.platforms : ["desktop", "mobile"],
     ai: usesAI(st.data),
     cover: coverPath(id, dir, m.cover, st.data),
     files: listFiles(dir).map((f) => ({ path: `stories/${id}/${f.rel}`, size: f.size })),

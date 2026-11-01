@@ -47,7 +47,7 @@ meta（必填）、state（可选）、endings（可选）
 所有 id（状态、动作、事件、工具、接入点、组件、结局）只能用小写英文字母开头、小写字母/数字/下划线，最长 40，例如 oil、keeper_trust。中文名写在 label。
 meta.id 用小写字母、数字、连字符，如 lighthouse-keeper。
 
-【meta】必填：id, title(≤40字), version("1.0.0"), summary(≤200字), language("zh-CN"), rating。可选：languages, authors, tags, content_warnings, cover, setting, est_minutes, license。
+【meta】必填：id, title(≤40字), version("1.0.0"), summary(≤200字), language("zh-CN"), rating。可选：languages, platforms([desktop] / [mobile] / [desktop, mobile]，不写=两端都支持；只适合键盘或只适合触屏时一定要写), authors, tags, content_warnings, cover, setting, est_minutes, license。
 要投稿到公开故事库时必须：rating 写 all-ages（只收全年龄，禁止成人、色情、血腥内容）；title 和 summary 都写成中英双语 { zh: …, en: … }；tags 正好 3 个，每个都写成 { zh: …, en: … }；并写 languages: [zh, en]。
 
 【中英双语】所有玩家能看到的文字（title、summary、tags、intro、label、desc、text、require_message、fail、opening、fallback、placeholder、reject、alt、choices 的 label 等）都写成 { zh: 中文, en: English }，中英意思一致。写给 AI 看的 system/task/prompt/must/forbid 不用双语。引擎会让 AI 按玩家选的语言回复；脚本里用 api.lang（"zh" 或 "en"）判断语言。

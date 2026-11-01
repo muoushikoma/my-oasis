@@ -119,7 +119,7 @@ root={"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://my
   "language":{"type":"string","pattern":"^[a-z]{2}(-[A-Z]{2})?$"},"rating":{"enum":["all-ages","teen","mature"]},
   "authors":STRL,"tags":{"type":"array","items":{"type":"string","maxLength":12},"maxItems":10},
   "content_warnings":STRL,"cover":PATH,"setting":PATH,"est_minutes":{"type":"integer","minimum":1,"maximum":600},
-  "min_engine":{"type":"string","pattern":"^\\d+\\.\\d+\\.\\d+$"},"license":{"type":"string"}},["id","title","version","summary","language","rating"]),
+  "min_engine":{"type":"string","pattern":"^\\d+\\.\\d+\\.\\d+$"},"license":{"type":"string"},"platforms":{"type":"array","items":{"enum":["desktop","mobile"]},"uniqueItems":True,"minItems":1}},["id","title","version","summary","language","rating"]),
   "if":{"properties":{"rating":{"const":"mature"}}},"then":{"required":["content_warnings"]}},
 "assets":{"type":"object","propertyNames":ID,"additionalProperties":{"$ref":"#/$defs/asset"}},
 "uses":{"type":"array","items":{"type":"string","pattern":"^oasis/[a-z][a-z0-9_-]*@\\d+$"},"uniqueItems":True},
