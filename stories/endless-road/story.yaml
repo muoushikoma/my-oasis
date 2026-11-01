@@ -6,8 +6,31 @@ meta:
   summary:
     zh: 一条没有尽头的路，一路上的怪物、陷阱、行商与奇遇都由 AI 现场生成（需要接入 AI）。简化版 D&D 规则，管好资源、强化装备，看你能走多远。
     en: An endless road where AI invents every monster, trap and wonder (AI required). Light D&D rules — manage supplies, upgrade gear, see how far you get.
-  language: zh-CN
   languages: [zh, en]
+  ai_role:
+    zh: AI 把引擎掷出的每个路上事件写成一张事件卡（名字、描述、2~3 个有取舍的选项），并挑选画面模块；数值由规则计算。
+    en: The AI writes each road event as a card (name, scene, 2–3 options) and picks its visuals; the rules handle all numbers.
+  est_tokens_per_min: 5000
+  platforms: [desktop, mobile]
+  description:
+    zh: |
+      2D 像素横版冒险。你从老旅店出发，一路向东。每走一里吃掉 1 份口粮，并遇到一个由 AI 现场写成的事件：怪物、断桥、行商、古老的祭坛、两难的抉择……每次冒险都不一样。
+
+      - 每个事件是一张卡，选项上写明了难度、成功的收获和失败的风险。
+      - 简化版 D&D 规则：属性检定、d20 战斗、升级、额外攻击。每 25 里有一个守关者。
+      - 管好口粮、药水和金币；收集铁料和魔晶，在行商那里强化武器、护甲、背包和营具。
+      - 最多带 3 件遗物；接下委托，几里后回来领取丰厚报酬。
+
+      每张事件卡都由 AI 写成，平均每走一里调用一次。
+    en: |
+      A 2D pixel side-scroller. You leave the old inn and head east. Every mile costs a ration and brings an event written live by the AI: monsters, broken bridges, peddlers, ancient shrines, hard choices… no two runs are alike.
+
+      - Every event is a card; each option shows its difficulty, reward and risk.
+      - Light D&D rules: ability checks, d20 combat, levels, Extra Attack. A warden guards every 25 miles.
+      - Manage rations, potions and gold; gather iron and essence to upgrade weapon, armor, pack and camp kit at peddlers.
+      - Carry up to 3 relics; accept errands and come back a few miles later for big rewards.
+
+      The AI writes every event card — about one call per mile walked.
   rating: all-ages
   tags:
     - { zh: 地下城与勇士规则, en: D&D rules }
@@ -77,9 +100,9 @@ state:
   best:      { type: number, init: 0, min: 0, integer: true, label: { zh: 最远纪录, en: Best record } }
   kills:     { type: number, init: 0, min: 0, integer: true, label: { zh: 击败敌人, en: Foes defeated } }
   # 资源
-  rations:   { type: number, init: 8, min: 0, integer: true, visible: ai, desc: 口粮，每里吃 1 份 }
-  potions:   { type: number, init: 2, min: 0, integer: true, visible: ai, desc: 治疗药水 }
-  gold:      { type: number, init: 15, min: 0, integer: true, visible: ai, desc: 金币 }
+  rations:   { type: number, init: 8, min: 0, integer: true, visible: both, desc: 口粮，每里吃 1 份 }
+  potions:   { type: number, init: 2, min: 0, integer: true, visible: both, desc: 治疗药水 }
+  gold:      { type: number, init: 15, min: 0, integer: true, visible: both, desc: 金币 }
   iron:      { type: number, init: 0, min: 0, integer: true, visible: ai, desc: 铁料（强化材料） }
   essence:   { type: number, init: 0, min: 0, integer: true, visible: ai, desc: 魔晶（稀有强化材料） }
   gear:      { type: json, init: { weapon: 0, armor: 0, pack: 0, kit: 0 }, visible: ai, desc: 强化等级：武器、护甲、背包、营具 }
@@ -103,7 +126,7 @@ state:
     type: enum
     values: [none, card, battle, shop]
     init: none
-    visible: ai
+    visible: both
     desc: 当前阶段：none 赶路，card 事件卡，battle 战斗，shop 交易
   event_kind:
     type: enum
@@ -122,9 +145,10 @@ state:
   card:      { type: json, init: {}, visible: none }
   foe:       { type: json, init: {}, visible: none }
   next_kind: { type: string, init: "", visible: none }
-  camped:    { type: bool, init: false, visible: none }
+  camped:    { type: bool, init: false, visible: player }
   # 面板文字（规则生成）
   situation:   { type: string, init: "", visible: player, label: { zh: 眼前, en: Right now } }
+  ui_card:     { type: json, init: { mode: none }, visible: player, desc: 事件卡/商店要显示的内容（给自定义组件 ui/card.html） }
   pack_text:   { type: string, init: "", visible: player, label: { zh: 行囊, en: Pack } }
   gear_text:   { type: string, init: "", visible: player, label: { zh: 强化, en: Upgrades } }
   relic_text:  { type: string, init: "", visible: player, label: { zh: 遗物, en: Relics } }
@@ -135,8 +159,6 @@ realtime:
   tick_ms: 16
   interpolate: true
   on_tick: scripts/scene.js#tick
-  on_ui: scripts/road.js#on_ui
-  on_resize: scripts/road.js#resize
   timers:
     card_watch: { every_ms: 500, script: scripts/road.js#watch }
 
@@ -190,6 +212,24 @@ actions:
     require_message: { zh: 现在不能扎营（每里只能扎营一次，需要 1 份口粮，且附近不能有事件）。, en: "You can't camp now (once per mile, costs 1 ration, and nothing else going on)." }
     callable_by: [player]
     script: scripts/road.js#camp_rules
+  choose:
+    label: { zh: 选择, en: Choose }
+    desc: { zh: 在事件卡上选择一个选项, en: Pick an option on the event card }
+    params:
+      id: { type: string }
+    require: "state.phase == 'card'"
+    require_message: { zh: 现在没有事件卡。, en: There is no event card right now. }
+    callable_by: [player]
+    script: scripts/road.js#choose
+  trade:
+    label: { zh: 交易, en: Trade }
+    desc: { zh: 在行商处购买或强化, en: Buy or upgrade at the peddler }
+    params:
+      id: { type: string }
+    require: "state.phase == 'shop'"
+    require_message: { zh: 附近没有行商。, en: There is no peddler here. }
+    callable_by: [player]
+    script: scripts/road.js#trade
   apply_ai:
     callable_by: [rules]
     params:
@@ -353,7 +393,7 @@ ai:
                 o3_cost: out.o3_cost
       context:
         state: [distance, biome, event_kind, event_tier, threat, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art]
-        history_turns: 10
+        history_turns: 6
         setting: false
       temperature: 1.0
     epitaph:
@@ -392,18 +432,30 @@ ui:
     colors: { accent: "#e0a84a", bg: "#16130f", text: "#efe6d6", panel: "#221d17" }
     font: { body: serif, size: 16 }
   layout:
-    template: two-column
+    template: custom
+    grid: ["stage card", "log side"]
+    columns: ["minmax(0, 3fr)", "minmax(300px, 2fr)"]
+    rows: ["auto", "minmax(240px, 1fr)"]
   components:
     stage:
       type: canvas
-      region: main
+      region: stage
       width: 256
       height: 144
       pixelated: true
       render: scripts/scene.js#draw
+    # 主操作面板（自定义组件）：状态条 + 事件卡 / 商店 + 行动按钮
+    event_card:
+      type: custom
+      region: card
+      src: ui/card.html
+      actions: [choose, trade, walk, camp, potion, attack, flee]
+      height: 220
+      player_can_hide: false
+      fallback: { zh: 操作面板（自定义组件）已在设置里关闭。请用右下方的备用按钮操作，事件选项列在“眼前”里。, en: "The control panel (a custom component) is turned off in Settings. Use the backup buttons at the bottom right; event options are listed under Right now." }
     log:
       type: text-log
-      region: main
+      region: log
       content: ai
     now:
       type: text-block
@@ -451,13 +503,39 @@ ui:
       label: { zh: 远方, en: Ahead }
       generated: vista
       fit: cover
-      player_can_hide: true
-    road:
+    # 备用按钮：关掉自定义组件时用（平时可以在“外观”里隐藏）
+    backup_road:
       type: choice-buttons
-      region: input
+      region: side
+      label: { zh: 备用按钮：行动, en: "Backup: actions" }
       choices:
         - { label: { zh: 继续前进, en: Walk on }, action: walk }
-        - { label: { zh: 扎营休息, en: Camp }, action: camp }
+        - { label: { zh: 扎营, en: Camp }, action: camp }
         - { label: { zh: 喝药水, en: Potion }, action: potion }
         - { label: { zh: 攻击, en: Attack }, action: attack }
         - { label: { zh: 逃跑, en: Flee }, action: flee }
+    backup_card:
+      type: choice-buttons
+      region: side
+      label: { zh: 备用按钮：事件卡, en: "Backup: event card" }
+      choices:
+        - { label: { zh: 选项 1, en: Option 1 }, action: choose, params: { id: o1 } }
+        - { label: { zh: 选项 2, en: Option 2 }, action: choose, params: { id: o2 } }
+        - { label: { zh: 选项 3, en: Option 3 }, action: choose, params: { id: o3 } }
+        - { label: { zh: 先喝药水, en: Potion first }, action: choose, params: { id: potion } }
+        - { label: { zh: 扎营（营地）, en: Camp (safe spot) }, action: choose, params: { id: camp } }
+        - { label: { zh: 离开, en: Leave }, action: choose, params: { id: leave } }
+        - { label: { zh: 重试 AI, en: Retry AI }, action: choose, params: { id: retry } }
+    backup_shop:
+      type: choice-buttons
+      region: side
+      label: { zh: 备用按钮：行商, en: "Backup: peddler" }
+      choices:
+        - { label: { zh: 买口粮, en: Buy ration }, action: trade, params: { id: buy_ration } }
+        - { label: { zh: 买药水, en: Buy potion }, action: trade, params: { id: buy_potion } }
+        - { label: { zh: 卖铁料, en: Sell iron }, action: trade, params: { id: sell_iron } }
+        - { label: { zh: 强化武器, en: Upgrade weapon }, action: trade, params: { id: up_weapon } }
+        - { label: { zh: 强化护甲, en: Upgrade armor }, action: trade, params: { id: up_armor } }
+        - { label: { zh: 强化背包, en: Upgrade pack }, action: trade, params: { id: up_pack } }
+        - { label: { zh: 强化营具, en: Upgrade camp kit }, action: trade, params: { id: up_kit } }
+        - { label: { zh: 告别行商, en: Leave }, action: trade, params: { id: leave } }

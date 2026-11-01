@@ -85,7 +85,7 @@ AI 只有 0 级权限：不能改任何数值。它写的每个字段都会被�
 | 时间 / 天气 | `day` `dusk` `night` / `clear` `rain` `snow` `fog` `embers` `fireflies` `leaves` | AI（有默认值） |
 | 主角 | 站立、走路 4 帧、攻击 | 规则 |
 
-事件卡用客户端的界面层（`api.overlay`）显示，点选项由 `realtime.on_ui` 交给规则结算。素材的源文件和加新精灵的方法见仓库 `tools/art/endless-road/`。
+右上角的操作面板是故事自带的**自定义组件**（`ui/card.html`）：状态条、事件卡 / 商店、行动按钮都在里面。规则把要显示的内容写进玩家可见的状态 `ui_card`，组件点选项时调用 `choose` / `trade` 动作，行动按钮调用 `walk` / `camp` / `potion` / `attack` / `flee`。玩家在设置里关掉自定义组件时，右下方的备用按钮和“眼前”里列出的选项可以照样玩。素材的源文件和加新精灵的方法见仓库 `tools/art/endless-road/`。
 
 ## 文件
 
@@ -93,5 +93,6 @@ AI 只有 0 级权限：不能改任何数值。它写的每个字段都会被�
 story.yaml          主文件（状态、动作、AI 接入点、界面）
 scripts/road.js     规则：事件框架、选项结算、资源与强化、遗物、状态效果、战斗、事件卡界面
 scripts/scene.js    画面：模块合成、动画、天气、时间
+ui/card.*           操作面板（自定义组件）：状态条、事件卡 / 商店、行动按钮
 assets/bg/          背景分层；assets/sprites/ 精灵；assets/cover.png 封面；assets/vista.png 生图的替代图
 ```

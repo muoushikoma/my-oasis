@@ -119,7 +119,7 @@ function log(api, t) { api.log(en(api, t)); }
 function enSpec(api, n) {
   if (Array.isArray(n)) return n.map((x) => enSpec(api, x));
   if (!n || typeof n !== "object") return n;
-  const o = {}; for (const k in n) o[k] = (k === "text" || k === "sub") ? en(api, n[k]) : enSpec(api, n[k]); return o;
+  const o = {}; for (const k in n) o[k] = (k === "text" || k === "sub" || k === "title") ? en(api, n[k]) : enSpec(api, n[k]); return o;
 }
 function clip(s, n) { return String(s || "").replace(/\s+/g, " ").trim().slice(0, n); }
 
@@ -327,6 +327,7 @@ function fillCard(api, draft, fromAi) {
       if (tpl) tpl.options.forEach((o, i) => { if (opts.some((x) => x.verb === "fight") && o.verb === "fight") return; const f = finalizeOption(api, Object.assign({}, o, { label: T2(api, o.label) }), kind, i + 4, card); if (f) opts.push(f); });
     }
   }
+  opts.forEach((o, i) => (o.id = `o${i + 1}`));
   card.options = opts;
   card.pending = false; card.ai = !!fromAi;
   if (draft.sprite && (KIND_SPRITES[kind] || []).indexOf(draft.sprite) >= 0) { const s = sfx(api); if (s.cur) { s.cur.sprite = draft.sprite; saveFx(api, s); } }
@@ -411,7 +412,8 @@ function chooseOption(api, id) {
   if (id === "potion") { potion(api); return; }
   if (id === "camp") { campHere(api, true); return; }
   if (id === "leave") return leaveCard(api);
-  const o = card.options.filter((x) => x.id === id)[0]; if (!o) return;
+  const o = card.options.filter((x) => x.id === id)[0];
+  if (!o) { log(api, L(api, "这张卡上没有这个选项。", "There is no such option on this card.")); return; }
   if (!canAfford(api, o)) { log(api, L(api, "付不起这个代价。", "You can't afford that.")); return; }
   log(api, `➤ ${o.label}`);
   if (o.verb === "fight") { startBattle(api, card.foe, false); return; }
@@ -527,37 +529,38 @@ function refresh(api) {
   if (ph === "battle") { const f = get(api, "foe"); s = `⚔ ${f.name}${f.boss ? L(api, "（守关者）", " (Warden)") : ""}\n${L(api, "生命", "HP")} ${f.hp}/${f.max_hp} · AC ${f.ac} · ${L(api, "命中", "to hit")} ${sign(f.atk)}`; }
   else if (ph === "card" || ph === "shop") s = `${KIND_ICON[card.kind]} ${card.pending ? L(api, "前方有动静……", "Something ahead…") : card.title}`;
   else s = L(api, `前路漫漫。你身在${biomeName(api)}，第 ${get(api, "distance")} 里。`, `The road goes on. You are in the ${biomeName(api)}, mile ${get(api, "distance")}.`);
-  set(api, "situation", en(api, s));
   set(api, "event_title", ph === "none" ? "" : card.title || "");
   showUi(api);
+  // 侧栏“眼前”也列出选项（关掉自定义组件时用备用按钮按编号选）
+  const ui = get(api, "ui_card");
+  if (ui && (ui.mode === "card" || ui.mode === "shop") && ui.items) s += "\n" + ui.items.map((it, i) => `${ui.mode === "card" ? (/^o\d$/.test(it.id) ? it.id.slice(1) + ". " : "· ") : "· "}${it.text}${it.sub ? ` — ${it.sub}` : ""}`).join("\n");
+  set(api, "situation", en(api, s));
 }
-const PANEL = { color: "#efe6d6", bg: "#1b1611f0", padding: 14, radius: 12, width: "min(640px, 96vw)", border: 1, border_color: "#e0a84a66", gap: 8 };
+// 事件卡和商店：把要显示的内容写进玩家可见的状态 ui_card，由自定义组件 ui/card.html 显示；
+// 点选项会调用 choose / trade 动作。关掉自定义组件时，侧栏“眼前”里也会列出选项，配合备用按钮使用。
 function showUi(api) {
   const ph = get(api, "phase"), card = get(api, "card") || {};
-  if (get(api, "hp") <= 0 || (ph !== "card" && ph !== "shop")) { api.overlay.hide(); return; }
-  const head = { type: "rich", spans: [{ text: `${KIND_ICON[card.kind]} ${T2(api, KIND_NAME[card.kind])} · `, style: { color: "#c8b89a", size: 13 } }, { text: card.pending ? L(api, "前方有动静……", "Something ahead…") : card.title, style: { bold: true, color: "#e0a84a", size: 17 } }] };
+  if (get(api, "hp") <= 0 || (ph !== "card" && ph !== "shop")) { set(api, "ui_card", { mode: "none" }); return; }
+  const kind = `${KIND_ICON[card.kind]} ${T2(api, KIND_NAME[card.kind])}`;
   if (card.pending) {
-    api.overlay.hide("shop");
-    const kids = [head, { type: "text", text: card.stale
-      ? L(api, "AI 还没有回应。请检查“设置”里的 AI 服务商和 API Key，然后点重试。", "The AI hasn't answered. Check your AI provider and API key in Settings, then retry.")
-      : L(api, "（AI 正在描绘这一幕……）", "(The AI is painting this scene…)"), style: { color: "#c8b89a", size: 14 } }];
-    if (card.stale) kids.push({ type: "row", children: [{ type: "space" }, { type: "button", id: "retry", text: L(api, "重试", "Retry") }] });
-    api.overlay.show("card", enSpec(api, { anchor: "bottom", z: 1, style: PANEL, children: kids }));
+    set(api, "ui_card", enSpec(api, { mode: card.stale ? "stale" : "loading", kind, title: L(api, "前方有动静……", "Something ahead…"),
+      text: card.stale ? L(api, "AI 还没有回应。请检查“设置”里的 AI 服务商和 API Key，然后点重试。", "The AI hasn't answered. Check your AI provider and API key in Settings, then retry.")
+        : L(api, "（AI 正在描绘这一幕……）", "(The AI is painting this scene…)"),
+      items: card.stale ? [{ id: "retry", text: L(api, "↻ 重试", "↻ Retry"), sub: "" }] : [], action: "choose" }));
     return;
   }
-  if (ph === "shop") { api.overlay.hide("card"); showShop(api, head, card); return; }
-  api.overlay.hide("shop");
+  if (ph === "shop") { set(api, "ui_card", enSpec(api, { mode: "shop", kind, title: card.title, text: card.text, items: shopItems(api), action: "trade" })); return; }
   const items = card.options.map((o) => ({ id: o.id, text: o.label, sub: optText(api, o, card.kind) + (canAfford(api, o) ? "" : L(api, "（付不起）", " (can't afford)")), disabled: !canAfford(api, o) }));
   if (card.kind === "rest") items.push({ id: "camp", text: L(api, "🔥 扎营休息", "🔥 Make camp"), sub: L(api, "免费，完全恢复，解除疲惫", "free, full heal, clears exhaustion") });
   if (get(api, "potions") > 0 && get(api, "hp") < get(api, "max_hp")) items.push({ id: "potion", text: L(api, "🧪 先喝一瓶药水", "🧪 Drink a potion first"), sub: L(api, "不结束这个事件", "doesn't end the event") });
   if (!card.boss) items.push({ id: "leave", text: L(api, "↩ 离开", "↩ Leave"), sub: card.kind === "hazard" ? L(api, "绕路：多耗 1 份口粮", "detour: costs 1 extra ration") : card.kind === "combat" ? L(api, `🎲 敏捷 DC ${10 + Math.floor(card.threat / 2)} 溜走，失败会被追上`, `🎲 DEX DC ${10 + Math.floor(card.threat / 2)} to slip away; fail and it attacks`) : "" });
-  api.overlay.show("card", enSpec(api, { anchor: "bottom", z: 1, style: PANEL, children: [head, { type: "text", text: card.text, style: { color: "#efe6d6", size: 14 } }, { type: "list", id: "opts", items }] }));
+  set(api, "ui_card", enSpec(api, { mode: "card", kind, title: card.title, text: card.text, items, action: "choose" }));
 }
 function gearCost(api, k) {
   const g = gear(api), lv = g[k], def = GEAR[k];
   return { gold: def.gold * (lv + 1), iron: def.iron * (lv + 1), essence: lv >= def.essAt ? 1 : 0, max: lv >= def.max };
 }
-function showShop(api, head, card) {
+function shopItems(api) {
   const gold = get(api, "gold"), c = caps(api);
   const items = [
     { id: "buy_ration", text: L(api, `口粮 ×1`, "Ration ×1"), sub: `${PRICE.ration}g · ${get(api, "rations")}/${c.rations}`, disabled: gold < PRICE.ration || get(api, "rations") >= c.rations },
@@ -571,7 +574,7 @@ function showShop(api, head, card) {
       sub: cost.max ? "" : `${cost.gold}g · ${L(api, "铁料", "iron")} ${cost.iron}${cost.essence ? ` · ${L(api, "魔晶", "essence")} ${cost.essence}` : ""} · ${T2(api, GEAR[k].desc)}`, disabled: !okay });
   }
   items.push({ id: "leave", text: L(api, "↩ 告别行商", "↩ Say goodbye"), sub: "" });
-  api.overlay.show("shop", enSpec(api, { anchor: "bottom", z: 1, style: PANEL, children: [head, { type: "text", text: card.text, style: { color: "#efe6d6", size: 14 } }, { type: "list", id: "shop", items }] }));
+  return items;
 }
 function shopBuy(api, id) {
   const gold = get(api, "gold"), c = caps(api);
@@ -674,16 +677,18 @@ export function apply_ai(api) {
   return true;
 }
 
-// 界面层的按钮 / 列表点击
-export function on_ui(api) {
-  const p = api.params;
-  if (p.overlay === "card" && p.type === "button" && p.id === "retry") {
-    const c = get(api, "card");
-    if (c && c.pending) { c.stale = false; c.born = api.time; set(api, "card", c); api.events.emit("encounter"); }
-  } else if (p.overlay === "card" && p.type === "select") chooseOption(api, p.id);
-  else if (p.overlay === "shop" && p.type === "select") shopBuy(api, p.id);
+// 事件卡上的选择（自定义组件或备用按钮调用）
+export function choose(api) {
+  const id = String(api.params.id || "");
+  const c = get(api, "card");
+  if (id === "retry") { if (c && c.pending) { c.stale = false; c.born = api.time; set(api, "card", c); api.events.emit("encounter"); } }
+  else if (c && c.pending) api.fail(L(api, "AI 还在描绘这一幕，请稍等。", "The AI is still painting this scene — please wait."));
+  else chooseOption(api, id);
   refresh(api);
+  return true;
 }
+// 商店里的购买 / 强化
+export function trade(api) { shopBuy(api, String(api.params.id || "")); refresh(api); return true; }
 // 定时检查：AI 太久没回应，就在卡上提示并显示“重试”
 export function watch(api) {
   const card = get(api, "card");
@@ -691,8 +696,6 @@ export function watch(api) {
   if (api.time - card.born < AI_STALE_MS) return;
   card.stale = true; set(api, "card", card); refresh(api);
 }
-// 读档后（或窗口变化）把界面层重新显示出来
-export function resize(api) { refresh(api); }
 
 export function attack(api) {
   const lv = get(api, "level"), g = gear(api);
