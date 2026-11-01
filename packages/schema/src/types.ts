@@ -56,10 +56,10 @@ export interface Story {
 }
 /** oasis/0.4：实时循环 */
 export interface TimerDef { every_ms?: number; after_ms?: number; action?: string; params?: Record<string, any>; emit?: string; script?: string }
-export interface RealtimeDef { tick_hz?: number; tick_ms?: number; interpolate?: boolean; on_tick?: string; on_ai?: string; on_resize?: string; timers?: Record<string, TimerDef> }
+export interface RealtimeDef { tick_hz?: number; tick_ms?: number; interpolate?: boolean; on_tick?: string; on_ai?: string; on_resize?: string; on_ui?: string; timers?: Record<string, TimerDef> }
 /** oasis/0.4：输入映射。keys：按键（KeyboardEvent.code）→ 输入名 */
 export interface InputDef { keys?: Record<string, string>; joystick?: boolean | { side?: "left" | "right" }; buttons?: { id: string; label?: string }[]; pointer?: boolean }
-export interface InputState { held: Record<string, boolean>; pressed: Record<string, boolean>; joystick: { x: number; y: number }; pointer: { x: number; y: number; down: boolean; target?: string } }
+export interface InputState { held: Record<string, boolean>; pressed: Record<string, boolean>; joystick: { x: number; y: number }; pointer: { x: number; y: number; down: boolean; target?: string; wheel?: number; button?: number }; touches?: { id: number; x: number; y: number; target?: string }[] }
 export const DEFAULT_MAX_AUTHORITY = 1; // 暂定默认
 export const KNOWN_TEMPLATES = ["oasis/dice@1", "oasis/check@1", "oasis/inventory@1", "oasis/clock@1"];
 export const TEMPLATE_REGIONS: Record<string, string[]> = {

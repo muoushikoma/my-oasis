@@ -8,12 +8,16 @@ import { type Renderer } from "./render/common";
 import { WebGLRenderer } from "./render/webgl";
 import { Canvas2DRenderer } from "./render/canvas2d";
 import { AudioEngine } from "./render/audio";
+import { NativeUi } from "./native-ui";
+import { pollGamepad } from "./gamepad";
 
 export interface RtHost {
   game: Game; story: Story; assets: AssetBox; llm?: LLM;
   muted(): boolean; sfx(): number;
   onFrame(changed: boolean): void; // 每帧之后（节流的 DOM 刷新、结局处理由页面决定）
   onHooks(hooks: string[]): void;
+  /** api.save.now：脚本请求存档（客户端写入自动存档槽） */
+  onSave?(label: string): void;
 }
 
 /** 把绘制指令画到 2D 画布上（兼容旧接口：测试/截图用；游戏里用 WebGL 渲染器） */
@@ -36,7 +40,20 @@ export class RealtimeDriver {
   private running = false; private clock = 0;
   // 调试信息（F3 显示）
   private dbg?: HTMLElement; private stats = { frames: 0, since: 0, fps: 0, frameMs: 0, tickMs: 0, renderMs: 0, drawMs: 0, drawn: 0, ticks: 0 };
-  constructor(private s: RtHost) {}
+  /** 原生输入框 / 全屏视频（api.textinput、api.video） */
+  ui: NativeUi;
+  private fonts: FontFace[] = [];
+  private padHeld = new Set<string>(); private padStick = false;
+  private shakeAmt = 0; private shakeUntil = 0; private shakeMs = 1; private touches = new Map<number, { id: number; x: number; y: number; target?: string }>();
+  constructor(private s: RtHost) {
+    this.ui = new NativeUi({
+      lang: s.game.lang, muted: () => s.muted(), url: (id) => s.assets.url(`asset:${id}`),
+      shake: (amount, ms) => { this.shakeAmt = amount; this.shakeUntil = this.clock + ms; this.shakeMs = ms; },
+      save: (label) => s.onSave?.(label),
+      filter: (css) => { for (const v of this.views.values()) v.el.style.filter = css; },
+      deliver: (res) => { s.game.deliverUi(res); this.effects(); const hooks = s.game.drainHooks(); if (hooks.length) s.onHooks(hooks); s.onFrame(true); },
+    });
+  }
 
   get hz() { return Math.max(1, Math.min(60, this.s.story.realtime?.tick_hz ?? 30)); }
   get interpolate() { return !!(this.s.story.realtime as any)?.interpolate; }
@@ -51,9 +68,24 @@ export class RealtimeDriver {
       const v: View = { el, w, h: hh, dpr: 0, cmds: [], animated: false, pixelated: !!c.pixelated, fixedDpr: fill ? 1 : undefined };
       this.views.set(cid, v);
       const pos = (e: PointerEvent) => { const r = el!.getBoundingClientRect(); return { x: ((e.clientX - r.left) / r.width) * v.w, y: ((e.clientY - r.top) / r.height) * v.h }; };
-      el.onpointerdown = (e) => { el!.setPointerCapture?.(e.pointerId); this.input.pointer = { ...pos(e), down: true, target: cid }; this.input.pressed.pointer = true; };
-      el.onpointermove = (e) => { this.input.pointer = { ...this.input.pointer, ...pos(e), target: cid }; };
-      el.onpointerup = el.onpointercancel = (e) => { this.input.pointer = { ...pos(e), down: false, target: cid }; };
+      // 多点触控：每根手指一条（api.input.touches）；pointer 仍是“主指针”（鼠标或第一根手指），button：0 左键 1 中键 2 右键
+      const syncTouches = () => { this.input.touches = [...this.touches.values()].slice(0, 10).map((t) => ({ ...t })); };
+      el.onpointerdown = (e) => {
+        el!.setPointerCapture?.(e.pointerId);
+        if (e.pointerType === "touch") { this.touches.set(e.pointerId, { id: e.pointerId, ...pos(e), target: cid }); syncTouches(); }
+        if (e.isPrimary || e.pointerType === "mouse") { this.input.pointer = { ...this.input.pointer, ...pos(e), down: true, target: cid, button: e.button }; this.input.pressed.pointer = true; if (e.button === 2) this.input.pressed.pointer_right = true; }
+      };
+      el.onpointermove = (e) => {
+        if (this.touches.has(e.pointerId)) { this.touches.set(e.pointerId, { id: e.pointerId, ...pos(e), target: cid }); syncTouches(); }
+        if (e.isPrimary || e.pointerType === "mouse") this.input.pointer = { ...this.input.pointer, ...pos(e), target: cid };
+      };
+      el.onpointerup = el.onpointercancel = (e) => {
+        if (this.touches.delete(e.pointerId)) syncTouches();
+        if (e.isPrimary || e.pointerType === "mouse") this.input.pointer = { ...this.input.pointer, ...pos(e), down: false, target: cid };
+      };
+      el.oncontextmenu = (e) => e.preventDefault();
+      // 滚轮：每个 tick 累计的滚动量（向下为正，约 100 = 一格）
+      el.addEventListener("wheel", (e) => { e.preventDefault(); this.input.pointer = { ...this.input.pointer, wheel: (this.input.pointer.wheel ?? 0) + Math.max(-1000, Math.min(1000, e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY)) }; }, { passive: false });
       if (fill && typeof ResizeObserver !== "undefined") {
         // 铺满：画布像素 = 实际显示尺寸（hidpi 时再乘设备像素比）；窗口缩放、手机转屏时自动跟着变
         const cv = el;
@@ -118,15 +150,22 @@ export class RealtimeDriver {
   async preload(onProgress?: (done: number, total: number) => void) {
     const list = this.s.assets.list?.() ?? [];
     this.audio ??= new AudioEngine((id) => this.s.assets.url(`asset:${id}`), (id) => this.s.assets.bytes(`asset:${id}`));
-    const jobs = list.filter((a) => a.kind !== "other");
+    const jobs = list.filter((a) => a.kind === "image" || a.kind === "audio" || a.kind === "font");
     let done = 0; onProgress?.(0, jobs.length);
     await Promise.all(jobs.map(async (a) => {
       try {
         if (a.kind === "image") { const im = this.image(a.id); if (im && !im.complete) await (im.decode ? im.decode() : new Promise((r) => { im.onload = im.onerror = r; })); }
+        else if (a.kind === "font") await this.loadFont(a.id);
         else await this.audio!.load(a.id);
       } catch { /* 坏素材不影响开始 */ }
       onProgress?.(++done, jobs.length);
     }));
+  }
+
+  /** 字体素材：以素材 id 为字体名注册，api.draw.text(..., { font: "素材id" }) 即可使用 */
+  private async loadFont(id: string) {
+    const u = this.s.assets.url(`asset:${id}`); if (!u || typeof FontFace === "undefined") return;
+    const f = new FontFace(id, `url(${u})`); await f.load(); (document as any).fonts?.add(f); this.fonts.push(f);
   }
 
   start() {
@@ -159,6 +198,8 @@ export class RealtimeDriver {
     this.running = false;
     cancelAnimationFrame(this.raf); this.raf = 0; this.off.forEach((f) => f()); this.off = [];
     this.audio?.dispose(); this.audio = undefined;
+    this.ui.dispose();
+    for (const f of this.fonts) (document as any).fonts?.delete(f); this.fonts = [];
     this.dbg?.remove(); this.dbg = undefined;
   }
   /** 作者调试：F3（或网址带 ?fps）显示帧率、每帧耗时、脚本耗时、绘制数量、渲染器类型 */
@@ -175,7 +216,7 @@ export class RealtimeDriver {
 
   /** 暂停菜单打开时：不推进时间、松开所有按键 */
   paused = false;
-  setPaused(p: boolean) { this.paused = p; this.input.held = {}; this.input.pressed = {}; this.input.joystick = { x: 0, y: 0 }; this.input.pointer = { ...this.input.pointer, down: false }; }
+  setPaused(p: boolean) { this.paused = p; this.ui.setPaused(p); this.padHeld.clear(); this.input.held = {}; this.input.pressed = {}; this.input.joystick = { x: 0, y: 0 }; this.input.pointer = { ...this.input.pointer, down: false }; }
 
   /**
    * 每个显示帧调用一次（跟屏幕刷新率走，通常 60fps 或更高）：
@@ -188,16 +229,18 @@ export class RealtimeDriver {
     const t0 = performance.now(), st = this.stats;
     const dtStep = 1000 / this.hz, frameDt = Math.min(250, Math.max(0, now - this.last));
     this.acc = Math.min(this.acc + frameDt, dtStep * 5); this.last = now; this.clock += frameDt;
+    this.pad();
     let ticked = 0;
     while (this.acc >= dtStep) {
       this.acc -= dtStep;
-      g.tick(dtStep, this.input); this.input.pressed = {}; ticked++;
+      g.tick(dtStep, this.input); this.input.pressed = {}; this.input.pointer = { ...this.input.pointer, wheel: 0 }; ticked++;
       this.effects();
       const hooks = g.drainHooks(); if (hooks.length) this.s.onHooks(hooks);
       if (g.ending) break;
     }
     const t1 = performance.now();
     if (ticked) { st.tickMs = t1 - t0; st.ticks = ticked; }
+    this.applyShake();
     this.draw(!!ticked || this.interpolate, frameDt);
     st.frameMs = performance.now() - t0;
     this.updateDebug(now);
@@ -209,6 +252,28 @@ export class RealtimeDriver {
       const changed = sig !== this.stateSig;
       if ((changed && now - this.lastDom > 200) || g.ending) { this.stateSig = sig; this.lastDom = now; this.s.onFrame(changed); }
     }
+  }
+
+  /** 屏幕震动（api.fx.shake）：只移动画面元素，逐渐减弱；纯视觉，不影响逻辑 */
+  private applyShake() {
+    const left = this.shakeUntil - this.clock;
+    for (const v of this.views.values()) {
+      if (left > 0) { const k = this.shakeAmt * (left / this.shakeMs); v.el.style.translate = `${(Math.sin(this.clock * 0.09) * k).toFixed(1)}px ${(Math.cos(this.clock * 0.071) * k).toFixed(1)}px`; }
+      else if (v.el.style.translate) v.el.style.translate = "";
+    }
+  }
+  /** 手柄：标准布局按键名 Pad0…Pad16 可写进 input.keys；左摇杆（或十字键）驱动 api.input.joystick */
+  private pad() {
+    const keys: Record<string, string> = (this.s.story.input as any)?.keys ?? {};
+    const p = pollGamepad(); if (!p) { if (this.padStick) { this.input.joystick = { x: 0, y: 0 }; this.padStick = false; } return; }
+    for (const [code, k] of Object.entries(keys)) {
+      if (!code.startsWith("Pad")) continue;
+      const on = p.buttons.has(code);
+      if (on && !this.padHeld.has(code)) { this.input.pressed[k] = true; this.input.held[k] = true; this.padHeld.add(code); }
+      else if (!on && this.padHeld.has(code)) { delete this.input.held[k]; this.padHeld.delete(code); }
+    }
+    if (p.stick.x || p.stick.y) { this.input.joystick = p.stick; this.padStick = true; }
+    else if (this.padStick) { this.input.joystick = { x: 0, y: 0 }; this.padStick = false; }
   }
 
   /** refresh：重新调用 render 取指令；否则重放上一次的指令（动画、粒子照常推进） */
@@ -239,6 +304,7 @@ export class RealtimeDriver {
 
   effects() {
     const e = this.s.game.takeEffects();
+    if (e.ui?.length) this.ui.apply(e.ui);
     this.audio ??= new AudioEngine((id) => this.s.assets.url(`asset:${id}`), (id) => this.s.assets.bytes(`asset:${id}`));
     this.audio.setMaster(this.s.muted() ? 0 : 1);
     for (const snd of e.sounds) {

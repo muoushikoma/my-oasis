@@ -35,6 +35,12 @@ function objMat(base: Mat, x: number, y: number, w: number, h: number, o: any): 
 export function walk(b: Backend, cmds: any[], img: ImageSource, particles: ParticleField, timeMs: number, smooth: boolean): number {
   let cam: Mat = I; let n = 0;
   b.begin();
+  // 图层：选项里写 z（数字，越大越靠前）就按 z 排序；z 相同保持原顺序。camera / clear 指令视为 z 跟随所在位置
+  if (cmds.some((c) => Array.isArray(c) && typeof c[c.length - 1]?.z === "number")) {
+    let lastZ = 0;
+    cmds = cmds.map((c, i) => { const z = Array.isArray(c) && typeof c[c.length - 1]?.z === "number" ? c[c.length - 1].z : (c?.[0] === "camera" || c?.[0] === "clear") ? -Infinity : lastZ; if (isFinite(z)) lastZ = z; return { c, z, i }; })
+      .sort((a, b) => (a.z === b.z ? a.i - b.i : a.z - b.z)).map((x) => x.c);
+  }
   for (const c of cmds) {
     if (!Array.isArray(c)) continue;
     const last = c[c.length - 1];
@@ -44,7 +50,13 @@ export function walk(b: Backend, cmds: any[], img: ImageSource, particles: Parti
     n++;
     switch (c[0]) {
       case "clear": b.clear(c[1] ? parseColor(c[1]) : null); break;
-      case "camera": { const z = num(c[3], 1) || 1; cam = [z, 0, 0, z, -num(c[1]) * z, -num(c[2]) * z]; break; }
+      case "camera": {
+        // [x, y, zoom, { rotation, center_x, center_y }]：rotation 绕 (center_x, center_y)（画面坐标）旋转
+        const z = num(c[3], 1) || 1, co: any = (c[4] && typeof c[4] === "object") ? c[4] : {};
+        cam = [z, 0, 0, z, -num(c[1]) * z, -num(c[2]) * z];
+        const rot = num(co.rotation); if (rot) { const cx = num(co.center_x), cy = num(co.center_y), cs = Math.cos(rot), sn = Math.sin(rot); cam = mul(mul(mul([1, 0, 0, 1, cx, cy], [cs, sn, -sn, cs, 0, 0]), [1, 0, 0, 1, -cx, -cy]), cam); }
+        break;
+      }
       case "rect": { const w = num(c[3]), h = num(c[4]); b.rect(objMat(base, num(c[1]), num(c[2]), w, h, o), w, h, col(c[5]), blend, o.stroke ? num(o.width, 1) : 0); break; }
       case "circle": { const r = Math.max(0, num(c[3])); const m = objMat(base, num(c[1]), num(c[2]), 0, 0, o);
         if (o.glow) { const g = typeof o.glow === "object" ? o.glow : {}; const gc = col(g.color ?? c[4]); b.circle(m, r + num(g.size, r), [gc[0], gc[1], gc[2], gc[3] * 0.6], "add", 0, 1); }

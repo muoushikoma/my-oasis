@@ -694,6 +694,11 @@
         "on_resize": {
           "type": "string",
           "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "on_ui": {
+          "type": "string",
+          "description": "原生界面结果（api.textinput 输入框提交/取消、api.video 播放结束/跳过）交给这个脚本函数",
+          "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
         }
       }
     },
@@ -1792,7 +1797,9 @@
         "type": {
           "enum": [
             "image",
-            "audio"
+            "audio",
+            "font",
+            "video"
           ]
         },
         "path": {

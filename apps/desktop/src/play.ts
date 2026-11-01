@@ -8,6 +8,7 @@ import { bridge } from "./bridge";
 import { makeLlm } from "./llm";
 import { beginSession, sessionUsage, loadUsage, onUsage, fmtNum, fmtCost, zero } from "./usage";
 import { explainError } from "./providers";
+import { storyStorage } from "./story-storage";
 import { loadSettings, saveSettings, isLocalUrl, type Settings } from "./settings";
 import { enterTakeover, setFullscreen, isFullscreen } from "./takeover";
 import { providerSetup } from "./setup";
@@ -75,6 +76,7 @@ export class PlaySession {
         if (this.game.ending && !this.rtEnded) { this.rtEnded = true; void this.afterOp(false); return; }
         this.render();
       },
+      onSave: () => { void this.autosave(); },
       onHooks: (hooks) => { for (const hk of hooks) { this.sound.effect(this.effectUrl(hk)); void this.runAi(entriesFor(this.game, hk), ""); } },
     });
   }
@@ -142,12 +144,12 @@ export class PlaySession {
       else this.aiNotice = "还没有填写 API Key：AI 部分会跳过（显示作者写的替代文字）。去“设置”填写后重新开始即可。";
     }
     if (save) {
-      const r = Game.load(this.raw, save, { lang: this.settings.lang, files: this.files, scripts: this.scripts });
+      const r = Game.load(this.raw, save, { lang: this.settings.lang, files: this.files, scripts: this.scripts, storage: storyStorage(this.storyId) });
       this.game = r.game; r.warnings.forEach((w) => toast(w, "err"));
       this.feed = (this.game.extra.ui_feed ?? []) as Feed[]; this.seq = this.feed.length + 1; this.shown = this.game.log.length;
       this.startRealtime(); this.render(); this.rt?.start(); return;
     }
-    this.game = new Game(this.raw, { lang: this.settings.lang, files: this.files, scripts: this.scripts });
+    this.game = new Game(this.raw, { lang: this.settings.lang, files: this.files, scripts: this.scripts, storage: storyStorage(this.storyId) });
     this.game.start();
     this.startRealtime();
     if (this.story.start?.intro) this.push("log", this.story.start.intro, "rule");
@@ -276,7 +278,7 @@ export class PlaySession {
   async loadFrom(json: string) {
     let data: any; try { data = JSON.parse(json); } catch { toast("这不是有效的存档文件", "err"); return; }
     try {
-      const r = Game.load(this.raw, data, { lang: this.settings.lang, files: this.files, scripts: this.scripts });
+      const r = Game.load(this.raw, data, { lang: this.settings.lang, files: this.files, scripts: this.scripts, storage: storyStorage(this.storyId) });
       this.game = r.game; this.feed = (r.game.extra.ui_feed ?? []) as Feed[]; this.seq = this.feed.length + 1; this.shown = r.game.log.length; this.aiChoices = {};
       r.warnings.forEach((w) => toast(w, "err")); toast("已读档"); this.render();
     } catch (e: any) { toast(e.message, "err"); }

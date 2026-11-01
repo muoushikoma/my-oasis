@@ -86,7 +86,7 @@ defs={
   "merge":{"type":"boolean"},"optional":{"type":"boolean"},"fallback":{"type":"string"},
   "after_end":{"type":"boolean"},"opening":{"type":"string"}},["kind","trigger","prompt","card"]),
 "color":{"type":"string","pattern":"^#[0-9a-fA-F]{6}$"},
-"asset":obj({"type":{"enum":["image","audio"]},"path":PATH,"use":{"enum":["background","portrait","illustration","icon","music","sfx","other"]},
+"asset":obj({"type":{"enum":["image","audio","font","video"]},"path":PATH,"use":{"enum":["background","portrait","illustration","icon","music","sfx","other"]},
   "alt":{"type":"string","maxLength":200},"loop":{"type":"boolean"},"volume":{"type":"number","minimum":0,"maximum":1}},["type","path"]),
 "image_point":obj({"trigger":{"type":"string","pattern":"^(game_start|turn_end|action:[a-z][a-z0-9_]*|event:[a-z][a-z0-9_]*|state:[a-z][a-z0-9_]*)$"},
   "prompt":{"type":"string","minLength":1,"maxLength":2000},"style":{"type":"string","maxLength":300},

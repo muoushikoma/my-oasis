@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Ajv2020Mod from "ajv/dist/2020.js";
-import { ROOT, STORIES, LIMITS, IMAGE_EXT, AUDIO_EXT, TEXT_EXT, SCRIPT_EXT, FONT_EXT, ID_RE, storyDirs, listFiles, readStory } from "./common.mjs";
+import { ROOT, STORIES, LIMITS, IMAGE_EXT, AUDIO_EXT, TEXT_EXT, SCRIPT_EXT, FONT_EXT, VIDEO_EXT, ID_RE, storyDirs, listFiles, readStory } from "./common.mjs";
 
 const Ajv2020 = Ajv2020Mod.default ?? Ajv2020Mod;
 const schema = JSON.parse(fs.readFileSync(path.join(ROOT, "docs/schema/story.schema.json"), "utf8"));
@@ -65,9 +65,9 @@ for (const id of ids) {
     if (f.rel.split("/").some((p) => p.startsWith("."))) { fail(id, `不允许隐藏文件：${f.rel}`); continue; }
     if (IMAGE_EXT.includes(ext)) { if (f.size > LIMITS.image) fail(id, `图片太大（超过 10 MB）：${f.rel}`); }
     else if (AUDIO_EXT.includes(ext)) { if (f.size > LIMITS.audio) fail(id, `音频太大（超过 30 MB）：${f.rel}`); }
-    else if (FONT_EXT.includes(ext)) { /* 只受整包 300 MB 和单文件 100 MB 限制 */ }
+    else if (FONT_EXT.includes(ext) || VIDEO_EXT.includes(ext)) { /* 只受整包 300 MB 和单文件 100 MB 限制 */ }
     else if (TEXT_EXT.includes(ext) || SCRIPT_EXT.includes(ext)) { if (f.size > LIMITS.text) fail(id, `文本文件太大（超过 2 MB）：${f.rel}`); }
-    else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/yml/json/md/txt、js/ts/lua/py、webp/png/jpg/jpeg、ogg/mp3/m4a、woff2）`);
+    else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/yml/json/md/txt、js/ts/lua/py、webp/png/jpg/jpeg/gif/avif、ogg/mp3/m4a/wav/flac/opus、woff2/woff/ttf/otf、webm/mp4）`);
   }
   if (total > LIMITS.total) fail(id, `整个故事包超过 300 MB（现在 ${(total / 1048576).toFixed(1)} MB）`);
   if (bad === before) console.log(`✅ [${id}] 通过`);

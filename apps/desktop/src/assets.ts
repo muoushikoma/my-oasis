@@ -1,6 +1,11 @@
 // 故事包内素材 → 浏览器可用的 blob 地址
 import type { StoryFiles } from "@my-oasis/schema";
-const MIME: Record<string, string> = { webp: "image/webp", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", ogg: "audio/ogg", mp3: "audio/mpeg", m4a: "audio/mp4", woff2: "font/woff2" };
+const MIME: Record<string, string> = {
+  webp: "image/webp", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", avif: "image/avif",
+  ogg: "audio/ogg", mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", flac: "audio/flac", opus: "audio/ogg",
+  woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", otf: "font/otf", webm: "video/webm", mp4: "video/mp4",
+};
+export type AssetKind = "image" | "audio" | "font" | "video" | "other";
 export class AssetBox {
   private urls = new Map<string, string>();
   constructor(private files: StoryFiles, private assets: Record<string, any> = {}) {}
@@ -20,11 +25,13 @@ export class AssetBox {
     return path ? (this.files.get(path) as Uint8Array | undefined) : undefined;
   }
   /** 登记过的素材 id 及其类型（按扩展名） */
-  list(): { id: string; kind: "image" | "audio" | "other" }[] {
+  list(): { id: string; kind: AssetKind }[] {
     return Object.entries(this.assets).map(([id, a]: [string, any]) => {
       const ext = String(a?.path ?? "").split(".").pop()!.toLowerCase();
-      if (a?.type === "image" || a?.type === "audio") return { id, kind: a.type };
-      return { id, kind: ["png", "webp", "jpg", "jpeg", "gif"].includes(ext) ? "image" : ["ogg", "mp3", "m4a", "wav"].includes(ext) ? "audio" : "other" };
+      if (["image", "audio", "font", "video"].includes(a?.type)) return { id, kind: a.type };
+      const kind: AssetKind = ["png", "webp", "jpg", "jpeg", "gif", "avif"].includes(ext) ? "image" : ["ogg", "mp3", "m4a", "wav", "flac", "opus"].includes(ext) ? "audio"
+        : ["woff2", "woff", "ttf", "otf"].includes(ext) ? "font" : ["webm", "mp4"].includes(ext) ? "video" : "other";
+      return { id, kind };
     });
   }
   meta(ref: unknown): any { return typeof ref === "string" && ref.startsWith("asset:") ? this.assets[ref.slice(6)] : undefined; }

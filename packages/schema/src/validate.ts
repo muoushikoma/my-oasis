@@ -3,7 +3,7 @@ import { parseDocument, LineCounter, isMap, isSeq, isPair, isScalar, type Docume
 import storyValidate from "./story.validate.generated.js";
 import { strFromU8 } from "fflate";
 import { parseExpr, collectRefs, ExprError, BUILTIN_FUNCS, RANDOM_FUNCS, DICE_FUNCS } from "./expr.js";
-import { ALLOWED_EXT, IMAGE_EXT, AUDIO_EXT, LIMITS, type StoryFiles } from "./files.js";
+import { ALLOWED_EXT, IMAGE_EXT, AUDIO_EXT, FONT_EXT, VIDEO_EXT, LIMITS, type StoryFiles } from "./files.js";
 import { DEFAULT_MAX_AUTHORITY, KNOWN_TEMPLATES, regionsOf, type Story, type Step, type StateDef } from "./types.js";
 
 export type Level = "error" | "warning" | "info";
@@ -249,8 +249,10 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
     const p = ["assets", id];
     if (!files.has(a.path)) { report("error", "missing_file", p, `素材「${id}」的文件「${a.path}」不在故事包里。`, "把文件放进故事包，或检查路径和大小写。", "§13.5", "path"); continue; }
     const ext = extOf(a.path);
-    if (a.type === "image" && !IMAGE_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为图片，但「${a.path}」不是 WebP/PNG/JPG。`, undefined, "§13.5", "path");
-    if (a.type === "audio" && !AUDIO_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为音频，但「${a.path}」不是 OGG/MP3/M4A。`, undefined, "§13.5", "path");
+    if (a.type === "image" && !IMAGE_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为图片，但「${a.path}」不是 WebP/PNG/JPG/GIF/AVIF。`, undefined, "§13.5", "path");
+    if (a.type === "audio" && !AUDIO_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为音频，但「${a.path}」不是 OGG/MP3/M4A/WAV/FLAC/OPUS。`, undefined, "§13.5", "path");
+    if (a.type === "font" && !FONT_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为字体，但「${a.path}」不是 WOFF2/WOFF/TTF/OTF。`, undefined, "§13.5", "path");
+    if (a.type === "video" && !VIDEO_EXT.includes(ext)) report("error", "asset_format", p, `素材「${id}」标为视频，但「${a.path}」不是 WebM/MP4。`, undefined, "§13.5", "path");
     if ((a.use === "music" || a.use === "sfx") && a.type !== "audio") report("error", "asset_use", p, `素材「${id}」用途是 ${a.use}，类型应为 audio。`, undefined, "§13.5", "use");
     if (["background", "portrait", "illustration", "icon"].includes(a.use) && a.type !== "image") report("error", "asset_use", p, `素材「${id}」用途是 ${a.use}，类型应为 image。`, undefined, "§13.5", "use");
   }
@@ -706,7 +708,7 @@ function realtimeChecks(s: Story, files: StoryFiles, report: Report) {
   if (s.realtime) {
     need04(["realtime"], "实时循环 realtime ");
     const rt: any = s.realtime;
-    ref(["realtime"], "on_tick", rt.on_tick); ref(["realtime"], "on_ai", rt.on_ai); ref(["realtime"], "on_resize", rt.on_resize);
+    ref(["realtime"], "on_tick", rt.on_tick); ref(["realtime"], "on_ai", rt.on_ai); ref(["realtime"], "on_resize", rt.on_resize); ref(["realtime"], "on_ui", (rt as any).on_ui);
     for (const [id, t] of Object.entries<any>(obj(rt.timers))) {
       const p = ["realtime", "timers", id];
       if (!t?.action && !t?.emit && !t?.script) report("error", "timer_body", p, `定时器「${id}」没写到点后做什么。`, "写 action、emit 或 script 中的至少一个。", "§14");

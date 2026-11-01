@@ -77,6 +77,14 @@ jobs:
           F=$(find src-tauri/gen/android/app/src/main -name MainActivity.kt | head -1)
           if [ -z "$F" ]; then echo "找不到生成的 MainActivity.kt"; exit 1; fi
           cp android/MainActivity.kt "$F"
+      # 故事能用的设备功能：振动（api.device.vibrate，普通权限，不弹窗）；软键盘弹出时页面缩小，输入框不被挡住
+      - name: 安卓清单：振动权限、软键盘
+        working-directory: apps/desktop
+        run: |
+          M=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.VIBRATE' "$M" || sed -i 's#<application#<uses-permission android:name="android.permission.VIBRATE" />\n    <application#' "$M"
+          grep -q 'windowSoftInputMode' "$M" || sed -i '0,/<activity /s#<activity #<activity android:windowSoftInputMode="adjustResize" #' "$M"
+          grep -n 'VIBRATE\|windowSoftInputMode' "$M"
       - name: 构建 APK（release，未签名）
         working-directory: apps/desktop
         env:

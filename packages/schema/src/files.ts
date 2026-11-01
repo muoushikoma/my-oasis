@@ -2,9 +2,12 @@ import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 /** 故事包里的文件：相对路径 → 内容 */
 export type StoryFiles = Map<string, Uint8Array>;
 
-export const ALLOWED_EXT = [".yaml", ".yml", ".json", ".md", ".txt", ".js", ".ts", ".lua", ".py", ".webp", ".png", ".jpg", ".jpeg", ".woff2", ".ogg", ".mp3", ".m4a"];
-export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg"];
-export const AUDIO_EXT = [".ogg", ".mp3", ".m4a"];
+export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg", ".gif", ".avif"];
+export const AUDIO_EXT = [".ogg", ".mp3", ".m4a", ".wav", ".flac", ".opus"];
+export const FONT_EXT = [".woff2", ".woff", ".ttf", ".otf"];
+/** 视频：只受单文件 100 MB / 整包 300 MB 限制；用 api.video.play 全屏播放 */
+export const VIDEO_EXT = [".webm", ".mp4"];
+export const ALLOWED_EXT = [".yaml", ".yml", ".json", ".md", ".txt", ".js", ".ts", ".lua", ".py", ...IMAGE_EXT, ...AUDIO_EXT, ...FONT_EXT, ...VIDEO_EXT];
 /** 体积上限（与 tools/stories/common.mjs、Rust package.rs 保持一致）。单个文件必须小于 100 MB（GitHub 硬性限制）。 */
 export const LIMITS = { packageBytes: 300 * 1024 * 1024, imageBytes: 10 * 1024 * 1024, audioBytes: 30 * 1024 * 1024, textBytes: 2 * 1024 * 1024, fileCount: 2000, fileBytes: 100 * 1024 * 1024 - 1 };
 

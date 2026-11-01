@@ -26,7 +26,48 @@ export function saveCheck(d: Omit<SaveData, "check">): string {
   return fnv(s).toString(16).padStart(8, "0") + fnv(s, 0x9e3779b9).toString(16).padStart(8, "0");
 }
 export interface ScreenInfo { width: number; height: number; dpr: number; takeover: boolean }
-export interface GameOptions { /** 玩家选的语言（zh/en），默认 zh */ lang?: Lang; seed?: number; scripts?: ScriptRunner; files?: StoryFiles }
+/** 跨存档的小型本地数据（最高分、解锁、设置），客户端按故事分开保存 */
+export interface StoryStorage { get(key: string): any; set(key: string, value: any): void }
+/** 把 api.overlay 的界面描述清洗成安全的纯数据：限制层数、节点数、字符串长度；只留白名单字段 */
+export function sanitizeOverlay(spec: any): any {
+  let n = 0;
+  const str = (v: any, max = 2000) => (typeof v === "string" ? v.slice(0, max) : v && typeof v === "object" && !Array.isArray(v) ? { zh: String(v.zh ?? "").slice(0, max), en: String(v.en ?? "").slice(0, max) } : v == null ? undefined : String(v).slice(0, max));
+  const numOrPct = (v: any) => (typeof v === "number" && isFinite(v) ? v : typeof v === "string" && /^-?\d+(\.\d+)?%$/.test(v) ? v : undefined);
+  const color = (v: any) => (typeof v === "string" && /^(#[0-9a-fA-F]{3,8}|rgba?\([\d.,\s%]+\)|[a-z]{3,20})$/.test(v) ? v : undefined);
+  const style = (o: any) => {
+    if (!o || typeof o !== "object") return undefined;
+    const r: any = {};
+    for (const k of ["size", "radius", "padding", "gap", "width", "height", "opacity", "border"]) { const v = numOrPct(o[k]); if (v !== undefined) r[k] = v; }
+    for (const k of ["color", "bg", "border_color"]) { const c = color(o[k]); if (c) r[k] = c; }
+    if (typeof o.font === "string") r.font = o.font.slice(0, 60).replace(/[^\w\s-]/g, "");
+    for (const k of ["bold", "italic", "scroll"]) if (typeof o[k] === "boolean") r[k] = o[k];
+    if (["left", "center", "right"].includes(o.align)) r.align = o.align;
+    return r;
+  };
+  const node = (x: any, depth: number): any => {
+    if (!x || typeof x !== "object" || depth > 8 || ++n > 300) return null;
+    const t = ["text", "rich", "button", "list", "image", "row", "column", "space"].includes(x.type) ? x.type : "text";
+    const o: any = { type: t, style: style(x.style ?? x) };
+    if (x.id != null) o.id = String(x.id).slice(0, 40);
+    if (t === "text" || t === "button") o.text = str(x.text ?? x.label);
+    if (t === "button" && typeof x.disabled === "boolean") o.disabled = x.disabled;
+    if (t === "rich") o.spans = (Array.isArray(x.spans) ? x.spans : []).slice(0, 100).map((sp: any) => ({ text: str(sp?.text), style: style(sp) }));
+    if (t === "list") o.items = (Array.isArray(x.items) ? x.items : []).slice(0, 200).map((it: any) => ({ id: String(it?.id ?? "").slice(0, 40), text: str(it?.text ?? it?.label), sub: str(it?.sub), disabled: !!it?.disabled }));
+    if (t === "image") { o.asset = String(x.asset ?? "").slice(0, 40); }
+    if (t === "row" || t === "column") o.children = (Array.isArray(x.children) ? x.children : []).map((c: any) => node(c, depth + 1)).filter(Boolean);
+    return o;
+  };
+  const s = spec && typeof spec === "object" ? spec : {};
+  const anchors = ["center", "top", "bottom", "left", "right", "top_left", "top_right", "bottom_left", "bottom_right"];
+  return {
+    x: numOrPct(s.x), y: numOrPct(s.y), w: numOrPct(s.w), h: numOrPct(s.h),
+    anchor: anchors.includes(s.anchor) ? s.anchor : "center",
+    modal: !!s.modal, z: Math.max(0, Math.min(100, Math.floor(Number(s.z) || 0))),
+    style: style(s.style),
+    children: (Array.isArray(s.children) ? s.children : []).map((c: any) => node(c, 1)).filter(Boolean),
+  };
+}
+export interface GameOptions { /** 玩家选的语言（zh/en），默认 zh */ lang?: Lang; seed?: number; storage?: StoryStorage; scripts?: ScriptRunner; files?: StoryFiles }
 
 class StepFail extends Error {}
 const LIMITS = { callDepth: 8, eventChain: 16, eventRepeat: 10 };
@@ -41,7 +82,21 @@ const clone = <T>(x: T): T => (x === undefined ? x : JSON.parse(JSON.stringify(x
 interface Ctx { params: Record<string, any>; locals: Record<string, any>; out?: any; event?: any; depth: number; caller: Caller; changed: Set<string>; render?: boolean }
 /** 实时模式产生的副作用：声音、异步 AI 请求（客户端取走后执行，不阻塞循环） */
 export interface SoundEffect { op: "play" | "stop"; id: string | null; volume?: number; loop?: boolean; channel?: string; fade_ms?: number; rate?: number; pan?: number }
-export interface Effects { sounds: SoundEffect[]; ai: { req: number; entry: string; input: string; data: any }[] }
+/** 客户端原生界面请求：文字输入框（支持中文输入法/安卓软键盘）、全屏视频 */
+export type UiEffect =
+  | { op: "text.open"; req: number; id: string; title?: any; placeholder?: any; value?: string; multiline?: boolean; max_length: number; ok?: any; cancel?: any }
+  | { op: "text.close" }
+  | { op: "video.play"; req: number; id: string; loop?: boolean; muted?: boolean; skippable?: boolean; fit?: "contain" | "cover" }
+  | { op: "video.stop" }
+  | { op: "overlay.show"; id: string; spec: any }
+  | { op: "overlay.hide"; id: string | null }
+  | { op: "shake"; amount: number; ms: number }
+  | { op: "fade"; color: string; out_ms: number; in_ms: number; hold_ms: number }
+  | { op: "vibrate"; pattern: number[] }
+  | { op: "copy"; text: string }
+  | { op: "save"; label: string }
+  | { op: "filter"; css: string };
+export interface Effects { sounds: SoundEffect[]; ai: { req: number; entry: string; input: string; data: any }[]; ui: UiEffect[] }
 export type DrawCmd = any[];
 
 export class Game {
@@ -353,6 +408,70 @@ export class Game {
             if (this.effects.sounds.length < 32) this.effects.sounds.push(m === "sound.play" ? { op: "play", id, ...pick } : { op: "stop", id, ...(pick.fade_ms !== undefined ? { fade_ms: pick.fade_ms } : {}) });
             return null;
           }
+          case "textinput.open": {
+            if (ctx.render) throw new Error("render 函数里不能打开输入框");
+            const o = a[0] && typeof a[0] === "object" ? a[0] : {};
+            const txt = (v: any) => (typeof v === "string" ? v.slice(0, 200) : v && typeof v === "object" ? { zh: String(v.zh ?? "").slice(0, 200), en: String(v.en ?? "").slice(0, 200) } : undefined);
+            const max = Math.max(1, Math.min(2000, Math.floor(Number(o.max_length) || 200)));
+            const req = ++this.uiSeq;
+            this.effects.ui = this.effects.ui.filter((u) => u.op !== "text.open"); // 同一时刻只有一个输入框
+            this.effects.ui.push({ op: "text.open", req, id: String(o.id ?? "text").slice(0, 40), title: txt(o.title), placeholder: txt(o.placeholder), value: typeof o.value === "string" ? o.value.slice(0, max) : "", multiline: !!o.multiline, max_length: max, ok: txt(o.ok), cancel: txt(o.cancel) });
+            return req;
+          }
+          case "textinput.close": if (ctx.render) throw new Error("render 函数里不能关闭输入框"); this.effects.ui.push({ op: "text.close" }); return null;
+          case "video.play": {
+            if (ctx.render) throw new Error("render 函数里不能播放视频");
+            const id = String(a[0]); const as: any = this.story.assets?.[id];
+            if (!as) throw new Error(`素材「${id}」没有登记`);
+            if (!/\.(webm|mp4)$/i.test(String(as.path ?? ""))) throw new Error(`素材「${id}」不是视频（webm/mp4）`);
+            const o = a[1] && typeof a[1] === "object" ? a[1] : {};
+            const req = ++this.uiSeq;
+            this.effects.ui.push({ op: "video.play", req, id, loop: !!o.loop, muted: !!o.muted, skippable: o.skippable !== false, fit: o.fit === "cover" ? "cover" : "contain" });
+            return req;
+          }
+          case "overlay.show": {
+            if (ctx.render) throw new Error("render 函数里不能改界面");
+            const json = JSON.stringify(a[1] ?? {}); if (json.length > 200_000) throw new Error("界面描述太大（最多 200 KB）");
+            this.effects.ui.push({ op: "overlay.show", id: a[0].slice(0, 40), spec: sanitizeOverlay(a[1]) }); return null;
+          }
+          case "overlay.hide": if (ctx.render) throw new Error("render 函数里不能改界面"); this.effects.ui.push({ op: "overlay.hide", id: a[0] }); return null;
+          case "scene.go": {
+            if (ctx.render) throw new Error("render 函数里不能切换场景");
+            if (!this.story.state?.scene) throw new Error("要用 api.scene.go，先在 state 里声明 scene（比如 type: string）");
+            this.write("scene", a[0], ctx);
+            const o = a[1] || {}; const ms = Math.max(0, Math.min(5000, Number(o.fade_ms ?? 400) || 0));
+            if (ms) this.effects.ui.push({ op: "fade", color: typeof o.color === "string" ? o.color.slice(0, 30) : "#000", out_ms: 0, in_ms: ms, hold_ms: 0 });
+            return null;
+          }
+          case "fx.shake": if (ctx.render) throw new Error("render 函数里不能触发特效"); this.effects.ui.push({ op: "shake", amount: Math.max(0, Math.min(64, Number(a[0]) || 0)), ms: Math.max(0, Math.min(5000, Number(a[1]) || 0)) }); return null;
+          case "fx.fade": {
+            if (ctx.render) throw new Error("render 函数里不能触发特效");
+            const o = a[0] || {}; const c = (v: any, d: number) => Math.max(0, Math.min(10000, Number(v ?? d) || 0));
+            this.effects.ui.push({ op: "fade", color: typeof o.color === "string" ? o.color.slice(0, 30) : "#000", out_ms: c(o.out_ms, 300), hold_ms: c(o.hold_ms, 0), in_ms: c(o.in_ms, 300) }); return null;
+          }
+          case "fx.filter": {
+            // 整个画面的后期滤镜（模糊、灰度、复古、色相、亮度、对比度、饱和度、反色），只接受数字，拼成 CSS filter
+            if (ctx.render) throw new Error("render 函数里不能改滤镜");
+            const o = a[0] || {}, parts: string[] = [];
+            const F: Record<string, [string, number, number]> = { blur: ["px", 0, 20], grayscale: ["", 0, 1], sepia: ["", 0, 1], hue: ["deg", -360, 360], brightness: ["", 0, 3], contrast: ["", 0, 3], saturate: ["", 0, 5], invert: ["", 0, 1] };
+            for (const [k, [u, lo, hi]] of Object.entries(F)) { const v = Number(o[k]); if (o[k] != null && isFinite(v)) parts.push(`${k === "hue" ? "hue-rotate" : k}(${Math.max(lo, Math.min(hi, v))}${u})`); }
+            this.effects.ui.push({ op: "filter", css: parts.join(" ") }); return null;
+          }
+          case "device.vibrate": {
+            if (ctx.render) throw new Error("render 函数里不能振动");
+            const pat = (Array.isArray(a[0]) ? a[0] : [a[0]]).slice(0, 20).map((x: any) => Math.max(0, Math.min(1000, Math.floor(Number(x) || 0))));
+            this.effects.ui.push({ op: "vibrate", pattern: pat }); return null;
+          }
+          case "device.copy": if (ctx.render) throw new Error("render 函数里不能复制"); this.effects.ui.push({ op: "copy", text: String(a[0]).slice(0, 10000) }); return null;
+          case "save.now": if (ctx.render) throw new Error("render 函数里不能存档"); this.effects.ui.push({ op: "save", label: String(a[0]).slice(0, 60) }); return null;
+          case "storage.get": { const v = this.opts.storage?.get(String(a[0]).slice(0, 80)); return v === undefined ? null : clone(v); }
+          case "storage.set": {
+            if (ctx.render) throw new Error("render 函数里不能写本地数据");
+            const k = String(a[0]).slice(0, 80), json = JSON.stringify(a[1]);
+            if (json && json.length > 64 * 1024) throw new Error("一条本地数据最多 64 KB");
+            this.opts.storage?.set(k, a[1]); return null;
+          }
+          case "video.stop": if (ctx.render) throw new Error("render 函数里不能停止视频"); this.effects.ui.push({ op: "video.stop" }); return null;
           case "ai.request": {
             if (ctx.render) throw new Error("render 函数里不能请求 AI");
             const ep = this.story.ai?.entry_points?.[a[0]];
@@ -372,7 +491,8 @@ export class Game {
 
   // ---------- 实时（oasis/0.4） ----------
   input: InputState = { held: {}, pressed: {}, joystick: { x: 0, y: 0 }, pointer: { x: 0, y: 0, down: false } };
-  effects: Effects = { sounds: [], ai: [] };
+  effects: Effects = { sounds: [], ai: [], ui: [] };
+  private uiSeq = 0;
   private rtDt = 0; private rtAlpha = 0; private drawBuf: DrawCmd[] = []; private aiSeq = 0; private aiInFlight = 0; private lastRtError = "";
   /** 客户端可用区域（CSS 像素）与设备像素比；接管模式下就是整个窗口/屏幕 */
   screen: ScreenInfo = { width: 0, height: 0, dpr: 1, takeover: false };
@@ -446,7 +566,20 @@ export class Game {
     this.restore(s);
     return this.drawBuf;
   }
-  takeEffects(): Effects { const e = this.effects; this.effects = { sounds: [], ai: [] }; return e; }
+  takeEffects(): Effects { const e = this.effects; this.effects = { sounds: [], ai: [], ui: [] }; return e; }
+  /**
+   * 原生界面的结果回来后调用：交给 realtime.on_ui。
+   * 输入框：{ type: "text", request, id, text, cancelled }；视频：{ type: "video", request, id, ended, skipped }；
+   * 界面层：{ type: "button", overlay, id } / { type: "select", overlay, list, id }
+   */
+  deliverUi(res: Record<string, any> & { type: "text" | "video" | "button" | "select"; id: string }) {
+    const on = (this.story.realtime as any)?.on_ui; if (!on || this.ending) return;
+    if (res.type === "text" && typeof res.text === "string") res = { ...res, text: res.text.slice(0, 2000) };
+    const s = this.snap(); const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
+    try { this.runScript(on, res, ctx, this.rtLimits()); }
+    catch (e: any) { this.restore(s); this.rtError("on_ui", e); return; }
+    this.dispatch(ctx.changed); this.checkEndings();
+  }
   /** 异步 AI 结果回来后调用：交给 realtime.on_ai（params: request, entry, data, text, error） */
   deliverAi(res: { req: number; entry: string; data?: any; text?: string; error?: string }) {
     this.aiInFlight = Math.max(0, this.aiInFlight - 1);
