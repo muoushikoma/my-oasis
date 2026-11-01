@@ -41,3 +41,7 @@ fork からの PR は **`stories/` 以外を変更できません**。メンテ�
 | [セキュリティポリシー](SECURITY.md) | 脆弱性の非公開報告方法 |
 
 ドキュメントは簡体字中国語で書かれています。
+
+## Code signing policy
+
+[Code signing policy](docs/code-signing.md) · [Privacy policy](docs/privacy.md)

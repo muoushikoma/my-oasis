@@ -1,0 +1,119 @@
+# 自动安全审核：每个 PR（包括 fork 来的）先自动过一遍明显的问题。
+# 安全设计：只用 pull_request（不用 pull_request_target），不读取任何 Secrets，默认只读权限；
+# fork 的 PR 不会拿到写权限，所以结果写在 job summary 里；同仓库的 PR 额外发一条汇总评论。
+# 红灯 = 拦下；黄灯 = 需要家驹看一眼；绿灯 = 没发现问题（最终仍由家驹决定合不合）。
+name: security-review
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: security-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  review:
+    name: 安全审核 / security review
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OUT_DIR: ${{ runner.temp }}/security-review
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: 扫描改动 / scan the diff
+        run: node tools/security/scan.mjs diff "origin/${{ github.base_ref }}"
+      - name: 密钥泄露检查 gitleaks / secrets
+        run: |
+          set -e
+          V=8.28.0
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" | tar xz -C "$RUNNER_TEMP" gitleaks
+          if "$RUNNER_TEMP/gitleaks" git --no-banner --redact --log-opts="origin/${{ github.base_ref }}..HEAD" --report-path "$RUNNER_TEMP/gitleaks.json" .; then
+            node tools/security/scan.mjs check "gitleaks" green "没发现密钥" "no secrets found"
+          else
+            node tools/security/scan.mjs check "gitleaks" red "发现疑似密钥（见日志，已打码）" "possible secret committed (see log, redacted)"
+          fi
+      - name: 故事校验（格式、体积上限、单文件 100MB）/ story validator
+        run: |
+          npm ci --ignore-scripts --prefix tools/stories > /dev/null
+          if node tools/stories/validate.mjs; then
+            node tools/security/scan.mjs check "故事校验 stories" green "格式和体积都合规" "format and size limits OK"
+          else
+            node tools/security/scan.mjs check "故事校验 stories" red "故事不合规（见日志）" "story validation failed (see log)"
+          fi
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - name: 依赖漏洞 pnpm audit / npm dependencies
+        run: |
+          if pnpm audit --prod --audit-level=critical > "$RUNNER_TEMP/audit.txt" 2>&1; then
+            if pnpm audit --prod --audit-level=high > /dev/null 2>&1; then
+              node tools/security/scan.mjs check "pnpm audit" green "依赖没有已知高危漏洞" "no known high/critical vulnerabilities"
+            else
+              node tools/security/scan.mjs check "pnpm audit" yellow "依赖有高危漏洞，建议升级" "high-severity dependency vulnerability"
+            fi
+          else
+            cat "$RUNNER_TEMP/audit.txt" | tail -40
+            node tools/security/scan.mjs check "pnpm audit" yellow "依赖有严重漏洞（可能是原来就有的），需要看一下" "critical dependency vulnerability (may pre-exist)"
+          fi
+      - name: 依赖漏洞 cargo audit / Rust dependencies
+        run: |
+          V=0.21.2
+          if curl -sSfL "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${V}/cargo-audit-x86_64-unknown-linux-musl-v${V}.tgz" | tar xz -C "$RUNNER_TEMP" --strip-components=1; then
+            if "$RUNNER_TEMP/cargo-audit" audit --file Cargo.lock; then
+              node tools/security/scan.mjs check "cargo audit" green "Rust 依赖没有已知漏洞" "no known Rust advisories"
+            else
+              node tools/security/scan.mjs check "cargo audit" yellow "Rust 依赖有已知漏洞或已停更（见日志）" "Rust advisories found (see log)"
+            fi
+          else
+            node tools/security/scan.mjs check "cargo audit" yellow "cargo audit 没能下载，没跑" "cargo audit unavailable, skipped"
+          fi
+      - name: 汇总 / summary
+        id: report
+        if: always()
+        run: node tools/security/scan.mjs report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-review
+          path: ${{ runner.temp }}/security-review
+          retention-days: 14
+
+  # 同仓库 PR 才发评论（fork 的 PR 没有写权限，看 job summary 即可）。这里不检出 PR 代码。
+  comment:
+    needs: review
+    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: security-review, path: sr }
+      - name: 发或更新汇总评论
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          [ -f sr/comment.md ] || exit 0
+          ID=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- my-oasis-security-review -->")) | .id' | head -1)
+          if [ -n "$ID" ]; then gh api -X PATCH "repos/$REPO/issues/comments/$ID" -F body=@sr/comment.md > /dev/null
+          else gh api "repos/$REPO/issues/$PR/comments" -F body=@sr/comment.md > /dev/null; fi
+
+  codeql:
+    name: CodeQL (JS/TS)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
