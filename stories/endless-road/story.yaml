@@ -11,7 +11,7 @@ meta:
     zh: AI 把引擎掷出的每个路上事件写成一张事件卡（名字、描述、2~3 个有取舍的选项），并挑选画面模块；数值由规则计算。
     en: The AI writes each road event as a card (name, scene, 2–3 options) and picks its visuals; the rules handle all numbers.
   est_tokens_per_min: 5000
-  platforms: [desktop, mobile]
+  platforms: [desktop]   # 手机端暂不支持：当前客户端在手机上会把各区域压进一屏，内容多的面板会重叠
   description:
     zh: |
       2D 像素横版冒险。你从老旅店出发，一路向东。每走一里吃掉 1 份口粮，并遇到一个由 AI 现场写成的事件：怪物、断桥、行商、古老的祭坛、两难的抉择……每次冒险都不一样。
@@ -144,11 +144,12 @@ state:
   threat:    { type: number, init: 1, integer: true, visible: ai, desc: 威胁等级，越大越危险 }
   card:      { type: json, init: {}, visible: none }
   foe:       { type: json, init: {}, visible: none }
-  next_kind: { type: string, init: "", visible: none }
+  next:      { type: json, init: {}, visible: none, desc: 提前掷好、正在或已经由 AI 写好的下一里事件 }
   camped:    { type: bool, init: false, visible: player }
   # 面板文字（规则生成）
   situation:   { type: string, init: "", visible: player, label: { zh: 眼前, en: Right now } }
-  ui_card:     { type: json, init: { mode: none }, visible: player, desc: 事件卡/商店要显示的内容（给自定义组件 ui/card.html） }
+  next_ready:  { type: bool, init: false, visible: player, desc: 下一里的事件卡是否已经由 AI 提前写好 }
+  ui_card:     { type: json, init: { mode: none }, visible: player, desc: 事件卡/商店要显示的内容（给自定义组件 ui/panel.html） }
   pack_text:   { type: string, init: "", visible: player, label: { zh: 行囊, en: Pack } }
   gear_text:   { type: string, init: "", visible: player, label: { zh: 强化, en: Upgrades } }
   relic_text:  { type: string, init: "", visible: player, label: { zh: 遗物, en: Relics } }
@@ -159,6 +160,7 @@ realtime:
   tick_ms: 16
   interpolate: true
   on_tick: scripts/scene.js#tick
+  on_ai: scripts/road.js#on_ai
   timers:
     card_watch: { every_ms: 500, script: scripts/road.js#watch }
 
@@ -181,8 +183,6 @@ actions:
     callable_by: [player]
     steps:
       - call: walk_rules
-      - if: "state.phase == 'card'"
-        then: [ { emit: encounter } ]
       - if: "state.distance % 10 == 0"
         then: [ { emit: milestone } ]
   walk_rules:
@@ -230,39 +230,6 @@ actions:
     require_message: { zh: 附近没有行商。, en: There is no peddler here. }
     callable_by: [player]
     script: scripts/road.js#trade
-  apply_ai:
-    callable_by: [rules]
-    params:
-      title:   { type: string, required: false }
-      text:    { type: string, required: false }
-      foe:     { type: string, required: false }
-      relic:   { type: string, required: false }
-      sprite:  { type: string, required: false }
-      tint:    { type: string, required: false }
-      time:    { type: string, required: false }
-      weather: { type: string, required: false }
-      o1_label: { type: string, required: false }
-      o1_verb: { type: string, required: false }
-      o1_ability: { type: string, required: false }
-      o1_diff: { type: string, required: false }
-      o1_reward: { type: string, required: false }
-      o1_risk: { type: string, required: false }
-      o1_cost: { type: string, required: false }
-      o2_label: { type: string, required: false }
-      o2_verb: { type: string, required: false }
-      o2_ability: { type: string, required: false }
-      o2_diff: { type: string, required: false }
-      o2_reward: { type: string, required: false }
-      o2_risk: { type: string, required: false }
-      o2_cost: { type: string, required: false }
-      o3_label: { type: string, required: false }
-      o3_verb: { type: string, required: false }
-      o3_ability: { type: string, required: false }
-      o3_diff: { type: string, required: false }
-      o3_reward: { type: string, required: false }
-      o3_risk: { type: string, required: false }
-      o3_cost: { type: string, required: false }
-    script: scripts/road.js#apply_ai
 
 endings:
   list:
@@ -293,10 +260,10 @@ ai:
   entry_points:
     road_event:
       kind: generate
-      trigger: event:encounter
+      trigger: script
       prompt: |
-        冒险者走到了第 {{state.distance}} 里，地区：{{state.biome}}。
-        引擎掷出的事件类别：{{state.event_kind}}，强度：{{state.event_tier}}，威胁等级：{{state.threat}}。
+        要写的是第 {{event.mile}} 里的事件（冒险者现在在第 {{state.distance}} 里，这张卡可能是提前写好的），地区：{{event.biome}}。
+        引擎掷出的事件类别：{{event.kind}}，强度：{{event.tier}}，威胁等级：{{event.threat}}。
         冒险者：{{state.level}} 级，生命 {{state.hp}}/{{state.max_hp}}，属性 {{state.abil}}；口粮 {{state.rations}}，药水 {{state.potions}}，金币 {{state.gold}}，铁料 {{state.iron}}，魔晶 {{state.essence}}；遗物 {{state.relics}}；状态 {{state.status}}；委托 {{state.quest}}。
 
         请把这个事件写成一张事件卡：
@@ -314,7 +281,7 @@ ai:
           - encounter：遇到会说话的人或生物，可以交易、帮忙、接委托，也可能翻脸。
           - discovery：废墟、遗物、尸骸、宝箱。hazard：环境险阻（桥、风暴、流沙、落石）。
           - mystic：祭坛、精灵、诅咒之物、许愿泉。dilemma：两难的道德选择，让每个选项都有代价。
-          - quest：委托（{{state.quest}}）的结局，要呼应委托的名字，奖励可以给 relic。
+          - quest：委托「{{event.quest}}」的结局，要呼应委托的名字，奖励可以给 relic。
           - trade：写一位有特点的行商（选项留空，规则会打开商店）。rest：写一处安全的歇脚地（选项留空）。
         - 选项要有不同的取舍：比如一个稳妥但收获小，一个冒险但收获大，一个花资源换确定结果。结合冒险者当前缺什么来设计。
         - relic（可选）：如果有选项给 relic，挑一件：lucky_charm 幸运符、vampiric_blade 吸血之刃、traveler_boots 旅人靴、guardian_amulet 守护护符、hunter_horn 猎人号角、alchemist_flask 炼金瓶、star_chart 星图、undying_ember 不灭余烬。
@@ -359,40 +326,8 @@ ai:
             tint: "enum:[none,red,green,blue,gold,shadow,pale,purple]"
             time: "enum:[day,dusk,night]"
             weather: "enum:[clear,rain,snow,fog,embers,fireflies,leaves]"
-          then:
-            - call: apply_ai
-              params:
-                title: out.title
-                text: out.text
-                foe: out.foe
-                relic: out.relic
-                sprite: out.sprite
-                tint: out.tint
-                time: out.time
-                weather: out.weather
-                o1_label: out.o1_label
-                o1_verb: out.o1_verb
-                o1_ability: out.o1_ability
-                o1_diff: out.o1_diff
-                o1_reward: out.o1_reward
-                o1_risk: out.o1_risk
-                o1_cost: out.o1_cost
-                o2_label: out.o2_label
-                o2_verb: out.o2_verb
-                o2_ability: out.o2_ability
-                o2_diff: out.o2_diff
-                o2_reward: out.o2_reward
-                o2_risk: out.o2_risk
-                o2_cost: out.o2_cost
-                o3_label: out.o3_label
-                o3_verb: out.o3_verb
-                o3_ability: out.o3_ability
-                o3_diff: out.o3_diff
-                o3_reward: out.o3_reward
-                o3_risk: out.o3_risk
-                o3_cost: out.o3_cost
       context:
-        state: [distance, biome, event_kind, event_tier, threat, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art]
+        state: [distance, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art]
         history_turns: 6
         setting: false
       temperature: 1.0
@@ -433,8 +368,8 @@ ui:
     font: { body: serif, size: 16 }
   layout:
     template: custom
-    grid: ["stage card", "log side"]
-    columns: ["minmax(0, 3fr)", "minmax(300px, 2fr)"]
+    grid: ["stage side", "log side"]
+    columns: ["minmax(0, 3fr)", "minmax(340px, 2fr)"]
     rows: ["auto", "minmax(240px, 1fr)"]
   components:
     stage:
@@ -444,98 +379,58 @@ ui:
       height: 144
       pixelated: true
       render: scripts/scene.js#draw
-    # 主操作面板（自定义组件）：状态条 + 事件卡 / 商店 + 行动按钮
-    event_card:
+    # 三个自定义面板共用 ui/panel.html，用 config.view 区分
+    action_bar:
       type: custom
-      region: card
-      src: ui/card.html
-      actions: [choose, trade, walk, camp, potion, attack, flee]
-      height: 220
+      region: side
+      src: ui/panel.html
+      config: { view: bar }
+      actions: [walk, camp, potion, attack, flee]
+      height: 96
       player_can_hide: false
-      fallback: { zh: 操作面板（自定义组件）已在设置里关闭。请用右下方的备用按钮操作，事件选项列在“眼前”里。, en: "The control panel (a custom component) is turned off in Settings. Use the backup buttons at the bottom right; event options are listed under Right now." }
+      fallback: { zh: 行动栏（自定义组件）已关闭，请用左下方的备用按钮。, en: "The action bar (a custom component) is off — use the backup buttons at the bottom left." }
+    event_panel:
+      type: custom
+      region: side
+      src: ui/panel.html
+      config: { view: event }
+      actions: [choose, trade]
+      height: 260
+      player_can_hide: false
+      fallback: { zh: 事件面板（自定义组件）已关闭。每张事件卡的选项会写在日志里，请用备用按钮按编号选择。, en: "The event panel (a custom component) is off. Each card's options are written to the log; pick by number with the backup buttons." }
+    info_panel:
+      type: custom
+      region: side
+      src: ui/panel.html
+      config: { view: info }
+      height: 300
+      fallback: { zh: 信息面板（自定义组件）已关闭。, en: The info panel (a custom component) is off. }
+    vista_img:
+      type: image
+      region: side
+      label: { zh: 远方（每进入新地区由 AI 绘制）, en: Ahead (painted by the AI for each new region) }
+      generated: vista
+      fit: cover
     log:
       type: text-log
       region: log
       content: ai
-    now:
-      type: text-block
-      region: side
-      label: { zh: 眼前, en: Right now }
-      bind: situation
-    vitals:
-      type: stat-list
-      region: side
-      label: { zh: 冒险者, en: Adventurer }
-      bind: [hp, max_hp, level, xp, xp_next, ac]
-    pack:
-      type: text-block
-      region: side
-      label: { zh: 行囊, en: Pack }
-      bind: pack_text
-    upgrades:
-      type: text-block
-      region: side
-      label: { zh: 强化, en: Upgrades }
-      bind: gear_text
-    relic_block:
-      type: text-block
-      region: side
-      label: { zh: 遗物, en: Relics }
-      bind: relic_text
-    status_block:
-      type: text-block
-      region: side
-      label: { zh: 状态, en: Status }
-      bind: status_text
-    record:
-      type: stat-list
-      region: side
-      label: { zh: 旅程, en: Journey }
-      bind: [distance, best, kills]
-    abil_block:
-      type: text-block
-      region: side
-      label: { zh: 属性, en: Abilities }
-      bind: abilities
-    vista_img:
-      type: image
-      region: side
-      label: { zh: 远方, en: Ahead }
-      generated: vista
-      fit: cover
-    # 备用按钮：关掉自定义组件时用（平时可以在“外观”里隐藏）
-    backup_road:
+    # 备用按钮：只在设置里关掉自定义组件时需要（平时可在“外观”里隐藏）
+    backup:
       type: choice-buttons
       region: side
-      label: { zh: 备用按钮：行动, en: "Backup: actions" }
+      label: { zh: 备用按钮（关闭自定义组件时用）, en: Backup buttons (when custom components are off) }
       choices:
-        - { label: { zh: 继续前进, en: Walk on }, action: walk }
+        - { label: { zh: 前进, en: Walk }, action: walk }
         - { label: { zh: 扎营, en: Camp }, action: camp }
-        - { label: { zh: 喝药水, en: Potion }, action: potion }
+        - { label: { zh: 药水, en: Potion }, action: potion }
         - { label: { zh: 攻击, en: Attack }, action: attack }
         - { label: { zh: 逃跑, en: Flee }, action: flee }
-    backup_card:
-      type: choice-buttons
-      region: side
-      label: { zh: 备用按钮：事件卡, en: "Backup: event card" }
-      choices:
-        - { label: { zh: 选项 1, en: Option 1 }, action: choose, params: { id: o1 } }
-        - { label: { zh: 选项 2, en: Option 2 }, action: choose, params: { id: o2 } }
-        - { label: { zh: 选项 3, en: Option 3 }, action: choose, params: { id: o3 } }
-        - { label: { zh: 先喝药水, en: Potion first }, action: choose, params: { id: potion } }
-        - { label: { zh: 扎营（营地）, en: Camp (safe spot) }, action: choose, params: { id: camp } }
+        - { label: { zh: 选项1, en: Opt 1 }, action: choose, params: { id: o1 } }
+        - { label: { zh: 选项2, en: Opt 2 }, action: choose, params: { id: o2 } }
+        - { label: { zh: 选项3, en: Opt 3 }, action: choose, params: { id: o3 } }
         - { label: { zh: 离开, en: Leave }, action: choose, params: { id: leave } }
-        - { label: { zh: 重试 AI, en: Retry AI }, action: choose, params: { id: retry } }
-    backup_shop:
-      type: choice-buttons
-      region: side
-      label: { zh: 备用按钮：行商, en: "Backup: peddler" }
-      choices:
-        - { label: { zh: 买口粮, en: Buy ration }, action: trade, params: { id: buy_ration } }
-        - { label: { zh: 买药水, en: Buy potion }, action: trade, params: { id: buy_potion } }
-        - { label: { zh: 卖铁料, en: Sell iron }, action: trade, params: { id: sell_iron } }
-        - { label: { zh: 强化武器, en: Upgrade weapon }, action: trade, params: { id: up_weapon } }
-        - { label: { zh: 强化护甲, en: Upgrade armor }, action: trade, params: { id: up_armor } }
-        - { label: { zh: 强化背包, en: Upgrade pack }, action: trade, params: { id: up_pack } }
-        - { label: { zh: 强化营具, en: Upgrade camp kit }, action: trade, params: { id: up_kit } }
-        - { label: { zh: 告别行商, en: Leave }, action: trade, params: { id: leave } }
+        - { label: { zh: 重试AI, en: Retry AI }, action: choose, params: { id: retry } }
+        - { label: { zh: 买口粮, en: Ration }, action: trade, params: { id: buy_ration } }
+        - { label: { zh: 买药水, en: Potion }, action: trade, params: { id: buy_potion } }
+        - { label: { zh: 告别行商, en: Leave shop }, action: trade, params: { id: leave } }

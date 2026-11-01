@@ -177,13 +177,6 @@ function dropSubject(api, dying) {
 }
 
 // ===== 事件卡 =====
-function rollKind(api) {
-  const w = Object.assign({}, BASE_WEIGHT); const adj = BIOME_WEIGHT[get(api, "biome")] || {};
-  for (const k in adj) w[k] = Math.max(1, (w[k] || 0) + adj[k]);
-  let k = api.random.weighted(w);
-  if (status(api).scouted && k === "combat") k = api.random.weighted(w);
-  return k;
-}
 function foeFor(api, name, boss, threat) {
   const t = threat;
   const f = { name, hp: 3 + 4 * t + api.random.int(0, t), max_hp: 0, ac: Math.min(19, 10 + Math.floor((t + 1) / 2)), atk: 1 + Math.floor(t * 0.6),
@@ -287,9 +280,9 @@ function optText(api, o, kind) {
   return `🎲 ${T2(api, ABIL_NAME[o.ability])} DC ${o.dc} · ${L(api, "成", "pass")}：${win} · ${L(api, "败", "fail")}：${lose}`;
 }
 
-// 生成一张事件卡（先是“正在描绘”的空卡，等 AI；超时就用模板）
-function spawn(api, kind, tier, boss) {
-  const threat = Math.max(1, threatNow(api) + tier);
+// 生成一张事件卡（内容由 AI 写：可能已经提前写好，也可能还在路上）
+function spawn(api, kind, tier, boss, presetThreat) {
+  const threat = presetThreat || Math.max(1, threatNow(api) + tier);
   set(api, "event_kind", kind);
   set(api, "threat", threat);
   set(api, "event_tier", boss ? "boss" : ["weak", "normal", "tough", "elite"][tier + 1] || "normal");
@@ -334,6 +327,7 @@ function fillCard(api, draft, fromAi) {
   set(api, "card", card);
   reveal(api);
   if (card.text) log(api, `📖 ${card.title}：${card.text}`);
+  if (opts.length) log(api, `${L(api, "选项", "Options")}：` + opts.map((o, i) => `${i + 1}. ${o.label}（${optText(api, o, kind)}）`).join("  "));
   if (kind === "trade") set(api, "phase", "shop");
   if (kind === "combat" && card.boss) { /* 守关者卡片只有迎战 */ }
 }
@@ -522,7 +516,8 @@ function refresh(api) {
   const sts = Object.keys(st).filter((k) => st[k] > 0).map((k) => `${L(api, STATUS[k][0], STATUS[k][1])}${k === "exhausted" ? "" : ` ${st[k]}${L(api, "里", "mi")}`}（${L(api, STATUS[k][2], STATUS[k][3])}）`);
   const q = get(api, "quest");
   if (q && q.due) sts.push(L(api, `📜 委托「${q.title}」：第 ${q.due} 里`, `📜 Errand "${q.title}": mile ${q.due}`));
-  if (has(api, "star_chart") && get(api, "next_kind")) sts.push(L(api, `🗺 下一里：${KIND_NAME[get(api, "next_kind")][0]}`, `🗺 Next mile: ${KIND_NAME[get(api, "next_kind")][1]}`));
+  const nx = get(api, "next"); set(api, "next_ready", !!(nx && nx.draft));
+  if (has(api, "star_chart") && nx && nx.kind) sts.push(L(api, `🗺 下一里：${KIND_NAME[nx.kind][0]}`, `🗺 Next mile: ${KIND_NAME[nx.kind][1]}`));
   set(api, "status_text", en(api, sts.length ? sts.join("\n") : L(api, "（无）", "(none)")));
   const ph = get(api, "phase"), card = get(api, "card") || {};
   let s;
@@ -531,12 +526,9 @@ function refresh(api) {
   else s = L(api, `前路漫漫。你身在${biomeName(api)}，第 ${get(api, "distance")} 里。`, `The road goes on. You are in the ${biomeName(api)}, mile ${get(api, "distance")}.`);
   set(api, "event_title", ph === "none" ? "" : card.title || "");
   showUi(api);
-  // 侧栏“眼前”也列出选项（关掉自定义组件时用备用按钮按编号选）
-  const ui = get(api, "ui_card");
-  if (ui && (ui.mode === "card" || ui.mode === "shop") && ui.items) s += "\n" + ui.items.map((it, i) => `${ui.mode === "card" ? (/^o\d$/.test(it.id) ? it.id.slice(1) + ". " : "· ") : "· "}${it.text}${it.sub ? ` — ${it.sub}` : ""}`).join("\n");
   set(api, "situation", en(api, s));
 }
-// 事件卡和商店：把要显示的内容写进玩家可见的状态 ui_card，由自定义组件 ui/card.html 显示；
+// 事件卡和商店：把要显示的内容写进玩家可见的状态 ui_card，由自定义组件 ui/panel.html 显示；
 // 点选项会调用 choose / trade 动作。关掉自定义组件时，侧栏“眼前”里也会列出选项，配合备用按钮使用。
 function showUi(api) {
   const ph = get(api, "phase"), card = get(api, "card") || {};
@@ -606,10 +598,70 @@ export function setup(api) {
   set(api, "scene_fx", { scroll: 0, target: 0, prev: null, cur: null, fx: [], busy: false });
   set(api, "art", { time: "day", weather: "clear" });
   const best = api.storage.get("best"); if (typeof best === "number") set(api, "best", best);
+  rollNext(api, 1);
   log(api, L(api, `🎲 掷出属性：${abilText(api)}`, `🎲 Rolled abilities: ${abilText(api)}`));
   log(api, L(api, `生命 ${hp} · AC ${calcAc(api)} · 长剑 1d10${sign(atkMod(api))}`, `HP ${hp} · AC ${calcAc(api)} · Longsword 1d10${sign(atkMod(api))}`));
   refresh(api);
   return true;
+}
+
+// ===== 提前生成：始终比玩家多准备一里 =====
+// next = { mile, kind, tier, threat, boss, biome, req, born, draft, failed }
+// 掷出下一里的事件后立刻在后台请求 AI（api.ai.request，不阻塞游戏）；玩家走到时直接用写好的卡。
+function rollNext(api, mile) {
+  const q = get(api, "quest");
+  const cur = get(api, "biome");
+  const biome = mile % BIOME_EVERY === 0 ? api.random.pick(Object.keys(BIOMES).filter((x) => x !== cur)) : cur;
+  const base = 1 + Math.floor(mile / 8) + Math.floor(Math.pow(mile / 35, 2));
+  let ev;
+  if (mile % BOSS_EVERY === 0) ev = { kind: "combat", tier: mile === BOSS_EVERY ? 1 : 2, boss: true };
+  else if (q && q.due && mile >= q.due) ev = { kind: "quest", tier: 1, boss: false };
+  else {
+    const w = Object.assign({}, BASE_WEIGHT); const adj = BIOME_WEIGHT[biome] || {};
+    for (const k in adj) w[k] = Math.max(1, (w[k] || 0) + adj[k]);
+    let k = api.random.weighted(w); if (status(api).scouted && k === "combat") k = api.random.weighted(w);
+    ev = { kind: k, tier: Number(api.random.weighted({ "-1": 30, "0": 50, "1": 15, "2": 5 })), boss: false };
+  }
+  ev.mile = mile; ev.biome = biome; ev.threat = Math.max(1, base + ev.tier);
+  ev.req = 0; ev.draft = null; ev.failed = false; ev.born = api.time;
+  set(api, "next", ev);
+  askAi(api, "next");
+}
+// 发出写卡请求：which = "next"（提前写下一里）或 "card"（眼前这张还没写好）
+function askAi(api, which) {
+  const ev = which === "next" ? get(api, "next") : get(api, "card");
+  if (!ev || !ev.kind) return;
+  const tierName = ev.boss ? "boss" : ["weak", "normal", "tough", "elite"][(ev.tier || 0) + 1] || "normal";
+  const q = get(api, "quest") || {};
+  const req = api.ai.request("road_event", "", { mile: ev.mile, kind: ev.kind, tier: tierName, threat: ev.threat, biome: ev.biome || get(api, "biome"), boss: !!ev.boss, quest: q.title || "" });
+  if (req == null) { ev.failed = true; } else { ev.req = req; ev.born = api.time; ev.failed = false; }
+  set(api, which, ev);
+}
+// AI 的原始输出 → 卡片草稿
+function draftFrom(p, card) {
+  const draft = { title: p.title, text: p.text, foe: p.foe, options: [] };
+  for (const i of [1, 2, 3]) {
+    const verb = p[`o${i}_verb`]; if (!verb || verb === "none") continue;
+    draft.options.push({ label: p[`o${i}_label`], verb, ability: p[`o${i}_ability`], diff: p[`o${i}_diff`], reward: p[`o${i}_reward`], risk: p[`o${i}_risk`], cost: p[`o${i}_cost`], relic: p.relic });
+  }
+  if (card.kind === "combat" && !draft.foe) draft.foe = card.foe;
+  return draft;
+}
+// 把 AI 写好的内容放到眼前这张卡上（文字、选项、画面模块）
+function applyDraft(api, p) {
+  const card = get(api, "card");
+  fillCard(api, draftFrom(p, card), true);
+  const s = sfx(api);
+  if (s.cur) {
+    const allowed = card.kind === "combat" ? (card.boss ? FOE_SPRITES : FOE_SPRITES.filter((x) => x !== "warden")) : KIND_SPRITES[card.kind] || [];
+    if (allowed.indexOf(p.sprite) >= 0) s.cur.sprite = p.sprite;
+    if (TINTS.indexOf(p.tint) >= 0) s.cur.tint = p.tint;
+    s.cur.pending = false; saveFx(api, s);
+  }
+  const art = get(api, "art");
+  if (["day", "dusk", "night"].indexOf(p.time) >= 0) art.time = p.time;
+  if (WEATHER.indexOf(p.weather) >= 0) art.weather = p.weather;
+  set(api, "art", art);
 }
 
 export function walk_rules(api) {
@@ -617,9 +669,13 @@ export function walk_rules(api) {
   set(api, "distance", dist); set(api, "camped", false);
   if (dist > get(api, "best")) { set(api, "best", dist); api.storage.set("best", dist); }
   { const s = sfx(api); s.scroll = Math.max(s.scroll, s.target); s.target = s.scroll + MILE_PX; if (s.cur) { s.prev = s.cur; s.cur = null; } saveFx(api, s); }
-  if (dist % BIOME_EVERY === 0) {
-    const cur = get(api, "biome"); const next = api.random.pick(Object.keys(BIOMES).filter((b) => b !== cur));
-    set(api, "biome", next); set(api, "art", { time: get(api, "art").time, weather: BIOME_WEATHER[next] });
+  // 预先准备好的这一里（没有就现场掷）
+  let ev = get(api, "next");
+  if (!ev || ev.mile !== dist) { rollNext(api, dist); ev = get(api, "next"); }
+  const q = get(api, "quest");
+  if (ev.kind === "quest" && !(q && q.due)) { rollNext(api, dist); ev = get(api, "next"); } // 委托已经放弃了
+  if (ev.biome !== get(api, "biome")) {
+    set(api, "biome", ev.biome); set(api, "art", { time: get(api, "art").time, weather: BIOME_WEATHER[ev.biome] });
     log(api, L(api, `🗺 道路把你带进了${biomeName(api)}。`, `🗺 The road leads you into the ${biomeName(api)}.`));
   }
   { const art = get(api, "art"); art.time = ["day", "day", "dusk", "night"][Math.floor(dist / 3) % 4]; set(api, "art", art); }
@@ -635,53 +691,39 @@ export function walk_rules(api) {
   for (const k of Object.keys(st)) if (k !== "exhausted" && st[k] > 0) st[k] -= 1;
   set(api, "status", st);
   if (get(api, "hp") <= 0) { refresh(api); return { died: true }; }
-  // 事件：守关者 > 委托回访 > 预知的类别 > 掷骰
-  const q = get(api, "quest");
-  if (dist % BOSS_EVERY === 0) { if (q && q.due === dist) { q.due += 1; set(api, "quest", q); } spawn(api, "combat", dist === BOSS_EVERY ? 1 : 2, true); }
-  else if (q && q.due && dist >= q.due) spawn(api, "quest", 1, false);
-  else {
-    const kind = get(api, "next_kind") || rollKind(api);
-    const tier = Number(api.random.weighted({ "-1": 30, "0": 50, "1": 15, "2": 5 }));
-    spawn(api, kind, tier, false);
-  }
-  set(api, "next_kind", rollKind(api));
+  if (ev.boss && q && q.due === dist) { q.due += 1; set(api, "quest", q); }
+  // 生成这一里的卡：写好了就直接用，还在写就等它，失败了就重新请求
+  spawn(api, ev.kind, ev.tier, ev.boss, ev.threat);
+  const card = get(api, "card"); card.mile = dist; card.biome = ev.biome; card.tier = ev.tier;
+  if (ev.draft) { set(api, "card", card); applyDraft(api, ev.draft); }
+  else if (ev.req && !ev.failed) { card.req = ev.req; card.born = ev.born; set(api, "card", card); }
+  else { set(api, "card", card); askAi(api, "card"); }
+  // 马上开始准备下一里
+  rollNext(api, dist + 1);
   refresh(api);
   return { kind: get(api, "event_kind") };
 }
 
-// AI 返回后由 output.then 调用（规则身份执行）
-export function apply_ai(api) {
-  const p = api.params, card = get(api, "card");
-  if (!card || get(api, "phase") !== "card" && get(api, "phase") !== "shop") return false;
-  if (!card.pending) return false; // 这张卡已经写好了（重试时可能收到两份结果）
-  const draft = { title: p.title, text: p.text, foe: p.foe, options: [] };
-  for (const i of [1, 2, 3]) {
-    const verb = p[`o${i}_verb`]; if (!verb || verb === "none") continue;
-    draft.options.push({ label: p[`o${i}_label`], verb, ability: p[`o${i}_ability`], diff: p[`o${i}_diff`], reward: p[`o${i}_reward`], risk: p[`o${i}_risk`], cost: p[`o${i}_cost`], relic: p.relic });
+// 后台 AI 写好了（realtime.on_ai）：可能是眼前这张卡，也可能是提前写的下一里
+export function on_ai(api) {
+  const p = api.params, data = p.data;
+  const card = get(api, "card"), next = get(api, "next");
+  const ok = !p.error && data && typeof data === "object";
+  if (card && card.pending && card.req === p.request && (get(api, "phase") === "card")) {
+    if (ok) applyDraft(api, data);
+    else { card.stale = true; set(api, "card", card); log(api, L(api, `AI 没能写出这张卡：${p.error || "格式不对"}`, `The AI couldn't write this card: ${p.error || "bad format"}`)); }
+  } else if (next && next.req === p.request) {
+    if (ok) next.draft = data; else next.failed = true;
+    next.req = 0; set(api, "next", next);
   }
-  if (card.kind === "combat" || card.kind === "quest") { if (!draft.foe && card.kind === "combat") draft.foe = card.foe; }
-  fillCard(api, draft, true);
-  // 画面模块
-  const s = sfx(api);
-  if (s.cur) {
-    const allowed = card.kind === "combat" ? (card.boss ? FOE_SPRITES : FOE_SPRITES.filter((x) => x !== "warden")) : KIND_SPRITES[card.kind] || [];
-    if (allowed.indexOf(p.sprite) >= 0) s.cur.sprite = p.sprite;
-    if (TINTS.indexOf(p.tint) >= 0) s.cur.tint = p.tint;
-    s.cur.pending = false; saveFx(api, s);
-  }
-  const art = get(api, "art");
-  if (["day", "dusk", "night"].indexOf(p.time) >= 0) art.time = p.time;
-  if (WEATHER.indexOf(p.weather) >= 0) art.weather = p.weather;
-  set(api, "art", art);
   refresh(api);
-  return true;
 }
 
 // 事件卡上的选择（自定义组件或备用按钮调用）
 export function choose(api) {
   const id = String(api.params.id || "");
   const c = get(api, "card");
-  if (id === "retry") { if (c && c.pending) { c.stale = false; c.born = api.time; set(api, "card", c); api.events.emit("encounter"); } }
+  if (id === "retry") { if (c && c.pending) { c.stale = false; set(api, "card", c); askAi(api, "card"); } }
   else if (c && c.pending) api.fail(L(api, "AI 还在描绘这一幕，请稍等。", "The AI is still painting this scene — please wait."));
   else chooseOption(api, id);
   refresh(api);
@@ -689,12 +731,11 @@ export function choose(api) {
 }
 // 商店里的购买 / 强化
 export function trade(api) { shopBuy(api, String(api.params.id || "")); refresh(api); return true; }
-// 定时检查：AI 太久没回应，就在卡上提示并显示“重试”
+// 定时检查：眼前的卡太久没写好就提示重试；提前写的请求丢了（比如读档后）就重发
 export function watch(api) {
-  const card = get(api, "card");
-  if (!card || !card.pending || card.stale || get(api, "phase") !== "card") return;
-  if (api.time - card.born < AI_STALE_MS) return;
-  card.stale = true; set(api, "card", card); refresh(api);
+  const card = get(api, "card"), next = get(api, "next");
+  if (card && card.pending && !card.stale && get(api, "phase") === "card" && api.time - card.born >= AI_STALE_MS) { card.stale = true; set(api, "card", card); refresh(api); }
+  if (next && next.kind && !next.draft && (next.failed || (next.req && api.time - next.born >= AI_STALE_MS * 2))) askAi(api, "next");
 }
 
 export function attack(api) {
