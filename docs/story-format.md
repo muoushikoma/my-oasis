@@ -97,8 +97,8 @@ id 的通用格式：状态、动作、素材、接入点、组件这些的 id �
 
 先在 `assets` 里登记素材，写法是 `素材id: { type, path, use?, alt?, loop?, volume? }`：
 
-- `type`：`image` 或 `audio`。
-- `path`：包内路径。扩展名必须和类型对得上：图片用 webp、png、jpg，音频用 ogg、mp3、m4a。
+- `type`：`image`、`audio`、`font` 或 `video`。
+- `path`：包内路径。扩展名必须和类型对得上：图片用 webp、png、jpg、gif、avif，音频用 ogg、mp3、m4a、wav、flac、opus，字体用 woff2、woff、ttf、otf，视频用 webm、mp4（见 10.9）。
 - `use`：可选 `background`、`portrait`、`illustration`、`icon`、`music`、`sfx` 或 `other`。
 
 其他地方引用素材时写 `asset:<素材id>`，也可以直接写包内路径。所有被引用的文件都必须在包里。
@@ -428,6 +428,90 @@ ui:
   暂停菜单打开时故事暂停（时间不走、按键全部松开）。菜单里有：继续、存档/读档、声音、外观、设置（AI 服务商与 API Key、AI 用量）、切换全屏、重新开始、回故事库。接管模式下 **token 用量显示在暂停菜单里**（平时在顶栏）。脚本跑在沙箱里碰不到页面，所以故事不能拦截这些按键、不能遮住按钮、也不能关掉菜单；请不要把右上角那一小块当作必须点击的位置。
 - 不写 `takeover` 的故事和以前完全一样。
 - 完整示例：`tests/fixtures/takeover-mini/`《满屏光点》。
+
+### 10.9 引擎功能：输入框、界面层、视频、字体、特效、物理、设备
+
+实时故事（oasis/0.4）可以用下面这些功能，把客户端当成一个完整的 2D 引擎来用。脚本仍然跑在沙箱里：脚本只“提出请求”，真正的输入框、按钮、视频由客户端生成，故事碰不到页面本身。
+
+**原生文字输入框 `api.textinput`**（主角的小对话框、起名、聊天）
+
+```js
+api.textinput.open({ id: "reply", title: { zh: "你想说什么？", en: "What do you say?" },
+  placeholder: { zh: "输入……", en: "Type…" }, multiline: false, max_length: 120, value: "" });
+api.textinput.close();               // 脚本主动关掉（不会回调）
+```
+
+- 弹出系统原生输入框：Windows 上可以用中文输入法（拼音、手写等组字过程都正常，组字时按回车是选字不是提交）；安卓上自动弹出软键盘，输入框会抬到键盘上方。
+- 同一时刻只有一个输入框。单行时回车提交；多行时 Ctrl+回车提交。短按 Esc 或点“取消”是取消。
+- 结果交给 `realtime.on_ui`：`api.params` 是 `{ type: "text", request, id, text, cancelled }`。`open` 的返回值就是 `request`。文字最长 2000 字。
+- 输入框打开时，键盘不会触发故事绑定的按键。
+
+**界面层 `api.overlay`**（HUD、菜单、背包列表、对话框、富文本）
+
+```js
+api.overlay.show("menu", { anchor: "center", modal: true, z: 1, style: { bg: "#000c", padding: 16, radius: 12 },
+  children: [
+    { type: "rich", spans: [{ text: "第一章 ", bold: true, color: "#fc6" }, { text: { zh: "雪线", en: "Snowline" } }] },
+    { type: "list", id: "items", items: [{ id: "rope", text: "绳子", sub: "×2" }, { id: "torch", text: "火把" }] },
+    { type: "row", children: [{ type: "space" }, { type: "button", id: "close", text: { zh: "关闭", en: "Close" } }] },
+  ] });
+api.overlay.hide("menu");            // hide() 不带参数 = 全部关掉
+```
+
+- 节点类型：`text`、`rich`（多段不同样式的文字）、`button`、`list`（可滚动列表）、`image`（`asset` 写素材 id）、`row`、`column`、`space`。
+- 位置：`anchor`（`center`/`top`/`bottom`/`left`/`right`/`top_left`/…），也可以写 `x`/`y`/`w`/`h`（数字是像素，也可以写 `"50%"`）。`modal: true` 时后面加一层半透明遮罩并挡住点击。
+- 样式（白名单）：`size`、`color`、`bg`、`radius`、`padding`、`gap`、`width`、`height`、`opacity`、`border`、`border_color`、`font`（可以是字体素材 id）、`bold`、`italic`、`align`、`scroll`。
+- 点按钮 → `on_ui` 收到 `{ type: "button", overlay, id }`；点列表项 → `{ type: "select", overlay, list, id }`。
+- 安全：这是**数据**不是 HTML。文字一律按纯文本显示，写 `<b>` 就显示 `<b>` 这几个字；没有任何脚本、链接或事件属性。最多 300 个节点、8 层、描述不超过 200 KB。界面层永远在“⋯”按钮和暂停菜单下面。
+
+**全屏视频 `api.video`**（过场动画）
+
+- `api.video.play("intro", { loop: false, muted: false, skippable: true, fit: "contain" })`，`api.video.stop()`。素材要登记成 `type: video`（webm 或 mp4，单个文件小于 100 MB）。
+- 播完或跳过后 `on_ui` 收到 `{ type: "video", request, id, ended, skipped }`，坏文件时多一个 `error`。暂停菜单打开时视频也暂停。
+
+**字体**：登记 `type: font` 的素材，开始前会自动加载；`api.draw.text(s, x, y, { font: "素材id" })` 或界面层样式 `font: "素材id"` 即可使用。
+
+**画面**
+
+- 图层：任何绘制选项里写 `z`（数字，越大越靠前），同一个 z 按绘制顺序。用了 z 时请只用一个 `api.draw.camera`，界面元素用 `fixed: true`。
+- 镜头：`api.draw.camera(x, y, zoom, { rotation, center_x, center_y })`，可以旋转。
+- 精灵表动画、图块地图、粒子：见 10.3（`sprite`、`tilemap`、`particles`）。
+- 特效：`api.fx.shake(强度像素, 毫秒)` 震屏；`api.fx.fade({ color, out_ms, hold_ms, in_ms })` 转场；`api.fx.filter({ blur, grayscale, sepia, hue, brightness, contrast, saturate, invert })` 整个画面的滤镜（`{}` 取消）。都是纯视觉，不影响逻辑。
+
+**场景切换** `api.scene.go("forest", { fade_ms: 400, color: "#000" })`：先在 `state` 里声明 `scene`（例如 `{ type: string, init: title, visible: none }`）。它把 `scene` 改成新名字并播放转场；render 和 on_tick 里按 `api.state.get("scene")` 画不同的场景。场景跟着存档走。
+
+**缓动、补间、碰撞、物理**（纯计算，在沙箱里，结果可重现）
+
+- `api.ease.linear / in_quad / out_quad / in_out_quad / in_cubic / out_cubic / in_out_cubic / in_sine / out_sine / in_out_sine / out_back / out_elastic / out_bounce`（参数 0~1）。
+- `api.tween(from, to, start_ms, duration_ms, "out_quad")`：按 `api.time` 算出当前值。`api.math.clamp / lerp / dist / angle / approach`。
+- `api.collide.rect(a, b)`、`circle(a, b)`、`circle_rect(c, r)`、`point(x, y, r)`、`tile_at(map, tile, x, y)`。
+- `api.physics.move(body, dx, dy, { rects, map, tile, solid })`：按 x、y 两步移动矩形，碰墙就停，返回 `{ x, y, hit_x, hit_y, on_ground }`。适合平台跳跃和俯视角走格子。
+
+**输入补充**
+
+- 手柄：把 `Pad0`…`Pad16`（标准布局：Pad0=A/×，Pad1=B/○，Pad2=X/□，Pad3=Y/△，Pad4/5 肩键，Pad6/7 扳机，Pad8 选择，Pad9 开始，Pad12–15 十字键上下左右）写进 `input.keys` 即可；左摇杆（或十字键）自动驱动 `api.input.joystick`。
+- 鼠标：`api.input.pointer.button`（0 左 1 中 2 右；右键点下时 `pressed.pointer_right`），`api.input.pointer.wheel`（这一步累计的滚轮量，向下为正）。
+- 多点触控：`api.input.touches` 是 `[{ id, x, y, target }]`，每根手指一条（最多 10）。
+
+**存档与本地数据**
+
+- `api.save.now()`：请客户端立刻写一次自动存档（玩家仍可在暂停菜单里管理存档）。
+- `api.storage.get(key)` / `api.storage.set(key, value)`：这个故事自己的小型本地数据（最高分、解锁、设置），**不随读档回滚**，跨周目保留。一条最多 64 KB，整个故事最多 1 MB；`set(key, null)` 删除。render 里只能读。
+
+**设备**：`api.device.vibrate(毫秒或 [震, 停, 震…])`（安卓；每段最多 1 秒、最多 20 段；不支持的设备忽略）；`api.device.copy(text)` 复制到剪贴板（只能写，不能读）。
+
+以上请求（除了 `storage.get`）都不能在 render 里用。`realtime.on_ui` 写法同 `on_ai`：`on_ui: scripts/game.js#onUi`。
+
+### 10.10 为什么有些事情故事不能做
+
+这些限制是为了保护玩家，不是能力不够：
+
+- **不能直接写网页（HTML/CSS/JS）或拿到页面**：故事来自陌生作者。如果能直接操作页面，就能伪造“设置”页骗走玩家的 AI Key、遮住暂停按钮把玩家关在里面、或偷偷花玩家的 token。所以界面只能用 `api.overlay` 这种“描述数据”，由客户端来画。
+- **不能联网**：同样怕偷 Key、偷存档、偷偷上传。AI 只能走玩家自己配置的那一个服务、那一个 Key，并且要经过接入点的权限检查。
+- **不能读剪贴板、文件、真实时间、`Math.random`**：前两个是隐私；后两个会让存档、撤销和重放对不上。随机数用 `api.random`，本地数据用 `api.storage`。
+- **脚本有时间上限（默认 16 毫秒，作者最多调到 50 毫秒）**：防止一个死循环把整个客户端卡死。
+- **暂不支持自定义着色器（GLSL）**：技术上可以做（WebGL 编译着色器不需要 eval），但写坏的着色器能把显卡卡住、甚至让手机驱动崩溃，需要先做好安全的“着色器模板”和超时恢复。现在先用 `blend`、`tint`、`glow`、粒子和 `api.fx.filter` 实现大部分效果。
+- **出口永远在**：按住 Esc 1 秒、安卓返回手势、右上角“⋯”任何时候都能打开暂停菜单，输入框、界面层和视频都盖不住它们。
 
 ## 11. 中英双语
 

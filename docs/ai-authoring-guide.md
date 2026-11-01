@@ -151,7 +151,7 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 可用：api.state.get/set/inc/add/remove、api.params、api.random.int/float/pick/weighted、api.actions.call、api.events.emit、api.end、api.fail、api.log。禁止 Math.random、网络、文件、时间。
 
 【实时与接管整个页面】（oasis/0.4，可省略；完整说明见 docs/story-format.md 第 10 节）
-realtime: { tick_hz: 30, tick_ms: 16(1-50), on_tick: 文件#函数, on_ai, on_resize, interpolate: false, timers: {...} }
+realtime: { tick_hz: 30, tick_ms: 16(1-50), on_tick: 文件#函数, on_ai, on_resize, on_ui, interpolate: false, timers: {...} }
 input: { keys: { ArrowLeft: left, ... }, joystick: true, buttons: [...], pointer: true }
 画布组件：{ type: canvas, region, render: 文件#函数, width/height（固定）或 size: fill（铺满，跟着窗口/转屏变化）, hidpi: true, pixelated }
 ui.takeover: true → 客户端不显示顶栏，整个窗口/手机屏幕交给故事（安卓沉浸全屏）。脚本读 api.screen { width, height, dpr, takeover }；render 的 api.params.width/height 是画布当前尺寸；坐标最好按比例存。
@@ -159,6 +159,16 @@ ui.takeover: true → 客户端不显示顶栏，整个窗口/手机屏幕交给
 示例：tests/fixtures/takeover-mini/
 render 只读状态，用 api.draw.*：clear、camera、rect、circle、line、text、image、tilemap、sprite（精灵表帧动画：frame_w/frame_h + frame 或 fps）、particles（粒子：rate/burst/life_ms/speed/angle/spread/gravity/size/end_size/color/end_color/blend）。
 通用效果选项：alpha、rotation（弧度）、scale/scale_x/scale_y、anchor_x/anchor_y（0.5 = 以中心定位）、flip_x/flip_y、tint、blend（normal/add/multiply/screen）、glow（circle/text）、outline（text）、fixed（不受相机影响）。
+引擎功能（完整说明见 docs/story-format.md 10.9）：
+- 原生输入框（支持中文输入法、安卓软键盘）：api.textinput.open({ id, title, placeholder, multiline, max_length, value })；结果交给 realtime.on_ui，api.params = { type: "text", request, id, text, cancelled }。
+- 界面层（HUD、菜单、列表、富文本）：api.overlay.show(id, { anchor, x, y, w, h, modal, z, style, children: [text/rich/button/list/image/row/column/space] })、api.overlay.hide(id)；点按钮/列表项 → on_ui 收到 { type: "button"|"select", overlay, id }。只能写数据，不能写 HTML。
+- 视频：assets 里 type: video（webm/mp4），api.video.play(id, { loop, muted, skippable, fit })；播完 → on_ui { type: "video", ended, skipped }。
+- 字体：assets 里 type: font（woff2/woff/ttf/otf），绘制时 font: "素材id"。
+- 图层 z、镜头旋转 camera(x, y, zoom, { rotation })、api.fx.shake / fade / filter、api.scene.go（需要 state 里有 scene）。
+- api.ease.*、api.tween、api.math.*、api.collide.*、api.physics.move（碰墙停、on_ground）。
+- 手柄 Pad0–Pad16 写进 input.keys；api.input.pointer.wheel / button；api.input.touches（多点触控）。
+- api.save.now()、api.storage.get/set（跨周目小数据，不随读档回滚）、api.device.vibrate / copy。
+- 上面这些请求都不能在 render 里调用（storage.get 除外）。
 声音：api.sound.play(id, { volume, loop, channel: "music", fade_ms, rate, pan })；同一 channel 换曲自动交叉淡化；api.sound.stop(id?, { fade_ms })。
 想要 60fps 平滑移动：realtime.interpolate: true，render 里按 api.alpha 在上一步和这一步的位置之间插值。粒子和精灵动画由客户端自动按屏幕刷新率播放，不必开 interpolate。
 
