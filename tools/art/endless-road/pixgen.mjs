@@ -12,13 +12,13 @@ const res = await p.evaluate((scale) => {
   const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
   const tone = ([R, G, B], k) => k >= 0 ? [R + (255 - R) * k, G + (255 - G) * k, B + (255 - B) * k].map(clamp) : [R * (1 + k), G * (1 + k), B * (1 + k * 0.85)].map(clamp);
   for (const [name, sp] of Object.entries(SPRITES)) {
-    const fw = Math.max(...sp.frames.flatMap((f) => f.map((row) => row.length))) + 2;
-    const fh = Math.max(...sp.frames.map((f) => f.length)) + 2;
+    const fw = Math.max(...sp.frames.flatMap((f) => f.map((row) => row.length))) + (sp.raw ? 0 : 2);
+    const fh = Math.max(...sp.frames.map((f) => f.length)) + (sp.raw ? 0 : 2);
     const c = document.createElement("canvas"); c.width = fw * sp.frames.length; c.height = fh;
     const x = c.getContext("2d"); const img = x.createImageData(c.width, c.height); const d = img.data;
     sp.frames.forEach((f, fi) => {
-      const oy = fh - f.length - 1;
-      const at = (cx, cy) => { const row = f[cy - oy]; const ch = row && row[cx - 1]; return ch && ch !== "." ? ch : null; };
+      const oy = fh - f.length - (sp.raw ? 0 : 1);
+      const ox = sp.raw ? 0 : 1; const at = (cx, cy) => { const row = f[cy - oy]; const ch = row && row[cx - ox]; return ch && ch !== "." ? ch : null; };
       for (let cy = 0; cy < fh; cy++) for (let cx = 0; cx < fw; cx++) {
         const i = ((cy * c.width) + fi * fw + cx) * 4;
         const ch = at(cx, cy);
@@ -26,7 +26,7 @@ const res = await p.evaluate((scale) => {
         if (ch) {
           const base = PAL[ch]; if (!base) throw new Error(name + " 未知颜色 " + ch);
           col = hex(base);
-          if (!NOSHADE.has(ch)) {
+          if (!sp.raw && !NOSHADE.has(ch)) {
             // 光从左上来：上/左是边缘 → 提亮；下/右是边缘 → 压暗；同色块内部的分界也算边缘
             const same = (dx, dy) => at(cx + dx, cy + dy) === ch;
             const up = !at(cx, cy - 1), lf = !at(cx - 1, cy), dn = !at(cx, cy + 1), rt = !at(cx + 1, cy);
@@ -38,7 +38,7 @@ const res = await p.evaluate((scale) => {
             if (!dn && !at(cx, cy + 2)) k -= 0.08;
             col = tone(col, Math.max(-0.4, Math.min(0.32, k)));
           }
-        } else {
+        } else if (!sp.raw) {
           // 选择性描边：取相邻像素颜色的深色版
           const nb = [at(cx - 1, cy), at(cx + 1, cy), at(cx, cy - 1), at(cx, cy + 1)].find(Boolean);
           if (nb) { const [R, G, B] = hex(PAL[nb]); col = [R * 0.22 + 10, G * 0.2 + 8, B * 0.24 + 14].map(clamp); }

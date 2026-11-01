@@ -75,6 +75,24 @@ const GEAR = {
   kit: { name: ["营具", "Camp kit"], max: 3, gold: 25, iron: 1, essAt: 99, desc: ["扎营回血更多、夜袭更少", "better camp healing, fewer ambushes"] },
 };
 const KIT_HEAL = [0.5, 0.65, 0.8, 1], KIT_AMBUSH = [20, 14, 8, 4];
+// 职业：属性按 order 从高到低分配；atk 攻击属性；die 伤害骰（die5 是 5 级以后）；hd 生命骰；check 检定加成
+const CLASSES = {
+  fighter: { name: ["战士", "Fighter"], order: ["str", "con", "dex", "wis", "cha", "int"], atk: "str", die: 10, die5: 10, hd: 10, base: 14, ac: 13,
+    weapon: ["长剑", "Longsword"], check: { str: 2, con: 2 },
+    desc: ["板甲与长剑。生命骰 d10，5 级起每回合攻击两次；力量、体质检定 +2。", "Plate and longsword. d10 hit die, two attacks per turn from level 5; +2 to STR and CON checks."] },
+  rogue: { name: ["游荡者", "Rogue"], order: ["dex", "con", "cha", "int", "wis", "str"], atk: "dex", die: 8, die5: 8, hd: 8, base: 13, ac: 12,
+    weapon: ["细剑", "Rapier"], check: { dex: "x2" },
+    desc: ["兜帽与细剑。生命骰 d8；每场战斗第一击偷袭（+1d6，每 2 级再 +1d6）；敏捷检定双倍熟练，逃跑更容易。", "Hood and rapier. d8 hit die; the first strike of each fight is a Sneak Attack (+1d6, +1d6 every 2 levels); double proficiency on DEX checks, easier escapes."] },
+  wizard: { name: ["法师", "Wizard"], order: ["int", "con", "dex", "wis", "cha", "str"], atk: "int", die: 10, die5: 10, dice5: 2, hd: 6, base: 12, ac: 13,
+    weapon: ["火焰箭", "Fire Bolt"], check: { int: 2, wis: 1 },
+    desc: ["法袍与法杖。生命骰 d6，常驻法师护甲（AC 13 起）；火焰箭 1d10（5 级起 2d10）；每场战斗第一发魔法飞弹必中；智力检定 +2。", "Robe and staff. d6 hit die, permanent Mage Armor (AC 13 base); Fire Bolt 1d10 (2d10 from level 5); the first Magic Missile of each fight always hits; +2 to INT checks."] },
+  cleric: { name: ["牧师", "Cleric"], order: ["wis", "con", "str", "cha", "dex", "int"], atk: "wis", die: 8, die5: 8, hd: 8, base: 13, ac: 14,
+    weapon: ["钉头锤", "Mace"], check: { wis: 2, cha: 1 },
+    desc: ["锁甲与钉头锤。生命骰 d8；药水和扎营回血 ×1.5；对亡灵和幽魂额外 +1d8；感知检定 +2。", "Chain mail and mace. d8 hit die; potions and camping heal ×1.5; +1d8 against undead and spirits; +2 to WIS checks."] },
+};
+const CLASS_IDS = Object.keys(CLASSES);
+function cls(api) { return CLASSES[get(api, "hero_class")] || CLASSES.fighter; }
+function checkBonus(api, ability) { const b = cls(api).check[ability]; return b === "x2" ? prof(get(api, "level")) : b || 0; }
 const PRICE = { ration: 2, potion: 15, iron_sell: 4 };
 
 // 画面模块（AI 只能在白名单里挑）
@@ -102,7 +120,7 @@ function sign(n) { return n >= 0 ? "+" + n : String(n); }
 function prof(level) { return 2 + Math.floor((level - 1) / 4); }
 function abil(api) { return get(api, "abil"); }
 function abilMod(api, a) { return mod(abil(api)[a]); }
-function atkMod(api) { const a = abil(api); return Math.max(mod(a.str), mod(a.dex)); }
+function atkMod(api) { return mod(abil(api)[cls(api).atk]); }
 function biomeName(api) { return T2(api, BIOMES[get(api, "biome")]); }
 function threatNow(api) { const dd = get(api, "distance"); return 1 + Math.floor(dd / 8) + Math.floor(Math.pow(dd / 35, 2)); }
 function has(api, relic) { return (get(api, "relics") || []).indexOf(relic) >= 0; }
@@ -119,7 +137,7 @@ function log(api, t) { api.log(en(api, t)); }
 function enSpec(api, n) {
   if (Array.isArray(n)) return n.map((x) => enSpec(api, x));
   if (!n || typeof n !== "object") return n;
-  const o = {}; for (const k in n) o[k] = (k === "text" || k === "sub" || k === "title") ? en(api, n[k]) : enSpec(api, n[k]); return o;
+  const o = {}; for (const k in n) o[k] = (k === "text" || k === "sub" || k === "title" || k === "t") ? en(api, n[k]) : enSpec(api, n[k]); return o;
 }
 function clip(s, n) { return String(s || "").replace(/\s+/g, " ").trim().slice(0, n); }
 
@@ -132,7 +150,7 @@ function d20(api) {
 function bonusText(b) { return b ? sign(b) : ""; }
 
 function calcAc(api) {
-  const g = gear(api); let ac = 12 + Math.min(2, abilMod(api, "dex")) + g.armor;
+  const g = gear(api); let ac = cls(api).ac + Math.min(2, abilMod(api, "dex")) + g.armor;
   if (has(api, "guardian_amulet")) ac += 1; if (status(api).exhausted) ac -= 2;
   return ac;
 }
@@ -281,6 +299,22 @@ function optText(api, o, kind) {
   return `🎲 ${T2(api, ABIL_NAME[o.ability])} DC ${o.dc} · ${L(api, "成", "pass")}：${win} · ${L(api, "败", "fail")}：${lose}`;
 }
 
+const VERB_ICON = { check: "dice", pay: "bag", gamble: "clover", fight: "sword", quest: "scroll" };
+// 选项的结构化标签：k = dc（难度）/ good（收获）/ bad（风险或代价）/ info
+function optTags(api, o, kind) {
+  const t = [];
+  const win = () => (!o.reward || o.reward === "none") ? (kind === "combat" ? L(api, "避开战斗", "avoid the fight") : L(api, "安全通过", "get through")) : amtText(api, o.reward, o.ramt, o.relic);
+  if (o.verb === "fight") t.push({ k: "bad", t: L(api, "进入战斗", "start a fight") });
+  else if (o.verb === "quest") t.push({ k: "info", t: L(api, "几里后回访领赏", "reward a few miles later") });
+  else if (o.verb === "pay") { t.push({ k: "bad", t: `${L(api, "付出", "pay")} ${T2(api, R_NAME[o.cost])} ${o.camt}` }); t.push({ k: "good", t: win() }); }
+  else {
+    t.push({ k: "dc", t: o.verb === "gamble" ? L(api, "五五开", "50 / 50") : `${T2(api, ABIL_NAME[o.ability])} DC ${o.dc}` });
+    t.push({ k: "good", t: win() });
+    if (o.risk && o.risk !== "none") t.push({ k: "bad", t: amtText(api, o.risk, o.kamt) });
+  }
+  return t.map((x) => ({ k: x.k, t: en(api, x.t) }));
+}
+
 // 生成一张事件卡（内容由 AI 写：可能已经提前写好，也可能还在路上）
 function spawn(api, kind, tier, boss, presetThreat) {
   const threat = presetThreat || Math.max(1, threatNow(api) + tier);
@@ -427,7 +461,7 @@ function chooseOption(api, id) {
     const r = api.random.int(1, 100); ok = r <= o.chance;
     log(api, `🎲 ${L(api, "赌运气", "Gamble")}：${r} ${ok ? L(api, "→ 成功", "→ win") : L(api, "→ 失败", "→ lose")}`);
   } else {
-    const r = d20(api); const m = abilMod(api, o.ability) + prof(get(api, "level"));
+    const r = d20(api); const m = abilMod(api, o.ability) + prof(get(api, "level")) + checkBonus(api, o.ability);
     const total = r.nat + m + r.bonus;
     ok = r.nat === 20 || (r.nat !== 1 && total >= o.dc);
     log(api, `🎲 ${T2(api, ABIL_NAME[o.ability])} ${L(api, "检定", "check")}：d20=${r.nat} ${sign(m)}${bonusText(r.bonus)} = ${total} ${L(api, "对", "vs")} DC ${o.dc} → ${ok ? L(api, "成功", "success") : L(api, "失败", "failure")}`);
@@ -453,7 +487,7 @@ function leaveCard(api) {
     else { hurt(api, 2); log(api, L(api, "你饿着肚子绕了远路，失去 2 生命。", "You detour on an empty stomach and lose 2 HP.")); }
   } else if (card.kind === "combat" && !card.boss) {
     // 想溜走：敏捷检定，失败就被追上
-    const r = d20(api), m = abilMod(api, "dex") + prof(get(api, "level")), dc = 10 + Math.floor(card.threat / 2), total = r.nat + m + r.bonus;
+    const r = d20(api), m = abilMod(api, "dex") + prof(get(api, "level")) + checkBonus(api, "dex") + (get(api, "hero_class") === "rogue" ? 2 : 0), dc = 10 + Math.floor(card.threat / 2), total = r.nat + m + r.bonus;
     if (!(r.nat === 20 || (r.nat !== 1 && total >= dc))) { log(api, L(api, `🏃 想溜走（${total} 对 DC ${dc}）——被追上了！`, `🏃 You try to slip away (${total} vs DC ${dc}) — caught!`)); startBattle(api, card.foe, true); return; }
     log(api, L(api, `🏃 你悄悄退开，换了条小路（${total} 对 DC ${dc}）。`, `🏃 You back off quietly and take a side path (${total} vs DC ${dc}).`));
   } else if (card.kind === "quest") {
@@ -495,11 +529,11 @@ function gainXp(api, n) {
     api.state.inc("xp", -get(api, "xp_next"));
     const lv = get(api, "level") + 1;
     set(api, "level", lv); set(api, "xp_next", 60 * lv);
-    const g = Math.max(1, d(api, 1, 10) + abilMod(api, "con"));
+    const g = Math.max(1, d(api, 1, cls(api).hd) + abilMod(api, "con"));
     api.state.inc("max_hp", g); heal(api, g);
     let extra = "";
-    if (lv % 4 === 0) { const a = abil(api); const k = a.str >= a.dex ? "str" : "dex"; a[k] = Math.min(20, a[k] + 2); set(api, "abil", a); extra = L(api, `，${ABIL_NAME[k][0]} +2`, `, ${ABIL_NAME[k][1]} +2`); }
-    if (lv === 5) extra += L(api, "，学会了额外攻击（每回合攻击两次）", ", and gained Extra Attack");
+    if (lv % 4 === 0) { const a = abil(api); const k = cls(api).atk; a[k] = Math.min(20, a[k] + 2); set(api, "abil", a); set(api, "abilities", abilText(api)); extra = L(api, `，${ABIL_NAME[k][0]} +2`, `, ${ABIL_NAME[k][1]} +2`); }
+    if (lv === 5) extra += { fighter: L(api, "，学会了额外攻击（每回合攻击两次）", ", and gained Extra Attack"), wizard: L(api, "，火焰箭变为 2d10", ", and Fire Bolt now deals 2d10"), rogue: "", cleric: "" }[get(api, "hero_class")] || "";
     log(api, L(api, `⭐ 升到 ${lv} 级！最大生命 +${g}${extra}。`, `⭐ Level ${lv}! Max HP +${g}${extra}.`));
   }
 }
@@ -539,14 +573,14 @@ function showUi(api) {
     set(api, "ui_card", enSpec(api, { mode: card.stale ? "stale" : "loading", kind, title: L(api, "前方有动静……", "Something ahead…"),
       text: card.stale ? L(api, "AI 还没有回应。请检查“设置”里的 AI 服务商和 API Key，然后点重试。", "The AI hasn't answered. Check your AI provider and API key in Settings, then retry.")
         : L(api, "（AI 正在描绘这一幕……）", "(The AI is painting this scene…)"),
-      items: card.stale ? [{ id: "retry", text: L(api, "↻ 重试", "↻ Retry"), sub: "" }] : [], action: "choose" }));
+      items: card.stale ? [{ id: "retry", icon: "hourglass", text: L(api, "重试", "Retry"), sub: "", tags: [] }] : [], action: "choose" }));
     return;
   }
   if (ph === "shop") { set(api, "ui_card", enSpec(api, { mode: "shop", kind, title: card.title, text: card.text, items: shopItems(api), action: "trade" })); return; }
-  const items = card.options.map((o) => ({ id: o.id, text: o.label, sub: optText(api, o, card.kind) + (canAfford(api, o) ? "" : L(api, "（付不起）", " (can't afford)")), disabled: !canAfford(api, o) }));
-  if (card.kind === "rest") items.push({ id: "camp", text: L(api, "🔥 扎营休息", "🔥 Make camp"), sub: L(api, "免费，完全恢复，解除疲惫", "free, full heal, clears exhaustion") });
-  if (get(api, "potions") > 0 && get(api, "hp") < get(api, "max_hp")) items.push({ id: "potion", text: L(api, "🧪 先喝一瓶药水", "🧪 Drink a potion first"), sub: L(api, "不结束这个事件", "doesn't end the event") });
-  if (!card.boss) items.push({ id: "leave", text: L(api, "↩ 离开", "↩ Leave"), sub: card.kind === "hazard" ? L(api, "绕路：多耗 1 份口粮", "detour: costs 1 extra ration") : card.kind === "combat" ? L(api, `🎲 敏捷 DC ${10 + Math.floor(card.threat / 2)} 溜走，失败会被追上`, `🎲 DEX DC ${10 + Math.floor(card.threat / 2)} to slip away; fail and it attacks`) : "" });
+  const items = card.options.map((o) => ({ id: o.id, icon: VERB_ICON[o.verb] || "dice", text: o.label, sub: optText(api, o, card.kind), tags: optTags(api, o, card.kind).concat(canAfford(api, o) ? [] : [{ k: "bad", t: L(api, "付不起", "can't afford") }]), disabled: !canAfford(api, o) }));
+  if (card.kind === "rest") items.push({ id: "camp", icon: "fire", text: L(api, "扎营休息", "Make camp"), sub: "", tags: [{ k: "good", t: L(api, "免费 · 完全恢复 · 解除疲惫", "free · full heal · clears exhaustion") }] });
+  if (get(api, "potions") > 0 && get(api, "hp") < get(api, "max_hp")) items.push({ id: "potion", icon: "potion", text: L(api, "先喝一瓶药水", "Drink a potion first"), sub: "", tags: [{ k: "info", t: L(api, "不结束这个事件", "doesn't end the event") }] });
+  if (!card.boss) items.push({ id: "leave", icon: "boot", text: L(api, "离开", "Leave"), sub: "", tags: card.kind === "hazard" ? [{ k: "bad", t: L(api, "绕路：多耗 1 份口粮", "detour: 1 extra ration") }] : card.kind === "combat" ? [{ k: "dc", t: L(api, `敏捷 DC ${10 + Math.floor(card.threat / 2)} 溜走`, `DEX DC ${10 + Math.floor(card.threat / 2)} to slip away`) }, { k: "bad", t: L(api, "失败会被追上", "fail and it attacks") }] : [] });
   set(api, "ui_card", enSpec(api, { mode: "card", kind, title: card.title, text: card.text, items, action: "choose" }));
 }
 function gearCost(api, k) {
@@ -556,17 +590,17 @@ function gearCost(api, k) {
 function shopItems(api) {
   const gold = get(api, "gold"), c = caps(api);
   const items = [
-    { id: "buy_ration", text: L(api, `口粮 ×1`, "Ration ×1"), sub: `${PRICE.ration}g · ${get(api, "rations")}/${c.rations}`, disabled: gold < PRICE.ration || get(api, "rations") >= c.rations },
-    { id: "buy_potion", text: L(api, `治疗药水 ×1`, "Healing potion ×1"), sub: `${PRICE.potion}g · ${get(api, "potions")}/${c.potions}`, disabled: gold < PRICE.potion || get(api, "potions") >= c.potions },
-    { id: "sell_iron", text: L(api, "卖出铁料 ×1", "Sell iron ×1"), sub: `+${PRICE.iron_sell}g · ${L(api, "剩", "have")} ${get(api, "iron")}`, disabled: get(api, "iron") < 1 },
+    { id: "buy_ration", icon: "ration", text: L(api, `口粮 ×1`, "Ration ×1"), sub: `${PRICE.ration}g · ${get(api, "rations")}/${c.rations}`, disabled: gold < PRICE.ration || get(api, "rations") >= c.rations },
+    { id: "buy_potion", icon: "potion", text: L(api, `治疗药水 ×1`, "Healing potion ×1"), sub: `${PRICE.potion}g · ${get(api, "potions")}/${c.potions}`, disabled: gold < PRICE.potion || get(api, "potions") >= c.potions },
+    { id: "sell_iron", icon: "iron", text: L(api, "卖出铁料 ×1", "Sell iron ×1"), sub: `+${PRICE.iron_sell}g · ${L(api, "剩", "have")} ${get(api, "iron")}`, disabled: get(api, "iron") < 1 },
   ];
   for (const k of Object.keys(GEAR)) {
     const cost = gearCost(api, k), lv = gear(api)[k];
     const okay = !cost.max && gold >= cost.gold && get(api, "iron") >= cost.iron && get(api, "essence") >= cost.essence;
-    items.push({ id: `up_${k}`, text: `⚒ ${T2(api, GEAR[k].name)} ${k === "weapon" || k === "armor" ? "+" : "Lv"}${lv} → ${cost.max ? L(api, "已满", "max") : lv + 1}`,
+    items.push({ id: `up_${k}`, icon: "hammer", text: `${T2(api, GEAR[k].name)} ${k === "weapon" || k === "armor" ? "+" : "Lv"}${lv} → ${cost.max ? L(api, "已满", "max") : lv + 1}`,
       sub: cost.max ? "" : `${cost.gold}g · ${L(api, "铁料", "iron")} ${cost.iron}${cost.essence ? ` · ${L(api, "魔晶", "essence")} ${cost.essence}` : ""} · ${T2(api, GEAR[k].desc)}`, disabled: !okay });
   }
-  items.push({ id: "leave", text: L(api, "↩ 告别行商", "↩ Say goodbye"), sub: "" });
+  items.push({ id: "leave", icon: "boot", text: L(api, "告别行商", "Say goodbye"), sub: "" });
   return items;
 }
 function shopBuy(api, id) {
@@ -588,20 +622,40 @@ function shopBuy(api, id) {
 
 // ===== 导出：动作与回调 =====
 export function setup(api) {
-  const a = {};
-  for (const k of ABIL) { const r = [d(api, 1, 6), d(api, 1, 6), d(api, 1, 6), d(api, 1, 6)].sort((x, y) => x - y); a[k] = r[1] + r[2] + r[3]; }
-  if (Math.max(a.str, a.dex) < 14) { if (a.str >= a.dex) a.str = 14; else a.dex = 14; }
-  if (a.con < 10) a.con = 10;
-  set(api, "abil", a); set(api, "abilities", abilText(api));
-  const hp = 14 + mod(a.con);
-  set(api, "max_hp", hp); set(api, "hp", hp);
+  // 掷 6 个属性值（4d6 去掉最低），选职业时按职业的主次顺序分配
+  const rolls = [];
+  for (let i = 0; i < 6; i++) { const r = [d(api, 1, 6), d(api, 1, 6), d(api, 1, 6), d(api, 1, 6)].sort((x, y) => x - y); rolls.push(r[1] + r[2] + r[3]); }
+  rolls.sort((x, y) => y - x);
+  if (rolls[0] < 14) rolls[0] = 14;
+  if (rolls[1] < 10) rolls[1] = 10;
+  set(api, "rolls", rolls);
   set(api, "biome", "plains");
   set(api, "scene_fx", { scroll: 0, target: 0, prev: null, cur: null, fx: [], busy: false });
   set(api, "art", { time: "day", weather: "clear" });
   const best = api.storage.get("best"); if (typeof best === "number") set(api, "best", best);
+  set(api, "phase", "class");
+  set(api, "class_info", CLASS_IDS.map((id) => {
+    const c = CLASSES[id]; const a = {}; c.order.forEach((k, i) => (a[k] = rolls[i]));
+    return { id, name: T2(api, c.name), desc: en(api, T2(api, c.desc)), hp: c.base + mod(a.con), ac: c.ac + Math.min(2, mod(a.dex)),
+      stats: en(api, ABIL.map((k) => `${T2(api, ABIL_NAME[k])} ${a[k]}`).join(" · ")) };
+  }));
+  log(api, L(api, `🎲 掷出属性值：${rolls.join("、")}。选择一个职业，属性会按职业分配。`, `🎲 Rolled ability scores: ${rolls.join(", ")}. Pick a class; scores are assigned to suit it.`));
+  refresh(api);
+  return true;
+}
+export function pick_class(api) {
+  const id = String(api.params.id || "");
+  if (!CLASSES[id]) api.fail(L(api, "没有这个职业。", "No such class."));
+  const c = CLASSES[id], rolls = get(api, "rolls"), a = {};
+  c.order.forEach((k, i) => (a[k] = rolls[i]));
+  set(api, "hero_class", id); set(api, "class_name", T2(api, c.name));
+  set(api, "abil", a); set(api, "abilities", abilText(api));
+  const hp = c.base + mod(a.con);
+  set(api, "max_hp", hp); set(api, "hp", hp);
+  set(api, "phase", "none");
+  log(api, L(api, `🧭 你是一名${c.name[0]}。${abilText(api)}`, `🧭 You are a ${c.name[1]}. ${abilText(api)}`));
+  log(api, L(api, `生命 ${hp} · AC ${calcAc(api)} · ${c.weapon[0]} 1d${c.die}${sign(atkMod(api))}`, `HP ${hp} · AC ${calcAc(api)} · ${c.weapon[1]} 1d${c.die}${sign(atkMod(api))}`));
   rollNext(api, 1);
-  log(api, L(api, `🎲 掷出属性：${abilText(api)}`, `🎲 Rolled abilities: ${abilText(api)}`));
-  log(api, L(api, `生命 ${hp} · AC ${calcAc(api)} · 长剑 1d10${sign(atkMod(api))}`, `HP ${hp} · AC ${calcAc(api)} · Longsword 1d10${sign(atkMod(api))}`));
   refresh(api);
   return true;
 }
@@ -634,7 +688,7 @@ function askAi(api, which) {
   if (!ev || !ev.kind) return;
   const tierName = ev.boss ? "boss" : ["weak", "normal", "tough", "elite"][(ev.tier || 0) + 1] || "normal";
   const q = get(api, "quest") || {};
-  const req = api.ai.request("road_event", "", { mile: ev.mile, kind: ev.kind, tier: tierName, threat: ev.threat, biome: ev.biome || get(api, "biome"), boss: !!ev.boss, quest: q.title || "" });
+  const req = api.ai.request("road_event", "", { mile: ev.mile, kind: ev.kind, tier: tierName, threat: ev.threat, biome: ev.biome || get(api, "biome"), boss: !!ev.boss, quest: q.title || "", hero: CLASSES[get(api, "hero_class")] ? CLASSES[get(api, "hero_class")].name[0] : "" });
   if (req == null) { ev.failed = true; } else { ev.req = req; ev.born = api.time; ev.failed = false; }
   set(api, which, ev);
 }
@@ -730,43 +784,6 @@ export function choose(api) {
   refresh(api);
   return true;
 }
-// ===== 弹出面板（客户端画的浮动层 api.overlay）：角色 / 行囊与强化 / 遗物与状态 / 旅程 =====
-const PANELS = ["char", "pack", "relic", "trip"];
-const PANEL_NAME = { char: ["🧝 角色", "🧝 Character"], pack: ["🎒 行囊与强化", "🎒 Pack & upgrades"], relic: ["💎 遗物与状态", "💎 Relics & status"], trip: ["🗺 旅程", "🗺 Journey"] };
-function panelBody(api, id) {
-  if (id === "char") return [
-    L(api, `等级 ${get(api, "level")} · 经验 ${get(api, "xp")} / ${get(api, "xp_next")}`, `Level ${get(api, "level")} · XP ${get(api, "xp")} / ${get(api, "xp_next")}`),
-    L(api, `生命 ${get(api, "hp")} / ${get(api, "max_hp")} · 护甲等级 ${get(api, "ac")}`, `HP ${get(api, "hp")} / ${get(api, "max_hp")} · Armor Class ${get(api, "ac")}`),
-    get(api, "abilities"),
-    L(api, `长剑 1d10${sign(atkMod(api) + gear(api).weapon)} · 命中 ${sign(atkMod(api) + prof(get(api, "level")) + gear(api).weapon)}${get(api, "level") >= 5 ? " · 每回合攻击两次" : ""}`, `Longsword 1d10${sign(atkMod(api) + gear(api).weapon)} · to hit ${sign(atkMod(api) + prof(get(api, "level")) + gear(api).weapon)}${get(api, "level") >= 5 ? " · two attacks per turn" : ""}`),
-  ];
-  if (id === "pack") return [get(api, "pack_text"), get(api, "gear_text"),
-    L(api, "强化要在路上遇到的行商那里进行（金币 + 铁料，高级还要魔晶）。", "Upgrades are done at peddlers on the road (gold + iron; essence at higher levels).")];
-  if (id === "relic") return [L(api, "遗物（最多 3 件）", "Relics (up to 3)"), get(api, "relic_text"), L(api, "状态", "Status"), get(api, "status_text")];
-  return [L(api, `已走 ${get(api, "distance")} 里 · 最远纪录 ${get(api, "best")} 里 · 击败敌人 ${get(api, "kills")}`, `Walked ${get(api, "distance")} mi · best ${get(api, "best")} mi · foes defeated ${get(api, "kills")}`),
-    L(api, `现在在${biomeName(api)}。每 10 里换一个地区，每 25 里有一个守关者。`, `You are in the ${biomeName(api)}. The region changes every 10 miles; a warden waits every 25 miles.`)];
-}
-function showPanel(api, id) {
-  if (PANELS.indexOf(id) < 0) id = "char";
-  const tabs = PANELS.map((k) => ({ type: "button", id: `tab_${k}`, text: T2(api, PANEL_NAME[k]), style: k === id ? { bg: "#e0a84a", color: "#1b1611", bold: true } : { bg: "#2a2219", color: "#efe6d6" } }));
-  const body = panelBody(api, id).filter(Boolean).map((t) => ({ type: "text", text: t, style: { color: "#efe6d6", size: 15 } }));
-  api.overlay.show("info", enSpec(api, { anchor: "center", modal: true, z: 5,
-    style: { color: "#efe6d6", bg: "#1d1813", padding: 18, radius: 14, width: "min(600px, 92vw)", border: 1, border_color: "#e0a84a66", gap: 12 },
-    children: [
-      { type: "row", style: { gap: 6 }, children: tabs },
-      { type: "column", style: { gap: 8, scroll: true }, children: body },
-      { type: "row", children: [{ type: "space" }, { type: "button", id: "close", text: L(api, "关闭", "Close"), style: { bg: "#e0a84a", color: "#1b1611", bold: true } }] },
-    ] }));
-}
-export function open_panel(api) { showPanel(api, String(api.params.id || "char")); return true; }
-// 弹出面板里的按钮
-export function on_ui(api) {
-  const p = api.params;
-  if (p.overlay !== "info" || p.type !== "button") return;
-  if (p.id === "close") api.overlay.hide("info");
-  else if (p.id.indexOf("tab_") === 0) showPanel(api, p.id.slice(4));
-}
-
 // 商店里的购买 / 强化
 export function trade(api) { shopBuy(api, String(api.params.id || "")); refresh(api); return true; }
 // 定时检查：眼前的卡太久没写好就提示重试；提前写的请求丢了（比如读档后）就重发
@@ -777,22 +794,32 @@ export function watch(api) {
 }
 
 export function attack(api) {
-  const lv = get(api, "level"), g = gear(api);
-  const swings = lv >= 5 ? 2 : 1;
+  const lv = get(api, "level"), g = gear(api), c = cls(api), id = get(api, "hero_class");
+  const swings = id === "fighter" && lv >= 5 ? 2 : 1;
   const bonus = atkMod(api) + prof(lv) + g.weapon;
-  anim(api, "atk", 300); reveal(api);
+  anim(api, "atk", id === "wizard" ? 450 : 300); reveal(api);
   for (let i = 0; i < swings; i++) {
     const f = get(api, "foe"); const r = d20(api); const total = r.nat + bonus + r.bonus;
-    if (r.nat === 1 || (r.nat !== 20 && total < f.ac)) {
+    const missile = id === "wizard" && !f.opened;  // 法师：每场战斗第一发魔法飞弹必中
+    if (!missile && (r.nat === 1 || (r.nat !== 20 && total < f.ac))) {
+      f.opened = true; set(api, "foe", f);
       pop(api, "x", "#e8e8e8", true);
       log(api, L(api, `🗡 攻击落空（d20=${r.nat}，${total} 对 AC ${f.ac}）`, `🗡 You miss (d20=${r.nat}, ${total} vs AC ${f.ac})`));
       continue;
     }
-    const dmg = Math.max(1, d(api, r.nat === 20 ? 2 : 1, 10) + atkMod(api) + g.weapon);
-    f.hp = Math.max(0, f.hp - dmg); set(api, "foe", f);
+    const crit = r.nat === 20;
+    const n = (lv >= 5 && c.dice5 ? c.dice5 : 1) * (crit ? 2 : 1);
+    let dmg = d(api, n, lv >= 5 ? c.die5 : c.die) + atkMod(api) + g.weapon;
+    const notes = [];
+    if (missile) notes.push(L(api, "魔法飞弹必中", "Magic Missile never misses"));
+    if (id === "rogue" && !f.opened) { const sn = d(api, 1 + Math.floor(lv / 2), 6); dmg += sn; notes.push(L(api, `偷袭 +${sn}`, `Sneak Attack +${sn}`)); }
+    if (id === "cleric" && ["skeleton", "wisp"].indexOf((sfx(api).cur || {}).sprite) >= 0) { const hv = d(api, 1, 8); dmg += hv; notes.push(L(api, `圣光 +${hv}`, `radiant +${hv}`)); }
+    dmg = Math.max(1, dmg);
+    f.opened = true; f.hp = Math.max(0, f.hp - dmg); set(api, "foe", f);
     anim(api, "fhurt", 300);
-    pop(api, r.nat === 20 ? `${dmg}!` : String(dmg), r.nat === 20 ? "#ffdd44" : "#ffffff", true);
-    log(api, L(api, `🗡 ${r.nat === 20 ? "暴击！" : "命中！"}（d20=${r.nat}）对${f.name}造成 ${dmg} 点伤害。`, `🗡 ${r.nat === 20 ? "CRITICAL!" : "Hit!"} (d20=${r.nat}) ${dmg} damage to ${f.name}.`));
+    pop(api, crit ? `${dmg}!` : String(dmg), crit ? "#ffdd44" : "#ffffff", true);
+    const what = T2(api, c.weapon);
+    log(api, L(api, `🗡 ${crit ? "暴击！" : "命中！"}（d20=${r.nat}）${what}对${f.name}造成 ${dmg} 点伤害${notes.length ? "（" + notes.join("，") + "）" : ""}。`, `🗡 ${crit ? "CRITICAL!" : "Hit!"} (d20=${r.nat}) ${what} deals ${dmg} damage to ${f.name}${notes.length ? " (" + notes.join(", ") + ")" : ""}.`));
     if (has(api, "vampiric_blade")) heal(api, 2);
     if (f.hp <= 0) { victory(api, f); refresh(api); return { won: true }; }
   }
@@ -804,7 +831,7 @@ export function attack(api) {
 export function flee(api) {
   const f = get(api, "foe");
   const dc = 10 + Math.floor(f.threat / 2) + (f.boss ? 3 : 0);
-  const r = d20(api), total = r.nat + abilMod(api, "dex") + prof(get(api, "level")) + r.bonus;
+  const r = d20(api), total = r.nat + abilMod(api, "dex") + prof(get(api, "level")) + checkBonus(api, "dex") + (get(api, "hero_class") === "rogue" ? 2 : 0) + r.bonus;
   if (r.nat === 20 || (r.nat !== 1 && total >= dc)) {
     log(api, L(api, `🏃 敏捷检定 ${total} 对 DC ${dc}：你甩掉了${f.name}。`, `🏃 DEX check ${total} vs DC ${dc}: you shake off ${f.name}.`));
     endEvent(api); refresh(api); return { fled: true };
@@ -815,7 +842,7 @@ export function flee(api) {
 }
 
 export function potion(api) {
-  const amt = Math.round((d(api, 2, 4) + 2 + Math.floor(get(api, "max_hp") / 5)) * (has(api, "alchemist_flask") ? 1.5 : 1));
+  const amt = Math.round((d(api, 2, 4) + 2 + Math.floor(get(api, "max_hp") / 5)) * (has(api, "alchemist_flask") ? 1.5 : 1) * (get(api, "hero_class") === "cleric" ? 1.5 : 1));
   const h = heal(api, amt);
   api.state.inc("potions", -1);
   const st = status(api); let cure = "";
@@ -838,7 +865,7 @@ function campHere(api, safe) {
   }
   const kit = gear(api).kit;
   api.state.inc("rations", -1);
-  const h = heal(api, Math.ceil(get(api, "max_hp") * KIT_HEAL[kit]));
+  const h = heal(api, Math.ceil(get(api, "max_hp") * Math.min(1, KIT_HEAL[kit] * (get(api, "hero_class") === "cleric" ? 1.5 : 1))));
   log(api, L(api, `🔥 你在路边扎营，吃掉 1 份口粮，恢复 ${h} 生命。`, `🔥 You make camp by the road, eat 1 ration and recover ${h} HP.`));
   if (api.random.int(1, 100) <= KIT_AMBUSH[kit]) {
     log(api, L(api, "夜里有动静……", "Something stirs in the night…"));

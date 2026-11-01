@@ -5,7 +5,7 @@
 export const W = 256, H = 144, GROUND = 118, HERO_X = 58, SUBJECT_X = 176;
 export const SPEED = 120; // 走路时每秒卷动的像素
 export const SPR = {
-  hero: { w: 24, h: 23, frames: 6 },
+  hero_fighter: { w: 24, h: 27, frames: 6 }, hero_rogue: { w: 24, h: 27, frames: 6 }, hero_wizard: { w: 24, h: 27, frames: 6 }, hero_cleric: { w: 24, h: 27, frames: 6 },
   wolf: { w: 37, h: 18 }, spider: { w: 32, h: 18 }, bandit: { w: 20, h: 21 }, skeleton: { w: 20, h: 23 },
   troll: { w: 31, h: 24 }, drake: { w: 34, h: 21 }, ooze: { w: 26, h: 16 }, wisp: { w: 22, h: 20, float: 10 },
   warden: { w: 30, h: 27 },
@@ -108,9 +108,16 @@ export function draw(api) {
   else if (s.atk > 0) { frame = 5; hx += 6; }
   if (s.hhurt > 0) hx -= Math.round(Math.sin(s.hhurt / 25) * 2) + 2;
   const hflash = s.hhurt > 0 && Math.floor(s.hhurt / 60) % 2 === 0;
-  drawSprite(d, "hero", hx, GROUND, { frame, tint: hflash ? "#ff7a7a" : null, alpha: st.get("hp") <= 0 ? 0.4 : 1 });
+  const heroCls = st.get("hero_class") || "fighter";
+  drawSprite(d, `hero_${heroCls}`, hx, GROUND, { frame, tint: hflash ? "#ff7a7a" : null, alpha: st.get("hp") <= 0 ? 0.4 : 1 });
   // 挥剑的弧光
-  if (s.atk > 0) {
+  if (s.atk > 0 && heroCls === "wizard" && s.cur) {
+    // 法师：火焰箭从法杖飞向敌人
+    const k = Math.min(1, 1 - s.atk / 450), tx = s.cur.wx - scroll, sx = hx + 14;
+    const bx = sx + (tx - sx) * k, by = GROUND - 16 + Math.sin(k * Math.PI) * -6;
+    d.particles("bolt", bx, by, { rate: 90, life_ms: 260, speed: 10, spread: 360, size: 2, end_size: 0, color: "#ffd06a", end_color: "#ff4a1a", soft: false, max: 60 });
+    d.rect(Math.round(bx) - 2, Math.round(by) - 2, 4, 4, "#fff2b0");
+  } else if (s.atk > 0) {
     const a = 1 - s.atk / 300;
     for (let i = 0; i < 6; i++) { const ang = -1.2 + a * 2 + i * 0.12; d.rect(Math.round(hx + 14 + Math.cos(ang) * 14), Math.round(GROUND - 12 + Math.sin(ang) * 14), 2, 2, "#ffffff", { alpha: 0.9 - i * 0.12 }); }
   }

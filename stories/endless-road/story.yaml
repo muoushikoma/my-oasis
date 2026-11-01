@@ -69,7 +69,10 @@ assets:
   ashlands_mid: { type: image, path: assets/bg/ashlands_mid.png, use: background }
   ashlands_ground: { type: image, path: assets/bg/ashlands_ground.png, use: background }
   # 精灵（像素画，自动描边）：主角 6 帧（站立、走路 4 帧、攻击），篝火 2 帧，其余 1 帧
-  hero: { type: image, path: assets/sprites/hero.png, use: other }
+  hero_fighter: { type: image, path: assets/sprites/hero_fighter.png, use: other }
+  hero_rogue: { type: image, path: assets/sprites/hero_rogue.png, use: other }
+  hero_wizard: { type: image, path: assets/sprites/hero_wizard.png, use: other }
+  hero_cleric: { type: image, path: assets/sprites/hero_cleric.png, use: other }
   wolf: { type: image, path: assets/sprites/wolf.png, use: other }
   spider: { type: image, path: assets/sprites/spider.png, use: other }
   bandit: { type: image, path: assets/sprites/bandit.png, use: other }
@@ -103,15 +106,19 @@ state:
   rations:   { type: number, init: 8, min: 0, integer: true, visible: both, desc: 口粮，每里吃 1 份 }
   potions:   { type: number, init: 2, min: 0, integer: true, visible: both, desc: 治疗药水 }
   gold:      { type: number, init: 15, min: 0, integer: true, visible: both, desc: 金币 }
-  iron:      { type: number, init: 0, min: 0, integer: true, visible: ai, desc: 铁料（强化材料） }
-  essence:   { type: number, init: 0, min: 0, integer: true, visible: ai, desc: 魔晶（稀有强化材料） }
-  gear:      { type: json, init: { weapon: 0, armor: 0, pack: 0, kit: 0 }, visible: ai, desc: 强化等级：武器、护甲、背包、营具 }
-  relics:    { type: json, init: [], visible: ai, desc: 携带的遗物（最多 3 件） }
-  status:    { type: json, init: {}, visible: ai, desc: 状态效果及剩余里程 }
-  quest:     { type: json, init: {}, visible: ai, desc: 进行中的委托（title 名字，due 回访的里程） }
+  iron:      { type: number, init: 0, min: 0, integer: true, visible: both, desc: 铁料（强化材料） }
+  essence:   { type: number, init: 0, min: 0, integer: true, visible: both, desc: 魔晶（稀有强化材料） }
+  gear:      { type: json, init: { weapon: 0, armor: 0, pack: 0, kit: 0 }, visible: both, desc: 强化等级：武器、护甲、背包、营具 }
+  relics:    { type: json, init: [], visible: both, desc: 携带的遗物（最多 3 件） }
+  status:    { type: json, init: {}, visible: both, desc: 状态效果及剩余里程 }
+  quest:     { type: json, init: {}, visible: both, desc: 进行中的委托（title 名字，due 回访的里程） }
   # 冒险者
-  abil:      { type: json, init: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, visible: ai, desc: 冒险者的六项属性值 }
+  abil:      { type: json, init: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, visible: both, desc: 冒险者的六项属性值 }
   abilities: { type: string, init: "", visible: player, label: { zh: 属性, en: Abilities } }
+  hero_class: { type: enum, values: [fighter, rogue, wizard, cleric], init: fighter, visible: both, desc: 冒险者的职业（战士 / 游荡者 / 法师 / 牧师） }
+  class_name: { type: string, init: "", visible: player, label: { zh: 职业, en: Class } }
+  class_info: { type: json, init: [], visible: player, desc: 选职业时显示的职业卡 }
+  rolls:     { type: json, init: [], visible: none, desc: 开局掷出的 6 个属性值 }
   # 世界
   biome:
     type: enum
@@ -124,10 +131,10 @@ state:
   # 事件
   phase:
     type: enum
-    values: [none, card, battle, shop]
-    init: none
+    values: [class, none, card, battle, shop]
+    init: class
     visible: both
-    desc: 当前阶段：none 赶路，card 事件卡，battle 战斗，shop 交易
+    desc: 当前阶段：class 选职业，none 赶路，card 事件卡，battle 战斗，shop 交易
   event_kind:
     type: enum
     values: [none, combat, encounter, discovery, hazard, mystic, dilemma, trade, rest, quest]
@@ -143,7 +150,7 @@ state:
   event_title: { type: string, init: "", max_length: 60, visible: ai, desc: 当前事件的名字 }
   threat:    { type: number, init: 1, integer: true, visible: ai, desc: 威胁等级，越大越危险 }
   card:      { type: json, init: {}, visible: none }
-  foe:       { type: json, init: {}, visible: none }
+  foe:       { type: json, init: {}, visible: player, desc: 当前战斗的敌人（给面板显示血条） }
   next:      { type: json, init: {}, visible: none, desc: 提前掷好、正在或已经由 AI 写好的下一里事件 }
   camped:    { type: bool, init: false, visible: player }
   # 面板文字（规则生成）
@@ -161,7 +168,6 @@ realtime:
   interpolate: true
   on_tick: scripts/scene.js#tick
   on_ai: scripts/road.js#on_ai
-  on_ui: scripts/road.js#on_ui
   timers:
     card_watch: { every_ms: 500, script: scripts/road.js#watch }
 
@@ -176,6 +182,14 @@ actions:
   setup:
     callable_by: [rules]
     script: scripts/road.js#setup
+  pick_class:
+    label: { zh: 选择职业, en: Choose class }
+    params:
+      id: { type: enum, values: [fighter, rogue, wizard, cleric] }
+    require: "state.phase == 'class'"
+    require_message: { zh: 职业已经选好了。, en: Your class is already chosen. }
+    callable_by: [player]
+    script: scripts/road.js#pick_class
   walk:
     label: { zh: 继续前进, en: Walk on }
     desc: { zh: 向前走一里，吃掉 1 份口粮，并遇到新的事件, en: "Walk one mile, eat 1 ration, and meet a new event" }
@@ -222,13 +236,6 @@ actions:
     require_message: { zh: 现在没有事件卡。, en: There is no event card right now. }
     callable_by: [player]
     script: scripts/road.js#choose
-  open_panel:
-    label: { zh: 查看, en: View }
-    desc: { zh: 打开角色 / 行囊 / 遗物 / 旅程面板（不消耗时间）, en: "Open the character / pack / relics / journey panel (takes no time)" }
-    params:
-      id: { type: enum, values: [char, pack, relic, trip] }
-    callable_by: [player]
-    script: scripts/road.js#open_panel
   trade:
     label: { zh: 交易, en: Trade }
     desc: { zh: 在行商处购买或强化, en: Buy or upgrade at the peddler }
@@ -272,7 +279,7 @@ ai:
       prompt: |
         要写的是第 {{event.mile}} 里的事件（冒险者现在在第 {{state.distance}} 里，这张卡可能是提前写好的），地区：{{event.biome}}。
         引擎掷出的事件类别：{{event.kind}}，强度：{{event.tier}}，威胁等级：{{event.threat}}。
-        冒险者：{{state.level}} 级，生命 {{state.hp}}/{{state.max_hp}}，属性 {{state.abil}}；口粮 {{state.rations}}，药水 {{state.potions}}，金币 {{state.gold}}，铁料 {{state.iron}}，魔晶 {{state.essence}}；遗物 {{state.relics}}；状态 {{state.status}}；委托 {{state.quest}}。
+        冒险者：{{event.hero}}，{{state.level}} 级，生命 {{state.hp}}/{{state.max_hp}}，属性 {{state.abil}}；口粮 {{state.rations}}，药水 {{state.potions}}，金币 {{state.gold}}，铁料 {{state.iron}}，魔晶 {{state.essence}}；遗物 {{state.relics}}；状态 {{state.status}}；委托 {{state.quest}}。
 
         请把这个事件写成一张事件卡：
         - title：事件名（不超过 12 个字）。text：2~3 句描述，停在需要做决定的地方。
@@ -291,7 +298,7 @@ ai:
           - mystic：祭坛、精灵、诅咒之物、许愿泉。dilemma：两难的道德选择，让每个选项都有代价。
           - quest：委托「{{event.quest}}」的结局，要呼应委托的名字，奖励可以给 relic。
           - trade：写一位有特点的行商（选项留空，规则会打开商店）。rest：写一处安全的歇脚地（选项留空）。
-        - 选项要有不同的取舍：比如一个稳妥但收获小，一个冒险但收获大，一个花资源换确定结果。结合冒险者当前缺什么来设计。
+        - 选项要有不同的取舍：比如一个稳妥但收获小，一个冒险但收获大，一个花资源换确定结果。结合冒险者的职业（战士擅长力量/体质、游荡者擅长敏捷、法师擅长智力、牧师擅长感知）和当前缺什么来设计。
         - relic（可选）：如果有选项给 relic，挑一件：lucky_charm 幸运符、vampiric_blade 吸血之刃、traveler_boots 旅人靴、guardian_amulet 守护护符、hunter_horn 猎人号角、alchemist_flask 炼金瓶、star_chart 星图、undying_ember 不灭余烬。
 
         画面由模块拼成，请挑最贴切的组合：
@@ -335,7 +342,7 @@ ai:
             time: "enum:[day,dusk,night]"
             weather: "enum:[clear,rain,snow,fog,embers,fireflies,leaves]"
       context:
-        state: [distance, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art]
+        state: [distance, hero_class, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art]
         history_turns: 6
         setting: false
       temperature: 1.0
@@ -378,25 +385,15 @@ ui:
       height: 144
       pixelated: true
       render: scripts/scene.js#draw
-    # 两个自定义面板共用 ui/panel.html，用 config.view 区分；角色等详情是点按钮弹出的浮动面板（api.overlay）
-    action_bar:
+    # 右栏：一个自定义组件（ui/hud.html）——状态、事件卡 / 商店 / 选职业、行动按钮，以及组件内的详情弹窗
+    hud:
       type: custom
       region: side
-      src: ui/panel.html
-      config: { view: bar }
-      actions: [walk, camp, potion, attack, flee, open_panel]
-      height: 96
+      src: ui/hud.html
+      actions: [pick_class, walk, camp, potion, attack, flee, choose, trade]
+      height: 520
       player_can_hide: false
-      fallback: { zh: 行动栏是故事自带的自定义组件，请在设置里打开“自定义组件”后游玩。, en: "The action bar is a custom component — please turn custom components on in Settings to play." }
-    event_panel:
-      type: custom
-      region: side
-      src: ui/panel.html
-      config: { view: event }
-      actions: [choose, trade]
-      height: 260
-      player_can_hide: false
-      fallback: { zh: 事件面板是故事自带的自定义组件，请在设置里打开“自定义组件”后游玩。, en: "The event panel is a custom component — please turn custom components on in Settings to play." }
+      fallback: { zh: 这个故事的操作面板是自定义组件，请在设置里打开“自定义组件”后游玩。, en: "This story's control panel is a custom component — please turn custom components on in Settings to play." }
     log:
       type: text-log
       region: log
