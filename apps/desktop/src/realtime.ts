@@ -1,10 +1,10 @@
 // oasis/0.4 实时循环（客户端）：按 tick_hz 推进引擎、收集键盘/触摸/摇杆输入、把绘制指令画到 canvas、播放声音、异步跑 AI。
 import { runEntry, type Game, type DrawCmd } from "@my-oasis/engine";
-import type { Story, InputState } from "@my-oasis/schema";
+import { buildShader, type Story, type InputState, type TouchControlDef } from "@my-oasis/schema";
 import { h } from "./dom";
 import type { AssetBox } from "./assets";
 import type { LLM } from "@my-oasis/engine";
-import { type Renderer } from "./render/common";
+import { type Renderer, type RendererResources } from "./render/common";
 import { WebGLRenderer } from "./render/webgl";
 import { Canvas2DRenderer } from "./render/canvas2d";
 import { AudioEngine } from "./render/audio";
@@ -44,6 +44,17 @@ export class RealtimeDriver {
   ui: NativeUi;
   private fonts: FontFace[] = [];
   private padHeld = new Set<string>(); private padStick = false;
+  /** 画进画布的视频（api.draw.video）：每个素材一个 <video>，一段时间没画就暂停 */
+  private videos = new Map<string, { el: HTMLVideoElement; seen: number; broken?: boolean }>();
+  private shaders = new Map<string, { fragment: string; uniforms: Record<string, string> } | null>();
+  private tiledMaps = new Map<string, any>();
+  private touchEls = new Map<string, { el: HTMLElement; def: TouchControlDef }>();
+  readonly res: RendererResources = {
+    video: (id, o) => this.videoFor(id, o),
+    tiled: (id) => this.tiledFor(id),
+    shader: (id) => this.shaderFor(id),
+    warn: (msg) => this.s.game.clientWarn(msg),
+  };
   private shakeAmt = 0; private shakeUntil = 0; private shakeMs = 1; private touches = new Map<number, { id: number; x: number; y: number; target?: string }>();
   constructor(private s: RtHost) {
     this.ui = new NativeUi({
@@ -58,8 +69,9 @@ export class RealtimeDriver {
   get hz() { return Math.max(1, Math.min(60, this.s.story.realtime?.tick_hz ?? 30)); }
   get interpolate() { return !!(this.s.story.realtime as any)?.interpolate; }
 
-  canvas(cid: string, c: any): HTMLCanvasElement {
+  canvas(cid: string, c0: any): HTMLCanvasElement {
     let el = this.canvases.get(cid);
+    const c = { ...c0, ...this.s.game.canvasConfig(cid) }; // 显示场景的画布：用当前场景的尺寸
     if (!el) {
       const fill = c.size === "fill";
       const w = fill ? 1 : Math.max(1, c.width ?? 320), hh = fill ? 1 : Math.max(1, c.height ?? 240);
@@ -107,6 +119,7 @@ export class RealtimeDriver {
     const dpr = v.fixedDpr ?? Math.min(MAX_DPR, Math.max(1, globalThis.devicePixelRatio || 1), 4096 / Math.max(v.w, v.h));
     if (!v.r) {
       v.r = (!this.forceCanvas2d && WebGLRenderer.create(v.el, (id) => this.image(id), v.pixelated)) || new Canvas2DRenderer(v.el, (id) => this.image(id), v.pixelated);
+      v.r.res = this.res;
     }
     if (dpr !== v.dpr) { v.dpr = dpr; v.el.width = Math.round(v.w * dpr); v.el.height = Math.round(v.h * dpr); v.r.resize(v.w, v.h, dpr); }
     return v.r;
@@ -117,9 +130,10 @@ export class RealtimeDriver {
 
   /** 屏幕上的虚拟摇杆和按钮（触摸设备；桌面上也可以用鼠标点） */
   controlsEl(): HTMLElement | null {
-    const inp: any = this.s.story.input; if (!inp || (!inp.joystick && !inp.buttons?.length)) return null;
+    const inp: any = this.s.story.input; if (!inp || (!inp.joystick && !inp.buttons?.length && !inp.touch?.length)) return null;
     if (this.controls) return this.controls;
     const wrap = h("div", { class: "rt-controls" });
+    if (inp.touch?.length) { wrap.classList.add("has-touch"); wrap.append(this.touchLayer(inp.touch)); }
     if (inp.joystick) {
       const knob = h("div", { class: "rt-knob" }), pad = h("div", { class: `rt-joy ${inp.joystick?.side === "right" ? "right" : ""}` }, knob);
       const set = (e: PointerEvent | null) => {
@@ -144,6 +158,101 @@ export class RealtimeDriver {
       wrap.append(bs);
     }
     return (this.controls = wrap);
+  }
+
+  /**
+   * 故事自定义的触摸按键（input.touch）：按钮、摇杆、十字键，位置按屏幕的角/边摆放。
+   * 每个按键单独跟踪自己的手指（多点触控）；客户端的“⋯”出口永远在它们上面。
+   */
+  private touchLayer(defs: TouchControlDef[]): HTMLElement {
+    const layer = h("div", { class: "rt-touch" });
+    const coarse = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+    const label = (l: any) => (l && typeof l === "object" ? (l[this.s.game.lang] ?? l.zh ?? l.en ?? "") : l ?? "");
+    let firstStick = true;
+    for (const d of defs.slice(0, 16)) {
+      const size = d.size ?? (d.type === "button" ? 64 : 120), anchor = d.anchor ?? (d.type === "button" ? "bottom_right" : "bottom_left");
+      const pos: Record<string, string> = { width: `${size}px`, height: `${size}px`, opacity: String(d.opacity ?? 0.8) };
+      const x = d.x ?? 24, y = d.y ?? 24;
+      if (anchor.includes("left")) pos.left = `calc(${x}px + env(safe-area-inset-left))`; else if (anchor.includes("right")) pos.right = `calc(${x}px + env(safe-area-inset-right))`; else { pos.left = `calc(50% + ${x}px)`; pos.marginLeft = `${-size / 2}px`; }
+      if (anchor.includes("top")) pos.top = `calc(${y}px + env(safe-area-inset-top))`; else if (anchor.includes("bottom")) pos.bottom = `calc(${y}px + env(safe-area-inset-bottom))`; else { pos.top = `calc(50% + ${y}px)`; pos.marginTop = `${-size / 2}px`; }
+      if (d.color) pos.background = d.color;
+      const img = d.image ? this.s.assets.url(`asset:${d.image}`) : undefined, imgOn = d.image_pressed ? this.s.assets.url(`asset:${d.image_pressed}`) : undefined;
+      if (img) { pos.backgroundImage = `url("${img}")`; pos.backgroundSize = "100% 100%"; }
+      const el = h("div", { class: `rt-tc rt-tc-${d.type}`, "data-touch": d.id, style: pos }, d.type === "button" ? label(d.label) : "");
+      const press = (on: boolean) => { el.classList.toggle("on", on); if (imgOn) el.style.backgroundImage = `url("${on ? imgOn : img}")`; };
+      if (d.show !== "always" && !coarse) el.style.display = "none";
+      if (d.visible === false) el.style.display = "none";
+      if (d.type === "button") {
+        const k = d.key ?? d.id;
+        el.onpointerdown = (e) => { e.preventDefault(); el.setPointerCapture?.(e.pointerId); if (el.classList.contains("off")) return; if (!this.input.held[k]) this.input.pressed[k] = true; this.input.held[k] = true; press(true); };
+        el.onpointerup = el.onpointercancel = () => { delete this.input.held[k]; press(false); };
+      } else {
+        const knob = h("div", { class: "rt-tc-knob" }); if (d.type === "stick") el.append(knob);
+        const main = firstStick && d.type === "stick"; if (d.type === "stick") firstStick = false;
+        const keys = { up: d.keys?.up ?? "up", down: d.keys?.down ?? "down", left: d.keys?.left ?? "left", right: d.keys?.right ?? "right" };
+        const set = (e: PointerEvent | null) => {
+          let vx = 0, vy = 0;
+          if (e) { const r = el.getBoundingClientRect(), R = r.width / 2; vx = (e.clientX - r.left - R) / R; vy = (e.clientY - r.top - R) / R; const l = Math.hypot(vx, vy); if (l > 1) { vx /= l; vy /= l; } }
+          if (d.type === "stick") {
+            const v = { x: Math.round(vx * 100) / 100, y: Math.round(vy * 100) / 100 };
+            this.input.sticks = { ...(this.input.sticks ?? {}), [d.id]: v }; if (main) this.input.joystick = v;
+            knob.style.transform = e ? `translate(${vx * size * 0.3}px, ${vy * size * 0.3}px)` : "";
+          } else {
+            const dirs = { up: vy < -0.35, down: vy > 0.35, left: vx < -0.35, right: vx > 0.35 };
+            for (const [dir, on] of Object.entries(dirs)) { const k = (keys as any)[dir]; if (on) { if (!this.input.held[k]) this.input.pressed[k] = true; this.input.held[k] = true; } else delete this.input.held[k]; }
+            el.dataset.dir = Object.entries(dirs).filter(([, on]) => on).map(([k]) => k).join(" ");
+          }
+          press(!!e);
+        };
+        el.onpointerdown = (e) => { e.preventDefault(); el.setPointerCapture?.(e.pointerId); if (!el.classList.contains("off")) set(e); };
+        el.onpointermove = (e) => { if ((e.buttons || e.pointerType === "touch") && el.classList.contains("on")) set(e); };
+        el.onpointerup = el.onpointercancel = () => set(null);
+      }
+      el.oncontextmenu = (e) => e.preventDefault();
+      this.touchEls.set(d.id, { el, def: d }); layer.append(el);
+    }
+    return layer;
+  }
+  private touchSet(u: any) {
+    const t = this.touchEls.get(u.id); if (!t) return;
+    if (typeof u.visible === "boolean") t.el.style.display = u.visible ? "" : "none";
+    if (typeof u.disabled === "boolean") t.el.classList.toggle("off", u.disabled);
+    if (u.label !== undefined && t.def.type === "button") t.el.textContent = typeof u.label === "object" ? (u.label[this.s.game.lang] ?? u.label.zh ?? "") : String(u.label);
+  }
+
+  /** 画布里的视频：第一次画时创建；muted 默认 false（跟随客户端静音），loop 默认 true */
+  private videoFor(id: string, o: any): HTMLVideoElement | undefined {
+    let v = this.videos.get(id);
+    if (!v) {
+      const u = this.s.assets.url(`asset:${id}`); if (!u) { this.s.game.clientWarn(`视频素材「${id}」不存在`); return; }
+      const el = document.createElement("video"); el.src = u; el.playsInline = true; el.preload = "auto"; el.crossOrigin = "anonymous";
+      v = { el, seen: this.clock }; this.videos.set(id, v);
+      el.onerror = () => { v!.broken = true; this.s.game.clientWarn(`视频「${id}」无法播放（格式不支持或文件损坏）`); };
+    }
+    const el = v.el; v.seen = this.clock;
+    el.loop = o.loop !== false; el.muted = !!o.muted || this.s.muted();
+    if (typeof o.volume === "number") el.volume = Math.max(0, Math.min(1, o.volume));
+    if (typeof o.rate === "number") el.playbackRate = Math.max(0.25, Math.min(4, o.rate));
+    if (o.paused || this.paused) { if (!el.paused) el.pause(); }
+    else if (el.paused && !v.broken && !(el.ended && !el.loop)) el.play().catch(() => { el.muted = true; el.play().catch(() => {}); }); // 不能自动出声时先静音播放
+    return el;
+  }
+  private sweepVideos() { for (const v of this.videos.values()) if (!v.el.paused && this.clock - v.seen > 300) v.el.pause(); }
+  private tiledFor(id: string): any {
+    if (this.tiledMaps.has(id)) return this.tiledMaps.get(id);
+    let m: any = null;
+    try { m = this.s.game.tiledMap(id); } catch (e: any) { this.s.game.clientWarn(`地图「${id}」：${e?.message ?? e}`); }
+    this.tiledMaps.set(id, m); return m;
+  }
+  private shaderFor(id: string) {
+    if (this.shaders.has(id)) return this.shaders.get(id) ?? undefined;
+    const a: any = this.s.assets.meta(`asset:${id}`); let out: { fragment: string; uniforms: Record<string, string> } | null = null;
+    if (!a || a.type !== "shader") this.s.game.clientWarn(`着色器「${id}」没有登记（assets 里 type: shader）`);
+    else {
+      const b = this.s.assets.bytes(`asset:${id}`); const r = buildShader(b ? new TextDecoder().decode(b) : "", a.uniforms ?? {});
+      if (r.ok) out = { fragment: r.fragment!, uniforms: r.uniforms }; else this.s.game.clientWarn(`着色器「${id}」没通过检查：${r.errors.join("；")}`);
+    }
+    this.shaders.set(id, out); return out ?? undefined;
   }
 
   /** 预加载登记过的图片和声音（显示进度），之后才开始循环，避免开局卡顿和素材“闪现” */
@@ -199,6 +308,7 @@ export class RealtimeDriver {
     cancelAnimationFrame(this.raf); this.raf = 0; this.off.forEach((f) => f()); this.off = [];
     this.audio?.dispose(); this.audio = undefined;
     this.ui.dispose();
+    for (const v of this.videos.values()) { v.el.pause(); v.el.removeAttribute("src"); v.el.load(); } this.videos.clear();
     for (const f of this.fonts) (document as any).fonts?.delete(f); this.fonts = [];
     this.dbg?.remove(); this.dbg = undefined;
   }
@@ -216,7 +326,7 @@ export class RealtimeDriver {
 
   /** 暂停菜单打开时：不推进时间、松开所有按键 */
   paused = false;
-  setPaused(p: boolean) { this.paused = p; this.ui.setPaused(p); this.padHeld.clear(); this.input.held = {}; this.input.pressed = {}; this.input.joystick = { x: 0, y: 0 }; this.input.pointer = { ...this.input.pointer, down: false }; }
+  setPaused(p: boolean) { if (p) for (const v of this.videos.values()) v.el.pause(); this.paused = p; this.ui.setPaused(p); this.padHeld.clear(); this.input.held = {}; this.input.pressed = {}; this.input.joystick = { x: 0, y: 0 }; this.input.pointer = { ...this.input.pointer, down: false }; }
 
   /**
    * 每个显示帧调用一次（跟屏幕刷新率走，通常 60fps 或更高）：
@@ -282,10 +392,15 @@ export class RealtimeDriver {
     const alpha = this.interpolate ? Math.min(1, this.acc / (1000 / this.hz)) : 0;
     for (const [cid, v] of this.views) {
       if (!v.el.isConnected) continue;
+      if (v.fixedDpr === undefined) {
+        // 场景切换后画布尺寸可能变了（scenes 里每个场景可以有自己的 width/height）
+        const cs = this.s.game.canvasSize(cid);
+        if (cs.width !== v.w || cs.height !== v.h) { v.w = cs.width; v.h = cs.height; v.dpr = 0; if (!v.r) { v.el.width = v.w; v.el.height = v.h; } refresh = true; }
+      }
       if (refresh) {
         const t = performance.now();
         v.cmds = this.s.game.renderCanvas(cid, alpha);
-        v.animated = v.cmds.some((c) => Array.isArray(c) && (c[0] === "particles" || (c[c.length - 1] && typeof c[c.length - 1] === "object" && typeof c[c.length - 1].fps === "number")));
+        v.animated = v.cmds.some((c) => Array.isArray(c) && (c[0] === "particles" || c[0] === "video" || c[0] === "post" || (c[c.length - 1] && typeof c[c.length - 1] === "object" && typeof c[c.length - 1].fps === "number")));
         renderMs += performance.now() - t;
       } else if (!v.animated && !(v.r as any)?.particles?.em.size && v.dpr) continue; // 画面没变，不重画
       const r = this.renderer(v); if (!r) continue;
@@ -293,6 +408,7 @@ export class RealtimeDriver {
       drawn += r.draw(v.cmds, this.clock, frameDt).drawn;
       drawMs += performance.now() - t;
     }
+    this.sweepVideos();
     if (refresh) st.renderMs = renderMs;
     if (drawn) { st.drawMs = drawMs; st.drawn = drawn; }
   }
@@ -304,11 +420,14 @@ export class RealtimeDriver {
 
   effects() {
     const e = this.s.game.takeEffects();
-    if (e.ui?.length) this.ui.apply(e.ui);
+    const ui = (e.ui ?? []).filter((u: any) => { if (u.op === "touch.set") { this.touchSet(u); return false; } return true; });
+    if (ui.length) this.ui.apply(ui);
     this.audio ??= new AudioEngine((id) => this.s.assets.url(`asset:${id}`), (id) => this.s.assets.bytes(`asset:${id}`));
     this.audio.setMaster(this.s.muted() ? 0 : 1);
     for (const snd of e.sounds) {
       if (snd.op === "stop") { this.audio.stop(snd.id, snd.fade_ms ?? 0); continue; }
+      if (snd.op === "listener") { this.audio.listener(snd.x ?? 0, snd.y ?? 0); continue; }
+      if (snd.op === "move") { if (snd.id) this.audio.move(snd.id, snd.x ?? 0, snd.y ?? 0); continue; }
       if (this.s.muted() || !snd.id) continue;
       const meta = this.s.assets.meta(`asset:${snd.id}`) ?? {};
       this.audio.play(snd.id, snd, (snd.volume ?? meta.volume ?? 1) * this.s.sfx());

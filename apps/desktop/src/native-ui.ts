@@ -125,6 +125,16 @@ export class NativeUi {
       if (st.border !== undefined) c.border = `${len(st.border)} solid ${st.border_color ?? "currentColor"}`;
       if (st.font) c.fontFamily = `"${st.font}", sans-serif`; if (st.bold) c.fontWeight = "bold"; if (st.italic) c.fontStyle = "italic";
       if (st.align) c.textAlign = st.align; if (st.scroll) c.overflow = "auto";
+      if (st.bg_image) {
+        // 九宫格：CSS border-image，四角不拉伸、边和中间拉伸（素材 URL 由客户端生成，作者只给素材 id）
+        const u = this.host.url(st.bg_image);
+        if (u) {
+          const sl: number[] = st.bg_slice ?? [8, 8, 8, 8], bd: number[] = st.bg_border ?? sl;
+          c.borderStyle = "solid"; c.borderWidth = bd.map((v) => `${v}px`).join(" ");
+          c.borderImage = `url("${u.replace(/["\\\n]/g, "")}") ${sl.join(" ")} fill / ${bd.map((v) => `${v}px`).join(" ")} stretch`;
+          c.background = "transparent";
+        }
+      }
     };
     const node = (n: any): HTMLElement => {
       let el: HTMLElement;

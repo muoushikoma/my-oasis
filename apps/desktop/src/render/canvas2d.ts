@@ -1,6 +1,6 @@
 // Canvas2D 后备渲染器：设备不支持 WebGL 时使用（tint 在这里不生效，其余效果一致）
 import { walk, type Backend, type Mat } from "./walk";
-import { ParticleField, type Renderer, type ImageSource, type RGBA, type Blend } from "./common";
+import { ParticleField, type Renderer, type RendererResources, type ImageSource, type RGBA, type Blend } from "./common";
 import { TextCache } from "./text";
 
 const OP: Record<Blend, GlobalCompositeOperation> = { normal: "source-over", add: "lighter", multiply: "multiply", screen: "screen" };
@@ -9,12 +9,13 @@ const css = (c: RGBA) => `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255
 export class Canvas2DRenderer implements Renderer, Backend {
   readonly kind = "canvas2d" as const;
   private ctx: CanvasRenderingContext2D; private dpr = 1; private W = 0; private H = 0;
-  private texts = new TextCache(300); particles = new ParticleField();
+  private texts = new TextCache(300); particles = new ParticleField(); res: RendererResources = {}; private warnedPost = false;
   constructor(private el: HTMLCanvasElement, private img: ImageSource, private pixelated = false) { this.ctx = el.getContext("2d")!; }
   resize(w: number, h: number, dpr: number) { this.W = w; this.H = h; this.dpr = dpr; }
   draw(cmds: any[], timeMs: number, dtMs: number) {
     this.particles.advance(dtMs); this.texts.frame++;
-    return { drawn: walk(this, cmds, this.img, this.particles, timeMs, !this.pixelated) };
+    if (!this.warnedPost && cmds.some((c) => Array.isArray(c) && c[0] === "post" && c[1])) { this.warnedPost = true; this.res.warn?.("这台设备不支持 WebGL，后期着色器（api.draw.post）不会生效，画面照常显示"); }
+    return { drawn: walk(this, cmds, this.img, this.particles, timeMs, !this.pixelated, this.res) };
   }
   private set(m: Mat, c: RGBA | null, blend: Blend) {
     const d = this.dpr, x = this.ctx;
