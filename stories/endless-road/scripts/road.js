@@ -91,7 +91,7 @@ const CLASSES = {
     desc: ["锁甲与钉头锤。生命骰 d8；药水和扎营回血 ×1.5；对亡灵和幽魂额外 +1d8；感知检定 +2。", "Chain mail and mace. d8 hit die; potions and camping heal ×1.5; +1d8 against undead and spirits; +2 to WIS checks."] },
 };
 const CLASS_IDS = Object.keys(CLASSES);
-// 职业资源：怒气（命中 +1、挨打 +2，每场清零）、连击（命中 +1，每场从 1 开始）、法力（只在扎营时补满）、信仰（每回合 +1，每场至少 2）
+// 职业资源：怒气（命中 +1、挨打 +1，每场清零）、连击（命中 +1，每场从 1 开始）、法力（只在扎营时补满）、信仰（每回合 +1，每场至少 2）
 const RES = { fighter: { k: "rage", cur: 0, max: 6 }, rogue: { k: "combo", cur: 0, max: 5 }, wizard: { k: "mana", cur: 6, max: 6 }, cleric: { k: "faith", cur: 2, max: 6 } };
 const RES_NAME = { rage: ["怒气", "Rage"], combo: ["连击", "Combo"], mana: ["法力", "Mana"], faith: ["信仰", "Faith"] };
 // 每个职业 3 个技能（cost < 0 表示“花光全部，至少 -cost 点”）
@@ -620,7 +620,7 @@ function damageHero(api, f, dmg, crit) {
   }
   let b = get(api, "hero_block") || 0; const used = Math.min(b, dmg); b -= used; dmg -= used; set(api, "hero_block", b);
   if (used) log(api, L(api, `🛡 格挡挡下 ${used} 点伤害。`, `🛡 Your guard absorbs ${used} damage.`));
-  if (get(api, "hero_class") === "fighter") resGain(api, 2);
+  if (get(api, "hero_class") === "fighter") resGain(api, 1);
   if (dmg <= 0) { pop(api, "s", "#c8d8ff", false); return 0; }
   hurt(api, dmg); anim(api, "hhurt", 400);
   pop(api, `-${dmg}`, crit ? "#ffdd44" : "#ff5a4a", false);

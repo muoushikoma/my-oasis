@@ -184,7 +184,7 @@ const RES_COLOR = { rage: "#ff6a3a", combo: "#ffd84a", mana: "#5ab4ff", faith: "
 function resBar(s) {
   const r = s.res; if (!r || !r.k) return null;
   const name = { rage: T("怒气", "Rage"), combo: T("连击", "Combo"), mana: T("法力", "Mana"), faith: T("信仰", "Faith") }[r.k];
-  return h("div", { class: "rbar out", title: { rage: T("命中 +1、挨打 +2，每场战斗清零", "+1 on hit, +2 when hit; resets each fight"), combo: T("命中 +1（暴击 +2），每场战斗清零", "+1 on hit (+2 on crit); resets each fight"), mana: T("不会自己恢复——只有扎营能补满", "Doesn't regenerate — only camping refills it"), faith: T("战斗中每回合 +1，每场至少 2", "+1 every combat turn, at least 2 per fight") }[r.k] },
+  return h("div", { class: "rbar out", title: { rage: T("命中 +1、挨打 +1、防御 +1，每场战斗清零", "+1 on hit, when hit or on Defend; resets each fight"), combo: T("命中 +1（暴击 +2），每场战斗清零", "+1 on hit (+2 on crit); resets each fight"), mana: T("不会自己恢复——只有扎营能补满", "Doesn't regenerate — only camping refills it"), faith: T("战斗中每回合 +1，每场至少 2", "+1 every combat turn, at least 2 per fight") }[r.k] },
     h("span", {}, name), h("span", { class: "pips" }, Array.from({ length: r.max }, (_, i) => h("i", { class: i < r.cur ? "on" : "", style: i < r.cur ? { background: RES_COLOR[r.k] } : null }))), h("em", {}, `${r.cur}/${r.max}`));
 }
 function banner(s) {
