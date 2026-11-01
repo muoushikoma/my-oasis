@@ -9,8 +9,8 @@ use std::time::Duration;
 /// 投稿目标仓库（代码与故事同一个公开仓库）
 pub const UPSTREAM_OWNER: &str = "muoushikoma";
 pub const UPSTREAM_REPO: &str = "my-oasis";
-/// OAuth App 的 Client ID（公开信息，不是密钥）。GitHub Bot 登记应用后填入；为空时客户端提示“登录暂未开放”。
-pub const CLIENT_ID: &str = match option_env!("OASIS_GITHUB_CLIENT_ID") { Some(s) => s, None => "" };
+/// OAuth App 的 Client ID（公开信息，不是密钥）。构建时可用 OASIS_GITHUB_CLIENT_ID 覆盖；默认用本仓库登记的应用。
+pub const CLIENT_ID: &str = match option_env!("OASIS_GITHUB_CLIENT_ID") { Some(s) if !s.is_empty() => s, _ => "Ov23lix1IQ8cEIKBD3Rw" };
 /// 公开仓库只需 public_repo：用于 fork、建分支、提交 PR
 pub const SCOPE: &str = "public_repo";
 
