@@ -1,5 +1,5 @@
 // 投稿：GitHub 登录（Device Flow）+ 一键上传投稿 + 我的投稿状态。不登录也能浏览、下载、游玩。
-import { validateFiles, type StoryFiles } from "@my-oasis/schema";
+import { validateFiles, pickText, libraryProblems, libraryWarnings, type StoryFiles } from "@my-oasis/schema";
 import { h, toast } from "./dom";
 import { bridge, bytesToB64 } from "./bridge";
 import { issuesView } from "./issues";
@@ -9,16 +9,18 @@ interface Source { label: string; files: () => StoryFiles }
 
 const PR_BODY = (meta: any, ai: boolean) => `## 投稿信息 / Submission / 投稿情報
 
-- 故事名称：${meta.title}
+- 故事名称 / Title：${pickText(meta.title, "zh")} / ${pickText(meta.title, "en")}
+- 标签 / Tags：${(meta.tags ?? []).map((t: any) => `${pickText(t, "zh")}/${pickText(t, "en")}`).join("，")}
 - 文件夹（= meta.id）：\`stories/${meta.id}/\`
 - 是否需要 AI：${ai ? "是" : "否"}
-- 分级：${meta.rating ?? "?"}
+- 分级：${meta.rating === "all-ages" ? "全年龄 all-ages" : meta.rating ?? "?"}
 
 ## 自检
 
 - [x] 我只改动了 \`stories/${meta.id}/\` 里的文件（由客户端自动生成）
 - [x] 文件夹名和 \`story.yaml\` 里的 \`meta.id\` 一样
-- [x] 在客户端里格式检查通过
+- [x] 在客户端里格式检查通过（名称、简介、3 个标签都有中英双语）
+- [x] 全年龄内容，任何年龄的玩家都适合
 - [x] 不含色情内容，也没有血腥猎奇、仇恨、违法等不适合公开发布的内容
 - [x] 文字、图片、音乐都是我自己创作的，或者我有权使用
 - [x] 没有放任何 API Key、密码或个人隐私信息
@@ -87,6 +89,9 @@ export function submitView(drafts: { title: string; files: () => StoryFiles }[],
     const choose = async (src: Source) => {
       const files = src.files(), res = validateFiles(files);
       if (!res.ok || !res.story) { out.replaceChildren(h("h3", {}, `“${src.label}”还有问题，改好才能投稿`), issuesView(res)); return; }
+      const probs = libraryProblems(res.story);
+      if (probs.length) { out.replaceChildren(h("div", { class: "card" }, h("h3", {}, `“${src.label}”还不符合故事库要求，改好才能投稿`), h("ul", {}, ...probs.map((t) => h("li", {}, t))))); return; }
+      const warns = libraryWarnings(res.story);
       const meta: any = res.story.meta, ai = /"content":"ai"/.test(JSON.stringify(res.story)) || !!(res.story as any).ai;
       const ok = h("input", { type: "checkbox" }) as HTMLInputElement;
       const btn = h("button", { class: "primary" }, "上传投稿") as HTMLButtonElement;
@@ -95,14 +100,15 @@ export function submitView(drafts: { title: string; files: () => StoryFiles }[],
         btn.disabled = true; btn.textContent = "上传中…（第一次会先帮你复制仓库，可能要半分钟）";
         try {
           const list = [...files].map(([path, data]) => ({ path, base64: bytesToB64(data) }));
-          const pr = await bridge.gh<PrInfo>("gh_submit", { id: meta.id, title: meta.title, body: PR_BODY(meta, ai), files: list });
+          const pr = await bridge.gh<PrInfo>("gh_submit", { id: meta.id, title: `${pickText(meta.title, "zh")} / ${pickText(meta.title, "en")}`, body: PR_BODY(meta, ai), files: list });
           out.replaceChildren(h("div", { class: "card" }, h("h3", {}, "✅ 投稿已提交"), h("p", {}, `编号 #${pr.number}。系统会先自动检查格式，然后等维护者审核；合并后就会出现在在线故事库里。`),
             h("div", { class: "row" }, h("button", { class: "primary", onclick: () => bridge.openUrl(pr.url) }, "在 GitHub 上查看"), h("code", {}, pr.url))));
           drawMine();
         } catch (e: any) { toast(`上传失败：${e?.message ?? e}`, "err"); btn.disabled = false; btn.textContent = "上传投稿"; }
       };
-      out.replaceChildren(h("div", { class: "card" }, h("h3", {}, `准备投稿：${meta.title}`),
-        h("p", { class: "small muted" }, `会放到 stories/${meta.id}/，共 ${files.size} 个文件。分级：${meta.rating ?? "?"}；${ai ? "需要 AI" : "纯规则"}。如果这个 id 已经上架，会作为新版本覆盖（记得把 meta.version 改大）。`),
+      out.replaceChildren(h("div", { class: "card" }, h("h3", {}, `准备投稿：${pickText(meta.title, "zh")} / ${pickText(meta.title, "en")}`),
+        warns.length ? h("details", {}, h("summary", {}, `提醒：有 ${warns.length} 处文字只有一种语言（不影响投稿）`), h("ul", { class: "small" }, ...warns.slice(0, 30).map((t) => h("li", {}, t)))) : null,
+        h("p", { class: "small muted" }, `会放到 stories/${meta.id}/，共 ${files.size} 个文件。分级：全年龄；${ai ? "需要 AI" : "纯规则"}。如果这个 id 已经上架，会作为新版本覆盖（记得把 meta.version 改大）。`),
         h("label", { class: "row" }, ok, h("span", {}, "我确认：不含色情等不适合公开的内容；文字和素材是我原创或有权使用；没有 Key 或隐私信息。版权仍归我，同意授权本平台公开分发。")),
         h("div", { class: "row" }, btn)));
     };

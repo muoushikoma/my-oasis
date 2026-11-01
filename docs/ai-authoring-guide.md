@@ -47,7 +47,10 @@ meta（必填）、state（可选）、endings（可选）
 所有 id（状态、动作、事件、工具、接入点、组件、结局）只能用小写英文字母开头、小写字母/数字/下划线，最长 40，例如 oil、keeper_trust。中文名写在 label。
 meta.id 用小写字母、数字、连字符，如 lighthouse-keeper。
 
-【meta】必填：id, title(≤40字), version("1.0.0"), summary(≤200字), language("zh-CN"), rating(all-ages|teen|mature，禁止成人内容；mature 必须写 content_warnings)。可选：authors, tags(≤10), content_warnings, cover, setting, est_minutes, license。
+【meta】必填：id, title(≤40字), version("1.0.0"), summary(≤200字), language("zh-CN"), rating。可选：languages, authors, tags, content_warnings, cover, setting, est_minutes, license。
+要投稿到公开故事库时必须：rating 写 all-ages（只收全年龄，禁止成人、色情、血腥内容）；title 和 summary 都写成中英双语 { zh: …, en: … }；tags 正好 3 个，每个都写成 { zh: …, en: … }；并写 languages: [zh, en]。
+
+【中英双语】所有玩家能看到的文字（title、summary、tags、intro、label、desc、text、require_message、fail、opening、fallback、placeholder、reject、alt、choices 的 label 等）都写成 { zh: 中文, en: English }，中英意思一致。写给 AI 看的 system/task/prompt/must/forbid 不用双语。引擎会让 AI 按玩家选的语言回复；脚本里用 api.lang（"zh" 或 "en"）判断语言。
 
 【state】每项：type(number|bool|string|enum|list|set|map|record) + init（必填，类型一致）。
 - number 可加 min, max, integer
@@ -148,7 +151,7 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 可用：api.state.get/set/inc/add/remove、api.params、api.random.int/float/pick/weighted、api.actions.call、api.events.emit、api.end、api.fail、api.log。禁止 Math.random、网络、文件、时间。
 
 【自检清单】
-1. spec 是 "oasis/0.3"；meta 六个必填字段齐全；rating 合法
+1. spec 是 "oasis/0.3" 或 "oasis/0.4"；meta 六个必填字段齐全；投稿时 rating 是 all-ages，title/summary 中英双语，tags 正好 3 个且中英双语
 2. 所有 id 都是小写英文/数字/下划线
 3. 每个 enum 的 init 在 values 里；数值 init 在 min/max 之间
 4. 表达式里的字符串都用单引号；set 赋字符串时写成 "'文字'"
@@ -157,7 +160,7 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 7. 每个任务卡 authority ≤ rules.max_authority；authority 为 1 的工具若要改状态，写了 writes
 8. json 输出写了 schema；optional 接入点写了 fallback
 9. 故事一定会结束（有回合/天数等上限对应的结局）
-10. 内容符合 rating，全年龄内容不含血腥、色情
+10. 内容适合全年龄：不含血腥、色情；玩家可见文字都有中文和英文
 11. AI 输出到的组件都写了 content: ai；没标的都是固定内容
 12. 每个 text-input（不带 writes 的）和 chat-box 都写了 input（actions + reject），actions 里的动作都存在
 13. 所有 asset:id 都在 assets 里登记，图片处用图片、音乐处用音频；每个生图点写了 fallback
@@ -179,17 +182,24 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 spec: oasis/0.3
 meta:
   id: guess-the-box
-  title: 三个箱子
+  title: { zh: 三个箱子, en: Three Boxes }
   version: 1.0.0
-  summary: 三次机会，找出藏着钥匙的箱子。
+  summary: { zh: 三次机会，找出藏着钥匙的箱子。, en: Three tries to find the box with the key. }
   language: zh-CN
+  languages: [zh, en]
   rating: all-ages
+  tags:
+    - { zh: 解谜, en: Puzzle }
+    - { zh: 短篇, en: Short }
+    - { zh: 纯规则, en: Rules only }
 start:
-  intro: 面前有三个箱子，只有一个里面有钥匙。你有三次机会。
+  intro:
+    zh: 面前有三个箱子，只有一个里面有钥匙。你有三次机会。
+    en: Three boxes stand before you; only one holds the key. You have three tries.
   do: [ { set: { answer: "randint(1, 3)" } } ]
 state:
   answer:  { type: number, init: 0, integer: true, visible: none }
-  chances: { type: number, init: 3, min: 0, integer: true, label: 剩余机会 }
+  chances: { type: number, init: 3, min: 0, integer: true, label: { zh: 剩余机会, en: Tries left } }
   found:   { type: bool, init: false, visible: none }
 actions:
   open_box:
@@ -201,8 +211,8 @@ actions:
         else: [ { log: "'空的。'" } ]
 endings:
   list:
-    - { id: win, label: 找到了, kind: good, when: "state.found" }
-    - { id: lose, label: 机会用完, kind: bad, when: "state.chances <= 0" }
+    - { id: win, label: { zh: 找到了, en: Found it }, kind: good, when: "state.found" }
+    - { id: lose, label: { zh: 机会用完, en: Out of tries }, kind: bad, when: "state.chances <= 0" }
 ui:
   components:
     log:   { type: text-log, region: main }
@@ -210,9 +220,9 @@ ui:
       type: choice-buttons
       region: input
       choices:
-        - { label: 一号箱, action: open_box, params: { n: 1 } }
-        - { label: 二号箱, action: open_box, params: { n: 2 } }
-        - { label: 三号箱, action: open_box, params: { n: 3 } }
+        - { label: { zh: 一号箱, en: Box 1 }, action: open_box, params: { n: 1 } }
+        - { label: { zh: 二号箱, en: Box 2 }, action: open_box, params: { n: 2 } }
+        - { label: { zh: 三号箱, en: Box 3 }, action: open_box, params: { n: 3 } }
     stats: { type: stat-list, region: status, bind: [chances] }
 ```
 

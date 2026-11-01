@@ -20,7 +20,7 @@ This repo holds both the **client source code** and the **public story library**
 
 PRs from forks may **only change `stories/`**. After the maintainer reviews and merges, the index and the story site update automatically. Unmerged submissions never show up in the app.
 
-Content rules: no sexual content (ratings `all-ages` and `teen` only), no gore, hate, illegal content or private data; only material you own or may use; never include API keys.
+Content rules: all-ages stories only (`rating: all-ages`); title, summary and exactly 3 tags must be given in both Chinese and English; no sexual content, no gore, hate, illegal content or private data; only material you own or may use; never include API keys.
 
 ## License & copyright
 - **Code:** [MIT](LICENSE).

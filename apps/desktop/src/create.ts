@@ -1,5 +1,5 @@
 // 创作板块：规范文档阅读/下载、复制给 AI、用已连接的 AI 写故事（草稿 → 校验 → 试玩 → 导出）、导入检查
-import { validateFiles, filesToZip, aiFixRequest, type StoryFiles } from "@my-oasis/schema";
+import { validateFiles, filesToZip, aiFixRequest, pickText, type StoryFiles } from "@my-oasis/schema";
 import { h, toast } from "./dom";
 import { bridge, filesFromSingle } from "./bridge";
 import { issuesView, copyText } from "./issues";
@@ -124,7 +124,7 @@ function checkTab(body: HTMLElement, ctx: Ctx) {
       h("div", { class: "row" },
         h("button", { onclick: pick }, "改好了，重新选择文件检查"),
         res.ok ? h("button", { class: "primary", onclick: () => ctx.importFiles(name, files) }, "存入故事库") : null,
-        res.ok && res.story ? h("button", { onclick: () => ctx.play(`check-${res.story!.meta.id}`, res.story!.meta.title, files) }, "直接试玩") : null));
+        res.ok && res.story ? h("button", { onclick: () => ctx.play(`check-${res.story!.meta.id}`, pickText(res.story!.meta.title, loadSettings().lang), files) }, "直接试玩") : null));
   };
   const pick = async () => { try { const p = await bridge.pickPackage(false); if (p) run(p.name, p.files); } catch (e: any) { toast(`读取失败：${e?.message ?? e}`, "err"); } };
   const drop = h("div", { class: "drop" }, h("p", {}, "选择或拖入故事包（.oasis / .zip / story.yaml），只检查、不导入。改完后再检查一次，没问题再存入故事库。"),

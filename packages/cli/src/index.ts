@@ -2,13 +2,13 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, argv, env, exit } from "node:process";
-import { validateFiles, formatIssues, aiFixRequest, type Story, type StoryFiles } from "@my-oasis/schema";
+import { validateFiles, formatIssues, aiFixRequest, localizeStory, type Story, type StoryFiles } from "@my-oasis/schema";
 import { loadFromPath } from "@my-oasis/schema/node";
 import { Game, runEntry, entriesFor, openAiCompatible, createQuickJsRunner, type LLM } from "@my-oasis/engine";
 
 const HELP = `用法：
   oasis validate <故事文件夹 | .oasis | story.yaml> [--ai-fix]   检查故事包；--ai-fix 额外输出可以贴给 AI 的修改请求
-  oasis play <故事> [--seed 数字] [--no-ai]                      文字版试玩
+  oasis play <故事> [--seed 数字] [--no-ai] [--lang en]                    文字版试玩
 
 试玩时接 AI（OpenAI 兼容接口），用环境变量配置，Key 不会写进任何文件：
   OASIS_API_KEY   （或 OPENAI_API_KEY）
@@ -40,10 +40,12 @@ async function play(target: string) {
   const { files, res } = load(target);
   if (!res.ok) { console.log(formatIssues(res)); console.log("\n故事有错误，不能试玩。可用 `oasis validate --ai-fix` 生成给 AI 的修改请求。"); exit(1); }
   if (res.issues.length) console.log(formatIssues(res) + "\n");
-  const story = res.story as Story;
+  const rawStory = res.story as Story;
+  const lang = opt("--lang") === "en" ? "en" : "zh";
+  const story = localizeStory(rawStory, lang);
   const seed = opt("--seed") !== undefined ? Number(opt("--seed")) : undefined;
   const scripts = await createQuickJsRunner();
-  let game = new Game(story, { seed, files, scripts });
+  let game = new Game(rawStory, { lang, seed, files, scripts });
   const key = env.OASIS_API_KEY ?? env.OPENAI_API_KEY;
   const baseUrl = env.OASIS_BASE_URL ?? "https://api.openai.com/v1";
   const isLocal = /localhost|127\.0\.0\.1/.test(baseUrl);
@@ -127,7 +129,7 @@ async function play(target: string) {
     if (line === "/actions") { for (const [id, a] of Object.entries(story.actions ?? {})) console.log(`  ${id}${a.label ? `（${a.label}）` : ""} ${Object.keys(a.params ?? {}).map((p) => `${p}=…`).join(" ")}  可由：${(a.callable_by ?? ["player", "ai", "rules"]).join("/")}`); continue; }
     if (line.startsWith("/save ")) { writeFileSync(line.slice(6).trim(), JSON.stringify(game.save(), null, 2)); console.log("  💾 已保存（存档里不含 API Key）"); continue; }
     if (line.startsWith("/load ")) {
-      try { const r = Game.load(story, JSON.parse(readFileSync(line.slice(6).trim(), "utf8")), { files, scripts }); game = r.game; shown = game.log.length; r.warnings.forEach((w) => console.log("  ⚠️  " + w)); console.log("  📂 已读档"); showState(); }
+      try { const r = Game.load(rawStory, JSON.parse(readFileSync(line.slice(6).trim(), "utf8")), { lang, files, scripts }); game = r.game; shown = game.log.length; r.warnings.forEach((w) => console.log("  ⚠️  " + w)); console.log("  📂 已读档"); showState(); }
       catch (e: any) { console.log("  ⚠️  " + e.message); }
       continue;
     }

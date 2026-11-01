@@ -59,6 +59,7 @@ export function buildMessages(game: Game, entryId: string, input: string, event?
     [...(rules.must ?? []), ...(card.must ?? [])].length ? `【必须】\n- ${[...(rules.must ?? []), ...(card.must ?? [])].join("\n- ")}` : "",
     [...(rules.forbid ?? []), ...(card.forbid ?? [])].length ? `【禁止】\n- ${[...(rules.forbid ?? []), ...(card.forbid ?? [])].join("\n- ")}` : "",
     `【输出格式】${fmt}`,
+    `【语言】${game.lang === "en" ? "玩家选择了英文：你写给玩家看的所有文字都必须用英文（English）。JSON 的键名保持不变。" : "玩家选择了中文：你写给玩家看的所有文字都必须用简体中文。JSON 的键名保持不变。"}`,
     `【当前可见状态】${JSON.stringify(stateView)}`,
     game.ending ? `【故事已结束】结局：${game.story.endings.list.find((e) => e.id === game.ending)?.label}` : "",
   ].filter(Boolean).join("\n\n");
