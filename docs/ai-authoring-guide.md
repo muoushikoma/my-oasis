@@ -169,6 +169,15 @@ render 只读状态，用 api.draw.*：clear、camera、rect、circle、line、t
 - 手柄 Pad0–Pad16 写进 input.keys；api.input.pointer.wheel / button；api.input.touches（多点触控）。
 - api.save.now()、api.storage.get/set（跨周目小数据，不随读档回滚）、api.device.vibrate / copy。
 - 上面这些请求都不能在 render 里调用（storage.get 除外）。
+高级功能（完整说明见 docs/story-format.md 10.11–10.15）：
+- 自定义着色器：assets 里 type: shader（.glsl/.frag，≤32 KB），只写 `void main(){ gl_FragColor = texture2D(uTex, vUv) * vCol; }` 这样的片元着色器主体；客户端已声明 uTex、uTime、uRes、uTexSize、vUv、vCol，不要重复写，不要写 precision/#version/#extension/while；for 循环次数写固定数字（≤256）。自定义参数 uniform float/vec2/vec3/vec4 u_xxx。用法：image/sprite/video 选项写 { shader: "id", uniforms: { u_xxx: 1 } }；整屏后期处理 api.draw.post("id", { u_xxx: 1 })（最多 4 遍）。坏着色器自动退回普通画法，Canvas2D 设备上不生效，所以不要让玩法依赖着色器。
+- 物理：world 存在 json 状态里，tick 里取出 → api.physics.step(w, api.dt) → 存回。api.physics.world({ gravity: [0, 980] })、add(w, { id, shape: box|circle|polygon, type: dynamic|static|kinematic, x, y, w, h, r, points, angle, friction, restitution, density, sensor, fixed_rotation, group })、joint(w, { type: distance|rope|pin, a, b, x, y })、impulse(w, id, ix, iy)、touching(w, id) → [{ id, nx, ny }]、at(w, x, y)、get、remove、vertices(body)。step 返回碰撞事件 [{ type: begin|end, a, b, nx, ny, sensor }]。斜坡用 static 三角形 polygon。
+- Tiled 地图：assets 里 type: tilemap（.tmj，图块集要嵌入地图，图块集图片也要登记成 image，或写 tilesets: { 图块集名: 图片id }）；api.draw.tiled("id", { x, y, layers })；api.tiled.get(id)（图层、对象）、api.tiled.solids(id)（碰撞层合并成的矩形，可直接 add 成 static 物体）。
+- 九宫格：api.draw.nine(图片id, x, y, w, h, { slice: 8 })；界面层 image 节点写 slice，或容器样式 bg_image + bg_slice。
+- 画布里的视频：api.video.texture(id, { play, loop, muted, rate, seek_ms, volume })，render 里 api.draw.video(id, x, y, w, h, { shader? })。
+- 声音效果：api.sound.play(id, { voice: "名字", filter: { type: lowpass|highpass|bandpass|notch|peaking|lowshelf|highshelf, freq, q, gain }, reverb: 0~1, x, y })；x/y 时配合 api.sound.listener({ x, y }) 变成空间声音；api.sound.set(voice 或 channel, { volume, rate, pan, x, y, filter, reverb })。
+- 场景文件：scenes: { start: title, list: { title: { script: scenes/title.js } } }，每个场景脚本可以写 enter / exit / tick / render / ui / ai / resize 函数（都可选）；api.scene.go("名字", { data })，api.scene.current()。有 scenes 时画布可以不写 render。
+- 屏幕控件：input.controls: [{ id, type: button|joystick|dpad, anchor, x, y, size, shape, label: { zh, en }, image, pressed_image, show: touch|always }]；按钮进 api.input.held/pressed，摇杆进 api.input.sticks[id]（第一个摇杆也驱动 api.input.joystick），十字键给出 <id>_up/_down/_left/_right。api.controls.show([ids]) / show(null)。
 声音：api.sound.play(id, { volume, loop, channel: "music", fade_ms, rate, pan })；同一 channel 换曲自动交叉淡化；api.sound.stop(id?, { fade_ms })。
 想要 60fps 平滑移动：realtime.interpolate: true，render 里按 api.alpha 在上一步和这一步的位置之间插值。粒子和精灵动画由客户端自动按屏幕刷新率播放，不必开 interpolate。
 
@@ -185,7 +194,7 @@ render 只读状态，用 api.draw.*：clear、camera、rect、circle、line、t
 10. 内容适合全年龄：不含血腥、色情；玩家可见文字都有中文和英文
 11. AI 输出到的组件都写了 content: ai；没标的都是固定内容
 12. 每个 text-input（不带 writes 的）和 chat-box 都写了 input（actions + reject），actions 里的动作都存在
-13. 所有 asset:id 都在 assets 里登记，图片处用图片、音乐处用音频；每个生图点写了 fallback
+13. 所有 asset:id 都在 assets 里登记，图片处用图片、音乐处用音频；每个生图点写了 fallback；着色器、地图、视频、控件图片引用的素材都已登记
 14. from_ai 的 choice-buttons 有接入点输出到它，且界面里有带 input 的 text-input
 11. 事件用 hook 不用 on；没有用 Tab
 
