@@ -283,7 +283,7 @@ function pickIntent(api, f) {
   if (f.trait === "armored") w.defend += 20; if (f.trait === "brute") w.charge += 22; if (f.trait === "swift") w.double = 30;
   if (f.trait === "venomous") w.poison = 30; if (f.trait === "arcane") { w.drain = 22; w.curse = 12; } if (f.trait === "thief") w.steal = 25;
   if (f.boss) w.charge += 8;
-  if (f.sig && !f.sigCd) w.sig = f.boss ? 32 : 28;
+  if (f.sig && !f.sigCd) w.sig = f.boss ? 18 : 24;
   const t = api.random.weighted(w);
   if (t === "sig") return sigIntent(f);
   if (t === "defend") return { t, lo: 3 + Math.floor(f.threat * 0.8), hi: 3 + Math.floor(f.threat * 0.8) };
@@ -482,7 +482,7 @@ function startBattle(api, name, free) {
   set(api, "foe", f); set(api, "event_kind", "combat"); set(api, "phase", "battle");
   set(api, "hero_block", 0); set(api, "evade", false);
   // 职业资源：怒气、连击点每场清零；信仰至少 2；法力保留（只在扎营时补满）
-  const r = get(api, "res"); if (r && r.k) { if (r.k === "rage") r.cur = 0; if (r.k === "combo") r.cur = 1; if (r.k === "faith") r.cur = Math.max(r.cur, 2 + (hasPerk(api, "devotion") ? 1 : 0)); if (hasPerk(api, "veteran")) r.cur = Math.min(r.max, r.cur + 1); set(api, "res", r); }
+  const r = get(api, "res"); if (r && r.k) { if (r.k === "rage") r.cur = 0; if (r.k === "combo") r.cur = 1; if (r.k === "faith") r.cur = Math.max(r.cur, 2 + (hasPerk(api, "devotion") ? 1 : 0)); if (r.k === "mana") r.cur = Math.min(r.max, r.cur + 1); if (hasPerk(api, "veteran")) r.cur = Math.min(r.max, r.cur + 1); set(api, "res", r); }
   reveal(api);
   log(api, `⚔ ${L(api, "战斗开始", "Battle")}：${f.name}（${L(api, "生命", "HP")} ${f.hp} · AC ${f.ac}${f.trait !== "none" ? " · " + T2(api, TRAITS[f.trait]) : ""}）`);
   if (card.foe_line) log(api, `✦ ${f.name}：「${card.foe_line}」`);
@@ -803,7 +803,7 @@ const SIG_TEXT = {
 function sigIntent(f) {
   const s = f.sig, r = dmgRange(f, 1, 0);
   switch (s.mk) {
-    case "breath": return { t: "sig", lo: Math.round(r[0] * 1.5) + 1, hi: Math.round(r[1] * 1.5) + 1 };
+    case "breath": return { t: "sig", lo: Math.round(r[0] * 1.3), hi: Math.round(r[1] * 1.3) };
     case "drain": return { t: "sig", lo: r[0] + 1, hi: r[1] + 1 };
     case "venom": case "hex": return { t: "sig", lo: Math.max(1, r[0] - 1), hi: Math.max(1, r[1] - 1) };
     case "rob": return { t: "sig", lo: 10 + 2 * f.threat, hi: 10 + 2 * f.threat };
