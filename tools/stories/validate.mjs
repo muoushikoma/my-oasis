@@ -56,17 +56,20 @@ for (const id of ids) {
   const oneLang = singleLangTexts(st.data);
   if (oneLang.length) console.log(`⚠️  [${id}] 提醒：有 ${oneLang.length} 处玩家可见文字只有一种语言（不影响通过），例如 ${oneLang.slice(0, 5).join("、")}`);
   let total = 0;
-  for (const f of listFiles(dir)) {
+  const all = listFiles(dir);
+  if (all.length > LIMITS.files) fail(id, `文件太多（${all.length} 个），最多 ${LIMITS.files} 个`);
+  for (const f of all) {
     total += f.size;
+    if (f.size > LIMITS.file) { fail(id, `文件太大（单个文件必须小于 100 MB，GitHub 限制）：${f.rel}`); continue; }
     const ext = path.extname(f.rel).toLowerCase();
     if (f.rel.split("/").some((p) => p.startsWith("."))) { fail(id, `不允许隐藏文件：${f.rel}`); continue; }
-    if (IMAGE_EXT.includes(ext)) { if (f.size > LIMITS.image) fail(id, `图片太大（超过 1 MB）：${f.rel}`); }
-    else if (AUDIO_EXT.includes(ext)) { if (f.size > LIMITS.audio) fail(id, `音频太大（超过 5 MB）：${f.rel}`); }
-    else if (FONT_EXT.includes(ext)) { /* 只受整包 20 MB 限制 */ }
+    if (IMAGE_EXT.includes(ext)) { if (f.size > LIMITS.image) fail(id, `图片太大（超过 10 MB）：${f.rel}`); }
+    else if (AUDIO_EXT.includes(ext)) { if (f.size > LIMITS.audio) fail(id, `音频太大（超过 30 MB）：${f.rel}`); }
+    else if (FONT_EXT.includes(ext)) { /* 只受整包 300 MB 和单文件 100 MB 限制 */ }
     else if (TEXT_EXT.includes(ext) || SCRIPT_EXT.includes(ext)) { if (f.size > LIMITS.text) fail(id, `文本文件太大（超过 2 MB）：${f.rel}`); }
     else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/yml/json/md/txt、js/ts/lua/py、webp/png/jpg/jpeg、ogg/mp3/m4a、woff2）`);
   }
-  if (total > LIMITS.total) fail(id, `整个故事包超过 20 MB（现在 ${(total / 1048576).toFixed(1)} MB）`);
+  if (total > LIMITS.total) fail(id, `整个故事包超过 300 MB（现在 ${(total / 1048576).toFixed(1)} MB）`);
   if (bad === before) console.log(`✅ [${id}] 通过`);
 }
 if (!ids.length) console.log("（目前还没有故事）");

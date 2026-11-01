@@ -148,7 +148,7 @@ interface ComponentApi {
 无同源权限的沙箱 iframe（`sandbox="allow-scripts"`），CSP `default-src 'none'`，不能联网；只通过 `postMessage` 使用上面的接口；拿不到 Key、令牌、文件、Tauri 命令。玩家可全局禁用自定义组件。
 
 #### 3.4.3 素材与声音
-- 故事包自带图片、立绘、背景、音乐、音效，在 `assets` 清单登记，用 `asset:<id>` 引用；导入时检查文件存在、格式、大小（图片 ≤ 1 MB、音频 ≤ 5 MB、整包 ≤ 20 MB）。
+- 故事包自带图片、立绘、背景、音乐、音效，在 `assets` 清单登记，用 `asset:<id>` 引用；导入时检查文件存在、格式、大小（图片 ≤ 10 MB、音频 ≤ 30 MB、单文件 < 100 MB、整包 ≤ 300 MB，见 story-format.md §1）。
 - 图片组件、背景、背景音乐都可以绑定一个状态，状态一变就切换素材；音效挂在动作、事件、结局、开局、回合结束上。
 - 前端通过 Tauri 资源协议从本地故事库读素材，不走网络；严格 CSP 下只允许本地资源。
 - **AI 生图（第二步）**：`ai.images` 生图点默认复用故事的服务商和 Key 调 OpenAI 兼容 `images/generations`，不支持时可单独配置；结果按 `cache` 规则缓存在本地；失败、超时或玩家关闭生图时显示 `fallback`。生图请求和聊天请求一样由 Rust 侧代发、计入并发上限。

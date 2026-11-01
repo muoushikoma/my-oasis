@@ -178,15 +178,33 @@ mod tests {
     }
 }
 
-/// 在线故事库的公开文件下载（https GET，最大 25 MB）。走 Rust 是为了避开网页跨域限制（Release 文件不带跨域头）。
+/// 在线故事库的公开文件下载（https GET，单个文件最大 100 MB）。走 Rust 是为了避开网页跨域限制（Release 文件不带跨域头）。
+/// 大文件断线会自动重试，并用 Range 从断点续传（服务器不支持续传时从头再下）。
+pub const PUBLIC_GET_MAX: usize = 100 * 1024 * 1024;
 pub async fn public_get(url: &str) -> Result<Vec<u8>> {
     if !url.starts_with("https://") { return msg("只允许 https 地址"); }
-    let c = reqwest::Client::builder().user_agent("my-oasis-client").connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(60)).build()?;
-    let r = c.get(url).send().await?;
-    let code = r.status().as_u16();
-    if !(200..300).contains(&code) { return msg(format!("HTTP {code}")); }
-    if r.content_length().unwrap_or(0) > 25 * 1024 * 1024 { return msg("文件太大"); }
-    let b = r.bytes().await?;
-    if b.len() > 25 * 1024 * 1024 { return msg("文件太大"); }
-    Ok(b.to_vec())
+    let c = reqwest::Client::builder().user_agent("my-oasis-client").connect_timeout(Duration::from_secs(15)).read_timeout(Duration::from_secs(60)).build()?;
+    let mut buf: Vec<u8> = Vec::new();
+    let mut last = String::new();
+    for attempt in 0..5u64 {
+        if attempt > 0 { tokio::time::sleep(Duration::from_millis(800 * attempt)).await; }
+        let mut req = c.get(url);
+        if !buf.is_empty() { req = req.header(reqwest::header::RANGE, format!("bytes={}-", buf.len())); }
+        let mut r = match req.send().await { Ok(r) => r, Err(e) => { last = e.to_string(); continue; } };
+        let code = r.status().as_u16();
+        if code == 200 { buf.clear(); } else if code != 206 || buf.is_empty() {
+            if !(200..300).contains(&code) { if code >= 500 || code == 429 { last = format!("HTTP {code}"); continue; } return msg(format!("HTTP {code}")); }
+        }
+        if let Some(n) = r.content_length() { if n as usize + buf.len() > PUBLIC_GET_MAX { return msg("文件太大（单个文件最大 100 MB）"); } }
+        let mut done = true;
+        loop {
+            match r.chunk().await {
+                Ok(Some(ch)) => { buf.extend_from_slice(&ch); if buf.len() > PUBLIC_GET_MAX { return msg("文件太大（单个文件最大 100 MB）"); } }
+                Ok(None) => break,
+                Err(e) => { last = e.to_string(); done = false; break; }
+            }
+        }
+        if done { return Ok(buf); }
+    }
+    msg(format!("下载失败（已重试 5 次）：{last}"))
 }

@@ -146,7 +146,7 @@ ui:
 【assets 素材】（可省略）
 assets:
   <素材id>: { type: image|audio, path: assets/xxx.webp, use: background|portrait|illustration|icon|music|sfx|other, alt, loop, volume }
-  引用写 asset:<素材id>。图片 webp/png/jpg ≤ 1 MB；音频 ogg/mp3/m4a ≤ 5 MB；整包 ≤ 20 MB。
+  引用写 asset:<素材id>。图片 webp/png/jpg ≤ 10 MB；音频 ogg/mp3/m4a ≤ 30 MB；文本/脚本 ≤ 2 MB；任何单个文件 < 100 MB；整包 ≤ 300 MB；最多 2000 个文件。
 
 【ai.images AI 生图】（可省略；玩家可能关闭生图，所以要写 fallback）
 ai:

@@ -4,8 +4,10 @@ use base64::Engine;
 use serde::Serialize;
 use std::path::Path;
 
-pub const MAX_TOTAL_BYTES: u64 = 20 * 1024 * 1024; // 读取上限（校验器会再按 2 MB 规则报错）
-pub const MAX_FILES: usize = 500;
+pub const MAX_TOTAL_BYTES: u64 = 300 * 1024 * 1024; // 读取上限，与校验器的整包上限一致（细则由 TS 校验器报错）
+pub const MAX_FILES: usize = 2000;
+/// 单个文件必须小于 100 MB（GitHub 硬性限制）
+pub const MAX_FILE_BYTES: u64 = 100 * 1024 * 1024 - 1;
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct PackageFile { pub path: String, pub base64: String }
@@ -28,7 +30,7 @@ pub fn read_package(p: &Path) -> Result<RawPackage> {
         if !(lower.ends_with(".oasis") || lower.ends_with(".zip") || lower.ends_with(".yaml") || lower.ends_with(".yml") || lower.ends_with(".json")) {
             return msg("只能导入文件夹、.oasis/.zip 文件或 story.yaml");
         }
-        if meta.len() > MAX_TOTAL_BYTES { return msg("文件太大了（超过 20 MB），不像是故事包"); }
+        if meta.len() > MAX_TOTAL_BYTES { return msg("文件太大了（超过 300 MB），不像是故事包"); }
         return Ok(RawPackage::File { name, base64: b64.encode(std::fs::read(p)?) });
     }
     let mut files = Vec::new();
@@ -47,8 +49,10 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<PackageFile>, total: &mut u64) ->
         if ft.is_symlink() { continue; } // 不跟随符号链接，避免读到包外文件
         let path = e.path();
         if ft.is_dir() { walk(root, &path, out, total)?; continue; }
-        *total += e.metadata()?.len();
-        if *total > MAX_TOTAL_BYTES { return msg("文件夹太大了（超过 20 MB），请确认选的是故事包文件夹"); }
+        let len = e.metadata()?.len();
+        if len > MAX_FILE_BYTES { return msg(format!("文件「{fname}」太大（单个文件必须小于 100 MB）")); }
+        *total += len;
+        if *total > MAX_TOTAL_BYTES { return msg("文件夹太大了（超过 300 MB），请确认选的是故事包文件夹"); }
         if out.len() >= MAX_FILES { return msg("文件夹里的文件太多，请确认选的是故事包文件夹"); }
         let rel = path.strip_prefix(root).map_err(|_| crate::Error::Msg("路径错误".into()))?;
         let rel = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect::<Vec<_>>().join("/");
