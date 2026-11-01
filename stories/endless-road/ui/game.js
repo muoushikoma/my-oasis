@@ -173,29 +173,44 @@ function hud(s) {
       h("div", { class: "name serif out" }, s.class_name || T("旅人", "Traveler"), h("small", {}, `${T("等级", "Lv")} ${s.level || 1}`)),
       h("div", { class: "bar hp" }, h("i", { class: "lag", style: { width: `calc(${pct}% - 4px)` } }), h("i", { style: { width: `calc(${pct}% - 4px)` } }), h("b", { class: "out" }, `${s.hp ?? 0} / ${s.max_hp ?? 0}`)),
       h("div", { class: "bar xp" }, h("i", { style: { width: `calc(${xp}% - 4px)` } })),
+      resBar(s),
       h("div", { class: "res out" },
         h("span", { title: T("口粮", "Rations") }, icon("ration"), s.rations, h("em", {}, `/${cr}`)), h("span", { title: T("药水", "Potions") }, icon("potion"), s.potions, h("em", {}, `/${cp}`)),
         h("span", { title: T("金币", "Gold") }, icon("coin"), s.gold), h("span", { title: T("铁料", "Iron") }, icon("iron"), s.iron), h("span", { title: T("魔晶", "Essence") }, icon("essence"), s.essence),
-        h("span", { title: T("护甲等级", "Armor Class") }, icon("shield"), s.ac))));
+        h("span", { title: T("护甲等级", "Armor Class") }, icon("shield"), s.ac),
+        h("span", { class: "fat" + ((s.fatigue || 0) >= 9 ? " bad" : (s.fatigue || 0) >= 6 ? " warn" : ""), title: T("疲劳：每里 +1，扎营清零。6 起 d20 -1，9 起 -2，12 起 -3 并掉血", "Fatigue: +1 per mile, camp to clear. d20 -1 at 6, -2 at 9, -3 and HP loss at 12") }, icon("hourglass"), s.fatigue || 0))));
+}
+const RES_COLOR = { rage: "#ff6a3a", combo: "#ffd84a", mana: "#5ab4ff", faith: "#fff2a8" };
+function resBar(s) {
+  const r = s.res; if (!r || !r.k) return null;
+  const name = { rage: T("怒气", "Rage"), combo: T("连击", "Combo"), mana: T("法力", "Mana"), faith: T("信仰", "Faith") }[r.k];
+  return h("div", { class: "rbar out", title: { rage: T("命中 +1、挨打 +2，每场战斗清零", "+1 on hit, +2 when hit; resets each fight"), combo: T("命中 +1（暴击 +2），每场战斗清零", "+1 on hit (+2 on crit); resets each fight"), mana: T("不会自己恢复——只有扎营能补满", "Doesn't regenerate — only camping refills it"), faith: T("战斗中每回合 +1，每场至少 2", "+1 every combat turn, at least 2 per fight") }[r.k] },
+    h("span", {}, name), h("span", { class: "pips" }, Array.from({ length: r.max }, (_, i) => h("i", { class: i < r.cur ? "on" : "", style: i < r.cur ? { background: RES_COLOR[r.k] } : null }))), h("em", {}, `${r.cur}/${r.max}`));
 }
 function banner(s) {
   return h("div", { class: "banner" },
     h("div", { class: "region serif out" }, T(...(BIOME[s.biome] || BIOME.plains))),
-    h("div", { class: "mile out" }, icon("flag"), T(`第 ${s.distance || 0} 里`, `Mile ${s.distance || 0}`), s.phase === "none" ? h("span", { class: "ready" + (s.next_ready ? "" : " wait") }, s.next_ready ? T("· 前方已备好", "· ready") : T("· AI 准备中…", "· AI preparing…")) : null));
+    h("div", { class: "mile out" }, icon("flag"), T(`第 ${s.distance || 0} 里`, `Mile ${s.distance || 0}`), h("span", { class: "path " + (s.path || "road") }, { road: T("大路", "Highway"), wilds: T("荒野", "Wilds"), shortcut: T("捷径", "Shortcut") }[s.path || "road"]), s.phase === "none" ? h("span", { class: "ready" + (s.next_ready ? "" : " wait") }, s.next_ready ? T("· 前方已备好", "· ready") : T("· AI 准备中…", "· AI preparing…")) : null),
+    s.thread ? h("div", { class: "thread out", title: T("旅途主线：AI 一路写下、一路推进的故事线", "The journey's thread: a storyline the AI keeps weaving as you go") }, h("b", {}, "✦ "), s.thread) : null);
 }
 const tags = (list) => h("div", { class: "tags" }, (list || []).map((t) => h("span", { class: `tag ${t.k}` }, t.t)));
 function card(s) {
-  if (s.phase === "battle" && s.foe && s.foe.max_hp) {
-    const f = s.foe, pct = Math.max(0, (100 * f.hp) / f.max_hp);
-    return h("div", { class: "paper card", key: "battle" }, h("span", { class: "kind" }, icon(f.boss ? "skull" : "sword"), f.boss ? T("守关者", "Warden") : T("战斗", "Battle")),
-      h("h2", { class: "serif" }, f.name),
-      h("div", { class: "bar hp foehp" }, h("i", { style: { width: `calc(${pct}% - 4px)` } }), h("b", { class: "out" }, `${f.hp} / ${f.max_hp}`)),
-      h("div", { class: "foemeta" }, h("span", {}, `AC ${f.ac}`), h("span", {}, `${T("命中", "to hit")} +${f.atk}`), h("span", {}, `${T("威胁", "threat")} ${f.threat}`)));
+  if (s.phase === "battle" && s.ui_battle && s.ui_battle.foe) {
+    const B = s.ui_battle, f = B.foe, pct = Math.max(0, (100 * f.hp) / f.max), it = f.intent || {};
+    return h("div", { class: "paper card battle", key: "battle" }, h("span", { class: "kind" }, icon(f.boss ? "skull" : "sword"), f.boss ? T("守关者", "Warden") : T("战斗", "Battle")),
+      h("h2", { class: "serif" }, f.name, f.trait ? h("span", { class: "trait", title: f.trait_desc }, f.trait) : null),
+      f.trait_desc ? h("div", { class: "tdesc" }, f.trait_desc) : null,
+      h("div", { class: "bar hp foehp" }, h("i", { style: { width: `calc(${pct}% - 4px)` } }), h("b", { class: "out" }, `${f.hp} / ${f.max}`)),
+      h("div", { class: "foemeta" }, h("span", {}, icon("shield"), `AC ${f.ac}`), f.block ? h("span", { class: "chip2 def" }, T(`格挡 ${f.block}`, `Block ${f.block}`)) : null,
+        f.poison ? h("span", { class: "chip2 poi" }, T(`中毒 ${f.poison}`, `Poison ${f.poison}`)) : null, f.stun ? h("span", { class: "chip2 stun" }, T("眩晕", "Stunned")) : null),
+      h("div", { class: `intent ${it.k || "atk"}` }, h("small", {}, T("它的下一步", "Its next move")), h("div", {}, icon(it.icon || "sword", true), h("b", {}, it.text || ""))),
+      h("div", { class: "mine" }, B.block ? h("span", { class: "chip2 def" }, icon("shield"), T(`你的格挡 ${B.block}`, `Your block ${B.block}`)) : null, B.evade ? h("span", { class: "chip2 def" }, icon("boot"), T("准备闪避", "Evading")) : null),
+      h("div", { class: "hint" }, T("根据它的下一步决定：趁它防御时蓄资源，它蓄力时防御或打断。", "Read its next move: build resources while it guards, block or interrupt when it charges.")));
   }
   const ui = s.ui_card || { mode: "none" };
   if (ui.mode === "none") return null;
   return h("div", { class: "paper card" + (ui.mode === "shop" ? " shop" : "") },
-    h("span", { class: "kind" }, ui.kind || ""),
+    h("span", { class: "kind" }, ui.kind || ""), ui.ai ? h("span", { class: "aimark", title: T("这张卡（描述、选项、结果旁白）由 AI 现场写成", "This card — scene, options and outcome narration — was written live by the AI") }, T("✦ AI 写成", "✦ AI-written")) : null,
     h("h2", { class: "serif" }, ui.title || ""),
     h("p", { class: "text" + (ui.mode === "loading" ? " loading" : "") }, ui.text || ""),
     h("div", { class: "opts" }, (ui.items || []).map((it, i) => h("button", { class: "btn pape opt", disabled: !!it.disabled || busy(), onclick: () => run(ui.action, { id: it.id }) },
@@ -204,15 +219,24 @@ function card(s) {
 function actions(s) {
   const ph = s.phase || "none", dead = s.hp <= 0, b = busy();
   const A = (id, ic, label, key, ok, gold) => h("button", { class: `btn act${gold ? " gold" : ""}`, disabled: !ok || dead || b, onclick: () => run(id) }, h("span", {}, icon(ic), " ", label), h("span", { class: "key" }, key));
+  if (ph === "battle" && s.ui_battle && s.ui_battle.skills) {
+    const B = s.ui_battle;
+    return h("div", { class: "actions battle" },
+      A("attack", "sword", T("攻击", "Attack"), T("空格", "Space"), true, true),
+      h("button", { class: "btn act", disabled: dead || b, onclick: () => run("defend"), title: T("格挡伤害，持续到你下次行动", "Absorb damage until your next action") }, h("span", {}, icon("shield"), " ", T("防御", "Defend")), h("span", { class: "key" }, `D · ${T("格挡", "block")} ${B.defend}`)),
+      B.skills.map((k, i) => h("button", { class: "btn act skill", disabled: k.disabled || dead || b, onclick: () => run("skill", { id: k.id }), title: k.sub },
+        h("span", {}, icon(k.icon), " ", k.text), h("span", { class: "key" }, h("b", { class: "cost " + ((s.res || {}).k || "") }, k.cost), ` · ${i + 1}`))),
+      A("potion", "potion", T("药水", "Potion"), "Q", s.potions > 0 && s.hp < s.max_hp),
+      h("button", { class: "btn act", disabled: dead || b, onclick: () => run("flee"), title: T(`敏捷 DC ${B.flee_dc}；失败会挨打`, `DEX DC ${B.flee_dc}; fail and it attacks`) }, h("span", {}, icon("boot"), " ", T("逃跑", "Flee")), h("span", { class: "key" }, `F · DC ${B.flee_dc}`)));
+  }
   return h("div", { class: "actions" },
-    ph === "battle" ? A("attack", "sword", T("攻击", "Attack"), T("空格", "Space"), true, true) : A("walk", "flag", T("继续前进", "Walk on"), T("空格", "Space"), ph === "none", true),
+    A("walk", "flag", T("继续前进", "Walk on"), T("空格", "Space"), ph === "none", true),
     A("potion", "potion", T("药水", "Potion"), "Q", s.potions > 0 && s.hp < s.max_hp),
-    A("camp", "fire", T("扎营", "Camp"), "C", ph === "none" && !s.camped && s.rations > 0),
-    A("flee", "boot", T("逃跑", "Flee"), "F", ph === "battle"));
+    A("camp", "fire", T("扎营", "Camp"), T(`C · 疲劳 ${s.fatigue || 0}→0`, `C · fatigue ${s.fatigue || 0}→0`), ph === "none" && !s.camped && s.rations > 0));
 }
 function journal(s) {
   const lines = (s.journal || []).slice(journalOpen ? -60 : -7);
-  return h("div", { class: "journal" + (journalOpen ? " open" : ""), title: T("点击展开 / 收起日志", "Click to expand / collapse"), onclick: () => { journalOpen = !journalOpen; render(); } }, lines.map((l) => h("div", { class: "out" }, l)));
+  return h("div", { class: "journal" + (journalOpen ? " open" : ""), title: T("点击展开 / 收起日志", "Click to expand / collapse"), onclick: () => { journalOpen = !journalOpen; render(); } }, lines.map((l) => h("div", { class: "out" + (l.startsWith("✦") ? " ai" : "") }, l)));
 }
 function menu(s) {
   return h("div", { class: "menu" }, [["char", "person", T("角色", "Hero")], ["pack", "pack", T("行囊", "Pack")], ["relic", "gem", T("遗物", "Relics")], ["trip", "map", T("旅程", "Journey")], ["log", "scroll", T("日志", "Log")]].map(([id, ic, label]) =>
@@ -229,7 +253,9 @@ function sheetBody(s, id) {
         h("div", { style: { flex: 1 } }, h("h3", { class: "serif" }, `${s.class_name || ""} · ${T("等级", "Lv")} ${s.level}`), h("div", {}, `${T("生命", "HP")} ${s.hp}/${s.max_hp} · ${T("护甲等级", "AC")} ${s.ac}`),
           h("div", { class: "bar xp", style: { marginTop: "8px" } }, h("i", { style: { width: `calc(${Math.min(100, (100 * (s.xp || 0)) / (s.xp_next || 1))}% - 4px)` } })), h("small", { style: { color: "#c5b392" } }, `${T("经验", "XP")} ${s.xp} / ${s.xp_next}`))),
       h("div", { class: "grid6" }, ABIL.map(([k, zh, en]) => { const v = a[k] || 10, m = Math.floor((v - 10) / 2); return h("div", { class: "cell" }, h("small", {}, T(zh, en)), h("b", {}, v), h("em", {}, m >= 0 ? `+${m}` : m)); })),
-      h("div", { style: { color: "#e2d2b0" } }, info.desc || "")];
+      h("div", { style: { color: "#e2d2b0" } }, info.desc || ""),
+      h("h3", { class: "serif", style: { marginTop: "14px" } }, T("天赋", "Talents")),
+      h("div", { style: { color: "#e2d2b0", whiteSpace: "pre-line" } }, s.perk_text || "")];
   }
   if (id === "pack") {
     const g = s.gear || {}, cr = 8 + 4 * (g.pack || 0), cp = 3 + (g.pack || 0);
@@ -289,6 +315,8 @@ addEventListener("keydown", (e) => {
   if (e.key === "Escape") { if (sheet) { sheet = null; render(); } return; }
   if (sheet || s.phase === "class") return;
   if (e.code === "Space") { e.preventDefault(); if (s.phase === "battle") run("attack"); else if (s.phase === "none") run("walk"); }
+  else if (s.phase === "battle" && /^[1-3]$/.test(e.key)) { const k = ((s.ui_battle || {}).skills || [])[Number(e.key) - 1]; if (k && !k.disabled) run("skill", { id: k.id }); }
+  else if (s.phase === "battle" && (e.key === "d" || e.key === "D")) run("defend");
   else if (/^[1-9]$/.test(e.key)) { const ui = s.ui_card || {}; const it = (ui.items || [])[Number(e.key) - 1]; if (it && !it.disabled) run(ui.action, { id: it.id }); }
   else if (e.key === "q" || e.key === "Q") run("potion");
   else if (e.key === "c" || e.key === "C") run("camp");

@@ -75,6 +75,34 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .foehp { margin: 8px 0 4px; } .foemeta { display: flex; gap: 14px; font-size: 13px; color: #5a4024; }
 .loading::after { content: "…"; animation: dots 1.2s steps(3) infinite; } @keyframes dots { 0% { content: "."; } 33% { content: ".."; } 66% { content: "..."; } }
 
+/* 职业资源、疲劳、路、主线、AI 标记 */
+.rbar { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: #f4e8cf; }
+.rbar .pips i { width: 16px; height: 10px; } .rbar em { font-style: normal; color: #d6c4a0; font-size: 12px; }
+.res .fat.warn { color: #ffd070; } .res .fat.bad { color: #ff7a5a; }
+.banner .path { font-size: 12px; padding: 0 6px; margin-left: 4px; box-shadow: inset 0 -2px 0 #0004; }
+.path.road { background: #3f6a32; } .path.wilds { background: #5a4a8a; } .path.shortcut { background: #a33a2a; }
+.banner .thread { margin-top: 4px; max-width: min(560px, 44vw); font-size: 13px; color: #f0dcb0; font-style: italic; }
+.banner .thread b { color: #ffd84a; font-style: normal; }
+.aimark { display: inline-block; margin-left: 6px; font-size: 11.5px; padding: 1px 6px; background: #5a3a8a; color: #ffe8a8; vertical-align: 1px; }
+.journal div.ai { color: #ffe0a0; font-style: italic; }
+/* 战斗卡 */
+.card .trait { font-size: 12px; margin-left: 8px; padding: 1px 7px; background: #7a2a6a; color: #fff; vertical-align: 4px; font-family: inherit; }
+.card .tdesc { font-size: 12.5px; color: #6a4a6a; margin-top: -4px; }
+.foemeta { align-items: center; flex-wrap: wrap; }
+.chip2 { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; padding: 0 7px; line-height: 20px; color: #fff; }
+.chip2.def { background: #3a5a8a; } .chip2.poi { background: #3f7a32; } .chip2.stun { background: #8a7a2a; }
+.intent { margin: 10px 0 6px; padding: 6px 10px; background: #3b2814; color: #fff1d0; box-shadow: inset 0 0 0 2px #0006; }
+.intent small { display: block; font-size: 11.5px; letter-spacing: 1px; color: #e0c8a0; }
+.intent div { display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.intent.big { background: #8a1e14; animation: throb 1s ease-in-out infinite; } .intent.warn { background: #7a5a14; } .intent.def { background: #2a4a6a; }
+@keyframes throb { 50% { box-shadow: inset 0 0 0 2px #0006, 0 0 14px #ff4a2a; } }
+.mine { display: flex; gap: 6px; min-height: 4px; }
+.card .hint { font-size: 12px; color: #7a6040; margin-top: 6px; }
+.actions.battle { flex-wrap: wrap; justify-content: center; max-width: 92vw; }
+.act.skill { min-width: 104px; }
+.cost { display: inline-block; min-width: 16px; padding: 0 4px; color: #1a1008; font-weight: 900; }
+.cost.rage { background: #ff8a5a; } .cost.combo { background: #ffd84a; } .cost.mana { background: #7ac4ff; } .cost.faith { background: #fff2a8; }
+
 /* 底部中间：行动按钮 */
 .actions { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 8px; align-items: stretch; }
 .act { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 92px; padding: 6px 12px; font-weight: 800; font-size: 14.5px; text-shadow: 0 1px 0 #0009; }
@@ -147,6 +175,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .card { top: 43%; right: 8px; left: 8px; width: auto; max-height: 38%; transform: none; animation: none; }
   .actions { bottom: 74px; left: 8px; right: 8px; transform: none; } .act { min-width: 0; flex: 1; padding: 4px; font-size: 12.5px; } .act.gold { min-width: 0; flex: 1.6; font-size: 14px; }
   .msg { bottom: 140px; }
+  .actions.battle { max-width: none; bottom: 70px; } .actions.battle .act { flex: 1 1 22%; min-width: 0; font-size: 12px; padding: 2px; }
+  .banner .thread { max-width: 92vw; font-size: 12px; }
   .journal { display: none; } .journal.open { display: flex; left: 8px; right: 8px; width: auto; bottom: 140px; }
   .menu { left: 8px; right: 8px; bottom: 10px; justify-content: space-between; } .menu .btn { flex: 1; height: 56px; }
   .classes { grid-template-columns: repeat(2, 1fr); gap: 8px; } .cls .spr { width: 64px; height: 72px; background-size: 384px 72px; animation-name: walk2; background-position-x: -64px; }

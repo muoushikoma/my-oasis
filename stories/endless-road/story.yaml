@@ -8,8 +8,8 @@ meta:
     en: An endless road where AI invents every monster, trap and wonder (AI required). Light D&D rules — manage supplies, upgrade gear, see how far you get.
   languages: [zh, en]
   ai_role:
-    zh: AI 把引擎掷出的每个路上事件写成一张事件卡（名字、描述、2~3 个有取舍的选项），并挑选画面模块；数值由规则计算。
-    en: The AI writes each road event as a card (name, scene, 2–3 options) and picks its visuals; the rules handle all numbers.
+    zh: AI 把每个路上事件写成事件卡：描述、有取舍的选项、每个结果的旁白、敌人的特性与台词，并把整段旅途串成一条主线；数值由规则计算。
+    en: AI writes each event card, outcome narration, foe traits and taunts, and a running story thread; the rules handle all numbers.
   est_tokens_per_min: 5000
   platforms: [desktop, mobile]
   description:
@@ -17,7 +17,9 @@ meta:
       2D 像素横版冒险。你从老旅店出发，一路向东。每走一里吃掉 1 份口粮，并遇到一个由 AI 现场写成的事件：怪物、断桥、行商、古老的祭坛、两难的抉择……每次冒险都不一样。
 
       - 每个事件是一张卡，选项上写明了难度、成功的收获和失败的风险。
-      - 简化版 D&D 规则：属性检定、d20 战斗、升级、额外攻击。每 25 里有一个守关者。
+      - 回合制战斗：敌人会预告下一步（攻击、蓄力重击、防御、下毒、偷钱……），你用攻击、防御和职业技能应对。每 25 里有一个守关者。
+      - 四个职业各有一种资源和 3 个技能；升级时三选一天赋。
+      - 每 5 里一个岔路口：安全的大路、富饶的荒野、或一步两里的捷径。疲劳会累积，扎营才能清除。
       - 管好口粮、药水和金币；收集铁料和魔晶，在行商那里强化武器、护甲、背包和营具。
       - 最多带 3 件遗物；接下委托，几里后回来领取丰厚报酬。
 
@@ -26,7 +28,9 @@ meta:
       A 2D pixel side-scroller. You leave the old inn and head east. Every mile costs a ration and brings an event written live by the AI: monsters, broken bridges, peddlers, ancient shrines, hard choices… no two runs are alike.
 
       - Every event is a card; each option shows its difficulty, reward and risk.
-      - Light D&D rules: ability checks, d20 combat, levels, Extra Attack. A warden guards every 25 miles.
+      - Turn-based combat: foes telegraph their next move (attack, charge, guard, poison, steal…); answer with attacks, guard and class skills. A warden guards every 25 miles.
+      - Four classes, each with its own resource and 3 skills; pick a talent each level.
+      - A fork every 5 miles: the safe highway, the rich wilds or a two-mile shortcut. Fatigue builds until you camp.
       - Manage rations, potions and gold; gather iron and essence to upgrade weapon, armor, pack and camp kit at peddlers.
       - Carry up to 3 relics; accept errands and come back a few miles later for big rewards.
 
@@ -102,7 +106,7 @@ state:
   best:      { type: number, init: 0, min: 0, integer: true, label: { zh: 最远纪录, en: Best record } }
   kills:     { type: number, init: 0, min: 0, integer: true, label: { zh: 击败敌人, en: Foes defeated } }
   # 资源
-  rations:   { type: number, init: 8, min: 0, integer: true, visible: both, desc: 口粮，每里吃 1 份 }
+  rations:   { type: number, init: 5, min: 0, integer: true, visible: both, desc: 口粮，每里吃 1 份 }
   potions:   { type: number, init: 2, min: 0, integer: true, visible: both, desc: 治疗药水 }
   gold:      { type: number, init: 15, min: 0, integer: true, visible: both, desc: 金币 }
   iron:      { type: number, init: 0, min: 0, integer: true, visible: both, desc: 铁料（强化材料） }
@@ -118,6 +122,23 @@ state:
   class_name: { type: string, init: "", visible: player, label: { zh: 职业, en: Class } }
   class_info: { type: json, init: [], visible: player, desc: 选职业时显示的职业卡 }
   rolls:     { type: json, init: [], visible: none, desc: 开局掷出的 6 个属性值 }
+  res:       { type: json, init: {}, visible: both, desc: 职业资源（k 种类 rage 怒气 / combo 连击 / mana 法力 / faith 信仰，cur 当前，max 上限），用来放技能 }
+  perks:     { type: json, init: [], visible: both, desc: 升级时选的天赋 }
+  perk_offer: { type: json, init: [], visible: player, desc: 这次升级可选的三个天赋 }
+  perk_queue: { type: number, init: 0, min: 0, integer: true, visible: none }
+  fatigue:   { type: number, init: 0, min: 0, integer: true, visible: both, desc: 疲劳，每里 +1，扎营清零；6 起 d20 -1，9 起 -2，12 起 -3 并且每里掉血 }
+  path:
+    type: enum
+    values: [road, wilds, shortcut]
+    init: road
+    visible: both
+    desc: 现在走的路：road 大路（安全）、wilds 荒野（危险但收获多）、shortcut 捷径（一步 2 里，很危险）
+  fork_at:   { type: number, init: 5, integer: true, visible: none, desc: 下一个岔路口的里程 }
+  thread:    { type: string, init: "", max_length: 120, visible: both, writable_by: [rules], desc: 旅途主线（AI 写，一句话，随旅程推进） }
+  hero_block: { type: number, init: 0, min: 0, integer: true, visible: player, desc: 战斗中的格挡 }
+  evade:     { type: bool, init: false, visible: player }
+  ui_battle: { type: json, init: {}, visible: player, desc: 战斗面板要显示的内容（敌人意图、技能） }
+  perk_text: { type: string, init: "", visible: player, label: { zh: 天赋, en: Talents } }
   # 世界
   biome:
     type: enum
@@ -130,10 +151,10 @@ state:
   # 事件
   phase:
     type: enum
-    values: [class, none, card, battle, shop]
+    values: [class, none, card, battle, shop, perk, fork]
     init: class
     visible: both
-    desc: 当前阶段：class 选职业，none 赶路，card 事件卡，battle 战斗，shop 交易
+    desc: 当前阶段：class 选职业，none 赶路，card 事件卡，battle 战斗，shop 交易，perk 升级选天赋，fork 岔路口
   event_kind:
     type: enum
     values: [none, combat, encounter, discovery, hazard, mystic, dilemma, trade, rest, quest]
@@ -212,6 +233,36 @@ actions:
     require_message: { zh: 现在没有在战斗。, en: You are not in a fight. }
     callable_by: [player]
     script: scripts/road.js#attack
+  defend:
+    label: { zh: 防御, en: Defend }
+    require: "state.phase == 'battle'"
+    require_message: { zh: 现在没有在战斗。, en: You are not in a fight. }
+    callable_by: [player]
+    script: scripts/road.js#defend
+  skill:
+    label: { zh: 技能, en: Skill }
+    params:
+      id: { type: string }
+    require: "state.phase == 'battle'"
+    require_message: { zh: 现在没有在战斗。, en: You are not in a fight. }
+    callable_by: [player]
+    script: scripts/road.js#skill
+  pick_perk:
+    label: { zh: 选择天赋, en: Choose talent }
+    params:
+      id: { type: string }
+    require: "state.phase == 'perk'"
+    require_message: { zh: 现在没有可选的天赋。, en: There is no talent to choose. }
+    callable_by: [player]
+    script: scripts/road.js#pick_perk
+  go:
+    label: { zh: 选择道路, en: Choose path }
+    params:
+      id: { type: enum, values: [road, wilds, shortcut] }
+    require: "state.phase == 'fork'"
+    require_message: { zh: 现在不在岔路口。, en: You are not at a fork. }
+    callable_by: [player]
+    script: scripts/road.js#go
   flee:
     label: { zh: 逃跑, en: Flee }
     require: "state.phase == 'battle'"
@@ -282,7 +333,9 @@ ai:
       prompt: |
         要写的是第 {{event.mile}} 里的事件（冒险者现在在第 {{state.distance}} 里，这张卡可能是提前写好的），地区：{{event.biome}}。
         引擎掷出的事件类别：{{event.kind}}，强度：{{event.tier}}，威胁等级：{{event.threat}}。
-        冒险者：{{event.hero}}，{{state.level}} 级，生命 {{state.hp}}/{{state.max_hp}}，属性 {{state.abil}}；口粮 {{state.rations}}，药水 {{state.potions}}，金币 {{state.gold}}，铁料 {{state.iron}}，魔晶 {{state.essence}}；遗物 {{state.relics}}；状态 {{state.status}}；委托 {{state.quest}}。
+        走的路：{{event.path}}（大路安全、荒野危险但收获多、捷径最危险）。
+        旅途主线（你之前写的，一句话）：{{event.thread}}
+        冒险者：{{event.hero}}，天赋 {{event.perks}}，疲劳 {{state.fatigue}}，{{state.level}} 级，生命 {{state.hp}}/{{state.max_hp}}，属性 {{state.abil}}；口粮 {{state.rations}}，药水 {{state.potions}}，金币 {{state.gold}}，铁料 {{state.iron}}，魔晶 {{state.essence}}；遗物 {{state.relics}}；状态 {{state.status}}；委托 {{state.quest}}。
 
         请把这个事件写成一张事件卡：
         - title：事件名（不超过 12 个字）。text：2~3 句描述，停在需要做决定的地方。
@@ -294,6 +347,9 @@ ai:
           - reward：成功时的收获 gold 金币 / rations 口粮 / potion 药水 / heal 恢复 / iron 铁料 / essence 魔晶 / xp 经验 / blessing 祝福 / relic 遗物（只有 hard 检定和委托回访才给）/ map 侦察 / none。
           - risk（check、gamble 用）：失败时 hurt 受伤 / lose_gold / lose_rations / curse 诅咒 / poison 中毒 / ambush 被袭击（转入战斗）/ lost 迷路 / exhaust 疲惫 / none。
           - cost（pay 用）：gold / rations / potion / hp / iron / essence。
+          - win / lose：这个选项成功 / 失败时发生了什么，各一句话（不超过 40 字，不写数值）。玩家选了之后才会看到，要写得具体、有画面，让结果像故事而不只是数字。fight 只写 win（冲上去那一刻）。
+        - 敌人（combat 或可能打起来时）：foe_trait 从 armored 重甲 / swift 迅捷 / venomous 剧毒 / brute 蛮力 / regenerating 再生 / arcane 奥术 / undead 亡灵 / thief 盗贼 里挑最贴切的（规则会让它按这个特性出招）；foe_line 是它开打时说的一句话或发出的动静（有个性）；foe_end 是它被打败时的一句描写。
+        - thread：旅途主线，一句话（不超过 40 字）。它把一路上的事件串成一个故事：比如有人在追你、一个预言、一件被诅咒的遗物、远方的某座城。延续上面已有的主线并推进一点（可以在这张卡里埋下线索、让旧角色回来）；如果还没有，就开启一条。
         - 各类别的写法：
           - combat：遭遇一个敌人，至少一个 fight 选项，另外可以有偷偷绕过（check）、贿赂（pay）等。
           - encounter：遇到会说话的人或生物，可以交易、帮忙、接委托，也可能翻脸。
@@ -301,6 +357,7 @@ ai:
           - mystic：祭坛、精灵、诅咒之物、许愿泉。dilemma：两难的道德选择，让每个选项都有代价。
           - quest：委托「{{event.quest}}」的结局，要呼应委托的名字，奖励可以给 relic。
           - trade：写一位有特点的行商（选项留空，规则会打开商店）。rest：写一处安全的歇脚地（选项留空）。
+        - 根据冒险者的处境出难题：口粮少就让食物成为诱惑，疲劳高就让休息变得昂贵，生命低就给出用生命换收获的危险选项。
         - 选项要有不同的取舍：比如一个稳妥但收获小，一个冒险但收获大，一个花资源换确定结果。结合冒险者的职业（战士擅长力量/体质、游荡者擅长敏捷、法师擅长智力、牧师擅长感知）和当前缺什么来设计。
         - relic（可选）：如果有选项给 relic，挑一件：lucky_charm 幸运符、vampiric_blade 吸血之刃、traveler_boots 旅人靴、guardian_amulet 守护护符、hunter_horn 猎人号角、alchemist_flask 炼金瓶、star_chart 星图、undying_ember 不灭余烬。
 
@@ -313,7 +370,7 @@ ai:
         output:
           format: json
           to: none
-          max_chars: 1600
+          max_chars: 3000
           schema:
             title: string
             text: string
@@ -326,6 +383,8 @@ ai:
             o1_reward: "enum:[none,gold,rations,potion,heal,iron,essence,xp,blessing,relic,map]"
             o1_risk: "enum:[hurt,lose_gold,lose_rations,curse,poison,ambush,lost,exhaust,none]"
             o1_cost: "enum:[gold,rations,potion,hp,iron,essence]"
+            o1_win: string
+            o1_lose: string
             o2_label: string
             o2_verb: "enum:[none,check,pay,gamble,fight,quest]"
             o2_ability: "enum:[wis,str,dex,con,int,cha]"
@@ -333,6 +392,8 @@ ai:
             o2_reward: "enum:[none,gold,rations,potion,heal,iron,essence,xp,blessing,relic,map]"
             o2_risk: "enum:[hurt,lose_gold,lose_rations,curse,poison,ambush,lost,exhaust,none]"
             o2_cost: "enum:[gold,rations,potion,hp,iron,essence]"
+            o2_win: string
+            o2_lose: string
             o3_label: string
             o3_verb: "enum:[none,check,pay,gamble,fight,quest]"
             o3_ability: "enum:[wis,str,dex,con,int,cha]"
@@ -340,12 +401,18 @@ ai:
             o3_reward: "enum:[none,gold,rations,potion,heal,iron,essence,xp,blessing,relic,map]"
             o3_risk: "enum:[hurt,lose_gold,lose_rations,curse,poison,ambush,lost,exhaust,none]"
             o3_cost: "enum:[gold,rations,potion,hp,iron,essence]"
+            o3_win: string
+            o3_lose: string
+            foe_trait: "enum:[none,armored,swift,venomous,brute,regenerating,arcane,undead,thief]"
+            foe_line: string
+            foe_end: string
+            thread: string
             sprite: "enum:[wolf,spider,bandit,skeleton,troll,drake,ooze,wisp,warden,chasm,rocks,thorns,stranger,chest,cart,shrine,campfire]"
             tint: "enum:[none,red,green,blue,gold,shadow,pale,purple]"
             time: "enum:[day,dusk,night]"
             weather: "enum:[clear,rain,snow,fog,embers,fireflies,leaves]"
       context:
-        state: [distance, hero_class, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art]
+        state: [distance, hero_class, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art, fatigue, path, thread, perks]
         history_turns: 6
         setting: false
       temperature: 1.0
@@ -385,7 +452,7 @@ ui:
       type: custom
       region: screen
       src: ui/game.html
-      actions: [pick_class, walk, camp, potion, attack, flee, choose, trade]
+      actions: [pick_class, walk, camp, potion, attack, defend, skill, flee, choose, trade, pick_perk, go]
       height: 720
       player_can_hide: false
       fallback: { zh: 这个故事的整个游戏画面是自定义组件，请在设置里打开“自定义组件”后游玩。, en: "This story's whole game screen is a custom component — please turn custom components on in Settings to play." }
