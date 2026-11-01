@@ -8,9 +8,9 @@ meta:
     en: An endless road where AI invents every monster, trap and wonder (AI required). Light D&D rules — manage supplies, upgrade gear, see how far you get.
   languages: [zh, en]
   ai_role:
-    zh: AI 把每个路上事件写成事件卡：描述、有取舍的选项、每个结果的旁白、敌人的特性与台词，并把整段旅途串成一条主线；数值由规则计算。
-    en: AI writes each event card, outcome narration, foe traits and taunts, and a running story thread; the rules handle all numbers.
-  est_tokens_per_min: 5000
+    zh: AI 是这个世界的造物者：每局发明新的道具、怪物和招式、旅途感悟，写下每个事件、结果旁白和一条旅途主线；规则按效果语法执行并计算数值。
+    en: The AI invents new items, monsters, signature moves and insights each run, and writes every event and the story thread; rules enforce the numbers.
+  est_tokens_per_min: 7000
   platforms: [desktop, mobile]
   description:
     zh: |
@@ -23,7 +23,9 @@ meta:
       - 管好口粮、药水和金币；收集铁料和魔晶，在行商那里强化武器、护甲、背包和营具。
       - 最多带 3 件遗物；接下委托，几里后回来领取丰厚报酬。
 
-      每张事件卡都由 AI 写成，平均每走一里调用一次。
+      AI 是这个世界的造物者：每一局它都会发明新的道具（会真的生效，带诅咒的更强）、这片地区特有的怪物和它们的招牌招式、升级时的“旅途感悟”，还有行商的独特货品。见过的造物会记进跨局的图鉴。
+
+      每张事件卡都由 AI 写成，平均每走一里调用一次，另外每几里发明一批新东西。
     en: |
       A 2D pixel side-scroller. You leave the old inn and head east. Every mile costs a ration and brings an event written live by the AI: monsters, broken bridges, peddlers, ancient shrines, hard choices… no two runs are alike.
 
@@ -34,7 +36,9 @@ meta:
       - Manage rations, potions and gold; gather iron and essence to upgrade weapon, armor, pack and camp kit at peddlers.
       - Carry up to 3 relics; accept errands and come back a few miles later for big rewards.
 
-      The AI writes every event card — about one call per mile walked.
+      The AI is this world's maker: every run it invents new items (that really work — cursed ones are stronger), regional monsters with signature moves, level-up insights and unique peddler wares. Everything you meet goes into a codex that lasts across runs.
+
+      The AI writes every event card — about one call per mile walked — plus a batch of new inventions every few miles.
   rating: all-ages
   tags:
     - { zh: 地下城与勇士规则, en: D&D rules }
@@ -139,6 +143,16 @@ state:
   evade:     { type: bool, init: false, visible: player }
   ui_battle: { type: json, init: {}, visible: player, desc: 战斗面板要显示的内容（敌人意图、技能） }
   perk_text: { type: string, init: "", visible: player, label: { zh: 天赋, en: Talents } }
+  # AI 造物
+  items:     { type: json, init: [], visible: both, desc: 携带的 AI 发明的道具（饰品最多 4 件、消耗品最多 4 件）和旅途感悟 }
+  items_ui:  { type: json, init: [], visible: player, desc: 道具栏要显示的内容 }
+  pool:      { type: json, init: { items: [], perks: [], foes: [], req: 0, born: 0 }, visible: none, desc: AI 提前发明好、还没用上的道具、感悟和怪物 }
+  uid:       { type: number, init: 0, integer: true, visible: none }
+  loot:      { type: json, init: {}, visible: player, desc: 栏位满了时等待取舍的新道具 }
+  made:      { type: json, init: [], visible: player, desc: 本局遇到的 AI 造物（道具、感悟、怪物） }
+  codex_n:   { type: number, init: 0, integer: true, visible: player, desc: 图鉴里一共记录了多少 AI 造物（跨局） }
+  toast:     { type: json, init: {}, visible: player, desc: 获得新道具时的提示 }
+  riposte:   { type: number, init: 0, integer: true, visible: none }
   # 世界
   biome:
     type: enum
@@ -151,10 +165,10 @@ state:
   # 事件
   phase:
     type: enum
-    values: [class, none, card, battle, shop, perk, fork]
+    values: [class, none, card, battle, shop, perk, fork, loot]
     init: class
     visible: both
-    desc: 当前阶段：class 选职业，none 赶路，card 事件卡，battle 战斗，shop 交易，perk 升级选天赋，fork 岔路口
+    desc: 当前阶段：class 选职业，none 赶路，card 事件卡，battle 战斗，shop 交易，perk 升级选天赋，fork 岔路口，loot 道具取舍
   event_kind:
     type: enum
     values: [none, combat, encounter, discovery, hazard, mystic, dilemma, trade, rest, quest]
@@ -263,6 +277,22 @@ actions:
     require_message: { zh: 现在不在岔路口。, en: You are not at a fork. }
     callable_by: [player]
     script: scripts/road.js#go
+  use_item:
+    label: { zh: 使用道具, en: Use item }
+    params:
+      id: { type: string }
+    require: "state.phase == 'battle' || state.phase == 'none' || state.phase == 'card'"
+    require_message: { zh: 现在不能使用道具。, en: You can't use items right now. }
+    callable_by: [player]
+    script: scripts/road.js#use_item
+  drop_item:
+    label: { zh: 道具取舍, en: Choose item }
+    params:
+      id: { type: string }
+    require: "state.phase == 'loot'"
+    require_message: { zh: 没有要取舍的道具。, en: Nothing to choose. }
+    callable_by: [player]
+    script: scripts/road.js#drop_item
   flee:
     label: { zh: 逃跑, en: Flee }
     require: "state.phase == 'battle'"
@@ -359,7 +389,12 @@ ai:
           - trade：写一位有特点的行商（选项留空，规则会打开商店）。rest：写一处安全的歇脚地（选项留空）。
         - 根据冒险者的处境出难题：口粮少就让食物成为诱惑，疲劳高就让休息变得昂贵，生命低就给出用生命换收获的危险选项。
         - 选项要有不同的取舍：比如一个稳妥但收获小，一个冒险但收获大，一个花资源换确定结果。结合冒险者的职业（战士擅长力量/体质、游荡者擅长敏捷、法师擅长智力、牧师擅长感知）和当前缺什么来设计。
-        - relic（可选）：如果有选项给 relic，挑一件：lucky_charm 幸运符、vampiric_blade 吸血之刃、traveler_boots 旅人靴、guardian_amulet 守护护符、hunter_horn 猎人号角、alchemist_flask 炼金瓶、star_chart 星图、undying_ember 不灭余烬。
+        - 这一里的 AI 造物（之前由你发明、规则已经收下的，请自然地写进这张卡）：
+          - 道具：{{event.item}}。如果有，让它出现在场景里，并让至少一个选项的 reward 是 relic（得到这件道具）。
+          - 怪物：{{event.sig}}。如果有，这就是 combat 里的敌人：描述它的样子，foe 填它的名字，foe_line 写它的台词。
+          - 行商的独特货品：{{event.wares}}。trade 时可以在描述里提到它们。
+          - 冒险者现在带着的道具：{{event.inv}}——可以让它们在故事里产生呼应。
+        - relic（可选，只在没有 AI 道具时用）：如果有选项给 relic，挑一件：lucky_charm 幸运符、vampiric_blade 吸血之刃、traveler_boots 旅人靴、guardian_amulet 守护护符、hunter_horn 猎人号角、alchemist_flask 炼金瓶、star_chart 星图、undying_ember 不灭余烬。
 
         画面由模块拼成，请挑最贴切的组合：
         - sprite：combat 从 wolf 野兽、spider 虫、bandit 人形、skeleton 亡灵、troll 大块头、drake 飞龙、ooze 软泥、wisp 元素/幽魂 里选（守关者还可选 warden）；encounter/dilemma/quest 选 stranger、bandit、skeleton、wisp；discovery 选 chest、rocks、shrine；hazard 选 chasm、rocks、thorns；mystic 选 shrine、wisp；trade 选 cart；rest 选 campfire。
@@ -416,13 +451,89 @@ ai:
         history_turns: 6
         setting: false
       temperature: 1.0
+    invent:
+      kind: generate
+      trigger: script
+      prompt: |
+        你是这个世界的造物者。请为这次冒险发明新的东西，让每一局都和别的局不一样。规则会执行你选的效果，并按稀有度算出数值，所以只挑效果、不写数字。
+        当前：第 {{event.mile}} 里，{{event.biome}}，走在{{event.path}}上。冒险者：{{event.hero}}，{{event.level}} 级，处境：{{event.need}}。
+        旅途主线：{{event.thread}}
+        本局已经发明过：{{event.made}}（不要重复）。以前的冒险里出现过：{{event.codex}}（也尽量别重复）。
+
+        请发明：
+        1) 三件道具 i1_ / i2_ / i3_：
+           - name：有个性的名字（不超过 8 个字），desc：一句来历或用法的描写（不超过 30 字，不写数值）。名字和描写要和效果对得上。
+           - kind：trinket 随身饰品（一直生效） / consumable 消耗品（用一次或几次）。三件里至少一件 consumable。
+           - trig（trinket 用）：passive 常驻 / battle_start 战斗开始时 / on_hit 命中时 / on_hurt 受伤时 / on_kill 击败敌人时 / on_mile 每走一里 / on_camp 扎营时。
+           - eff：heal 回血 / block 格挡 / damage 伤害敌人 / poison 毒敌人 / stun 眩晕敌人 / resource 职业资源 / gold 金币 / ration 口粮 / ac 护甲 / luck d20 加成 / maxhp 最大生命 / fatigue 减疲劳 / xp 经验。
+             合理搭配：ac、luck、maxhp 只能 passive；gold、ration、xp 适合 on_kill、on_mile；poison、stun、damage 适合 battle_start、on_hit。
+           - curse（只 trinket，可选）：none / frail 虚弱 / clumsy 笨拙 / weary 沉重 / hungry 饥饿。带诅咒的道具会更强——适合“被诅咒的宝物”。
+           道具要贴合当前地区、主线和冒险者的处境（比如缺口粮就发明和食物有关的东西）。
+        2) 一条旅途感悟 p_：冒险者从这段旅程里领悟到的能力，name（不超过 8 个字）、desc（一句话，呼应主线或之前的经历）、trig、eff（规则同上）。
+        3) 两种这片地区特有的新怪物 f1_ / f2_：
+           - name（不超过 8 个字）、desc（一句外貌描写）、sprite 外形（wolf 野兽 / spider 虫 / bandit 人形 / skeleton 亡灵 / troll 大块头 / drake 飞龙 / ooze 软泥 / wisp 元素幽魂）、tint 染色、trait 特性。
+           - move：招牌招式的名字（不超过 6 个字），kind：breath 必中猛击 / drain 吸血 / venom 剧毒 / hex 诅咒 / rob 抢钱 / frenzy 三连击 / harden 硬化回血 / roar 怒吼增伤。
+           - line：开打时的台词或动静；end：被打败时的描写。
+      card:
+        task: 为这次冒险发明新的道具、感悟和怪物（用规则给定的效果语法组合）。
+        authority: 0
+        output:
+          format: json
+          to: none
+          max_chars: 3000
+          schema:
+            i1_name: string
+            i1_desc: string
+            i1_kind: "enum:[trinket,consumable]"
+            i1_trig: "enum:[battle_start,passive,on_hit,on_hurt,on_kill,on_mile,on_camp]"
+            i1_eff: "enum:[heal,block,damage,poison,stun,resource,gold,ration,ac,luck,maxhp,fatigue,xp]"
+            i1_curse: "enum:[none,frail,clumsy,weary,hungry]"
+            i2_name: string
+            i2_desc: string
+            i2_kind: "enum:[trinket,consumable]"
+            i2_trig: "enum:[battle_start,passive,on_hit,on_hurt,on_kill,on_mile,on_camp]"
+            i2_eff: "enum:[heal,block,damage,poison,stun,resource,gold,ration,ac,luck,maxhp,fatigue,xp]"
+            i2_curse: "enum:[none,frail,clumsy,weary,hungry]"
+            i3_name: string
+            i3_desc: string
+            i3_kind: "enum:[consumable,trinket]"
+            i3_trig: "enum:[battle_start,passive,on_hit,on_hurt,on_kill,on_mile,on_camp]"
+            i3_eff: "enum:[heal,block,damage,poison,stun,resource,gold,ration,ac,luck,maxhp,fatigue,xp]"
+            i3_curse: "enum:[none,frail,clumsy,weary,hungry]"
+            p_name: string
+            p_desc: string
+            p_trig: "enum:[battle_start,passive,on_hit,on_hurt,on_kill,on_mile,on_camp]"
+            p_eff: "enum:[heal,block,damage,poison,stun,resource,gold,ration,ac,luck,maxhp,fatigue,xp]"
+            f1_name: string
+            f1_desc: string
+            f1_sprite: "enum:[bandit,wolf,spider,skeleton,troll,drake,ooze,wisp]"
+            f1_tint: "enum:[none,red,green,blue,gold,shadow,pale,purple]"
+            f1_trait: "enum:[none,armored,swift,venomous,brute,regenerating,arcane,undead,thief]"
+            f1_move: string
+            f1_kind: "enum:[breath,drain,venom,hex,rob,frenzy,harden,roar]"
+            f1_line: string
+            f1_end: string
+            f2_name: string
+            f2_desc: string
+            f2_sprite: "enum:[wolf,bandit,spider,skeleton,troll,drake,ooze,wisp]"
+            f2_tint: "enum:[none,red,green,blue,gold,shadow,pale,purple]"
+            f2_trait: "enum:[none,armored,swift,venomous,brute,regenerating,arcane,undead,thief]"
+            f2_move: string
+            f2_kind: "enum:[breath,drain,venom,hex,rob,frenzy,harden,roar]"
+            f2_line: string
+            f2_end: string
+      context:
+        state: [distance, hero_class, level, hp, max_hp, rations, gold, items, relics, thread, biome]
+        history_turns: 2
+        setting: false
+      temperature: 1.1
     epitaph:
       kind: generate
       trigger: game_end
       after_end: true
       optional: true
       prompt: |
-        冒险者倒下了。一共走了 {{state.distance}} 里，到达 {{state.level}} 级，击败了 {{state.kills}} 个敌人，带着遗物 {{state.relics}}，最后倒在了 {{state.biome}}。
+        冒险者倒下了，身上带着这些道具：{{state.items}}。一共走了 {{state.distance}} 里，到达 {{state.level}} 级，击败了 {{state.kills}} 个敌人，带着遗物 {{state.relics}}，最后倒在了 {{state.biome}}。
         请写一段简短的墓志铭式的结语（2~3 句），回顾这段旅程，语气庄重但带一点温暖。
       card:
         task: 为倒下的冒险者写一段简短的旅程结语。
@@ -432,7 +543,7 @@ ai:
           to: state:epitaph
           max_chars: 300
       context:
-        state: [distance, level, kills, biome, relics]
+        state: [distance, level, kills, biome, relics, items, thread]
         history_turns: 0
         setting: false
       fallback: { zh: 路还在，传说也还在。, en: "The road remains, and so does the legend." }
@@ -452,7 +563,7 @@ ui:
       type: custom
       region: screen
       src: ui/game.html
-      actions: [pick_class, walk, camp, potion, attack, defend, skill, flee, choose, trade, pick_perk, go]
+      actions: [pick_class, walk, camp, potion, attack, defend, skill, flee, choose, trade, pick_perk, go, use_item, drop_item]
       height: 720
       player_can_hide: false
       fallback: { zh: 这个故事的整个游戏画面是自定义组件，请在设置里打开“自定义组件”后游玩。, en: "This story's whole game screen is a custom component — please turn custom components on in Settings to play." }

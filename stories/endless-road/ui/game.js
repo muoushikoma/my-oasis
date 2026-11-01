@@ -167,7 +167,7 @@ async function run(action, params) {
 function hud(s) {
   const pct = Math.max(0, Math.min(100, (100 * (s.hp || 0)) / (s.max_hp || 1))), xp = Math.min(100, (100 * (s.xp || 0)) / (s.xp_next || 1));
   const g = s.gear || {}, cr = 8 + 4 * (g.pack || 0), cp = 3 + (g.pack || 0);
-  return h("div", { class: "hud" },
+  return h("div", { class: "hud" + ((s.items_ui || []).length ? " withitems" : "") },
     h("div", { class: "wood face" }, h("div", { class: "spr", style: { backgroundImage: `url(${heroUrl(s.hero_class)})` } })),
     h("div", { class: "stats" },
       h("div", { class: "name serif out" }, s.class_name || T("旅人", "Traveler"), h("small", {}, `${T("等级", "Lv")} ${s.level || 1}`)),
@@ -181,6 +181,15 @@ function hud(s) {
         h("span", { class: "fat" + ((s.fatigue || 0) >= 9 ? " bad" : (s.fatigue || 0) >= 6 ? " warn" : ""), title: T("疲劳：每里 +1，扎营清零。6 起 d20 -1，9 起 -2，12 起 -3 并掉血", "Fatigue: +1 per mile, camp to clear. d20 -1 at 6, -2 at 9, -3 and HP loss at 12") }, icon("hourglass"), s.fatigue || 0))));
 }
 const RES_COLOR = { rage: "#ff6a3a", combo: "#ffd84a", mana: "#5ab4ff", faith: "#fff2a8" };
+const RK = { common: "#c8c0a8", rare: "#5ab4ff", legendary: "#ffb03a" };
+function itemBar(s) {
+  const list = s.items_ui || []; if (!list.length) return null;
+  return h("div", { class: "itembar" }, list.map((it) => h("button", { class: "slot2 " + it.kind + (it.usable ? " use" : ""), style: { borderColor: RK[it.rk] || "#c8c0a8" }, disabled: it.kind === "consumable" && (!it.usable || busy()),
+    onclick: () => { if (it.kind === "consumable" && it.usable) run("use_item", { id: String(it.uid) }); else { sheet = "relic"; render(); } } },
+    icon(it.kind === "consumable" ? "potion" : it.kind === "insight" ? "scroll" : "gem"),
+    h("span", { class: "tip" }, h("b", { style: { color: RK[it.rk] } }, `✦ ${it.name}`), h("small", {}, `${it.rarity} · ${{ trinket: T("饰品", "Trinket"), consumable: T("消耗品（点击使用）", "Consumable (click to use)"), insight: T("旅途感悟", "Insight") }[it.kind]}`),
+      h("span", {}, it.eff), it.curse ? h("span", { class: "cur" }, it.curse) : null, it.desc ? h("i", {}, it.desc) : null))));
+}
 function resBar(s) {
   const r = s.res; if (!r || !r.k) return null;
   const name = { rage: T("怒气", "Rage"), combo: T("连击", "Combo"), mana: T("法力", "Mana"), faith: T("信仰", "Faith") }[r.k];
@@ -239,7 +248,7 @@ function journal(s) {
   return h("div", { class: "journal" + (journalOpen ? " open" : ""), title: T("点击展开 / 收起日志", "Click to expand / collapse"), onclick: () => { journalOpen = !journalOpen; render(); } }, lines.map((l) => h("div", { class: "out" + (l.startsWith("✦") ? " ai" : "") }, l)));
 }
 function menu(s) {
-  return h("div", { class: "menu" }, [["char", "person", T("角色", "Hero")], ["pack", "pack", T("行囊", "Pack")], ["relic", "gem", T("遗物", "Relics")], ["trip", "map", T("旅程", "Journey")], ["log", "scroll", T("日志", "Log")]].map(([id, ic, label]) =>
+  return h("div", { class: "menu" }, [["char", "person", T("角色", "Hero")], ["pack", "pack", T("行囊", "Pack")], ["relic", "gem", T("道具", "Items")], ["trip", "map", T("造物", "Codex")], ["log", "scroll", T("日志", "Log")]].map(([id, ic, label]) =>
     h("button", { class: "btn", onclick: () => { if (id === "log") journalOpen = !journalOpen; else sheet = id; render(); } }, icon(ic), label)));
 }
 // 详情弹窗
@@ -266,8 +275,14 @@ function sheetBody(s, id) {
       h("p", { style: { color: "#c5b392", fontSize: "13px" } }, T("在路上遇到的行商那里强化（金币 + 铁料，高级还要魔晶）。", "Upgrade at peddlers on the road (gold + iron; essence at higher levels)."))];
   }
   if (id === "relic") {
+    const its = s.items_ui || [];
+    const blk = (kind, title, max) => { const l = its.filter((x) => x.kind === kind); return [h("h3", { class: "serif", style: { marginTop: "10px" } }, title),
+      ...l.map((it) => h("div", { class: "slot", style: { boxShadow: `inset 0 0 0 2px ${RK[it.rk]}` } }, icon(kind === "consumable" ? "potion" : kind === "insight" ? "scroll" : "gem", true),
+        h("div", {}, h("b", { style: { color: RK[it.rk] } }, `✦ ${it.name}`), h("small", {}, `${it.rarity} · ${it.eff}`), it.curse ? h("small", { style: { color: "#ff9a7a" } }, it.curse) : null, it.desc ? h("small", { style: { fontStyle: "italic" } }, it.desc) : null))),
+      max && l.length < max ? h("div", { class: "slot empty" }, icon("gem", true), h("span", {}, T(`空位 ${max - l.length}`, `${max - l.length} empty`))) : null]; };
     const lines = String(s.relic_text || "").split("\n").filter((l) => /[:：]/.test(l)), st = s.status || {}, on = Object.keys(st).filter((k) => st[k] > 0);
-    return [h("h3", { class: "serif" }, T("遗物（最多 3 件）", "Relics (up to 3)")),
+    return [...blk("trinket", T("饰品（最多 4 件）", "Trinkets (up to 4)"), 4), ...blk("consumable", T("消耗品（最多 4 件）", "Consumables (up to 4)"), 4), ...(its.some((x) => x.kind === "insight") ? blk("insight", T("旅途感悟", "Insights"), 0) : []),
+      h("h3", { class: "serif", style: { marginTop: "10px" } }, T("遗物（最多 3 件）", "Relics (up to 3)")),
       ...[0, 1, 2].map((i) => { const l = lines[i]; if (!l) return h("div", { class: "slot empty" }, icon("gem", true), h("span", {}, T("空位", "Empty slot"))); const [n, ...d] = l.split(/[:：]/); return h("div", { class: "slot" }, icon("gem", true), h("div", {}, h("b", {}, n.trim()), h("small", {}, d.join(":").trim()))); }),
       h("h3", { class: "serif", style: { marginTop: "14px" } }, T("状态", "Status")),
       h("div", {}, on.length ? on.map((k) => h("span", { class: "chip" }, `${T(STATUS[k][0], STATUS[k][1])}${k === "exhausted" ? "" : ` · ${st[k]}${T(" 里", " mi")}`}`)) : h("span", { style: { color: "#9c8c70" } }, T("（无）", "(none)")))];
@@ -275,11 +290,15 @@ function sheetBody(s, id) {
   return [h("h3", { class: "serif" }, T("旅程", "Journey")),
     ...[["flag", T("已走里程", "Miles walked"), s.distance], ["star", T("最远纪录", "Best record"), s.best], ["skull", T("击败敌人", "Foes defeated"), s.kills]].map(([ic, n, v]) => h("div", { class: "row" }, icon(ic), h("span", { class: "grow" }, n), h("b", {}, v))),
     s.quest && s.quest.due ? h("div", { class: "row" }, icon("scroll"), h("span", { class: "grow" }, T(`委托「${s.quest.title}」`, `Errand "${s.quest.title}"`)), h("b", {}, T(`第 ${s.quest.due} 里`, `mile ${s.quest.due}`))) : null,
-    h("p", { style: { color: "#c5b392", fontSize: "13px" } }, T("每 10 里换一个地区，每 25 里有一个守关者。", "The region changes every 10 miles; a warden waits every 25 miles."))];
+    h("p", { style: { color: "#c5b392", fontSize: "13px" } }, T("每 10 里换一个地区，每 25 里有一个守关者。", "The region changes every 10 miles; a warden waits every 25 miles.")),
+    h("h3", { class: "serif", style: { marginTop: "14px" } }, T(`✦ 本局 AI 造物（${(s.made || []).length}）· 图鉴共 ${s.codex_n || 0} 种`, `✦ AI creations this run (${(s.made || []).length}) · ${s.codex_n || 0} in your codex`)),
+    s.thread ? h("p", { style: { fontStyle: "italic", color: "#f0dcb0" } }, `✦ ${s.thread}`) : null,
+    ...(s.made || []).slice().reverse().map((m) => h("div", { class: "row" }, icon(m.t === "foe" ? "skull" : m.t === "insight" ? "scroll" : "gem"), h("div", { class: "grow" }, h("b", {}, m.n), h("div", { style: { fontSize: "12.5px", color: "#d0bc96" } }, m.e), m.d ? h("div", { style: { fontSize: "12.5px", color: "#a89878", fontStyle: "italic" } }, m.d) : null))),
+    (s.made || []).length ? null : h("p", { style: { color: "#9c8c70" } }, T("（AI 发明的道具、怪物和感悟会出现在这里）", "(Items, monsters and insights the AI invents will appear here)"))];
 }
 function modal(s) {
   if (!sheet) return null;
-  const tabs = [["char", "person", T("角色", "Hero")], ["pack", "pack", T("行囊", "Pack")], ["relic", "gem", T("遗物", "Relics")], ["trip", "map", T("旅程", "Journey")]];
+  const tabs = [["char", "person", T("角色", "Hero")], ["pack", "pack", T("行囊", "Pack")], ["relic", "gem", T("道具", "Items")], ["trip", "map", T("造物", "Codex")]];
   return h("div", { class: "modal", onclick: (e) => { if (e.target === e.currentTarget) { sheet = null; render(); } } },
     h("div", { class: "wood sheet" }, h("div", { class: "tabs" }, tabs.map(([id, ic, label]) => h("button", { class: "btn tab" + (id === sheet ? " on" : ""), onclick: () => { sheet = id; render(); } }, icon(ic), label))),
       ...sheetBody(s, sheet), h("div", { class: "close" }, h("button", { class: "btn gold act", onclick: () => { sheet = null; render(); } }, T("关闭", "Close")))));
@@ -295,12 +314,22 @@ function ending(s) {
     h("div", {}, T(`${s.class_name} · 走了 ${s.distance} 里 · ${s.level} 级 · 击败 ${s.kills} 个敌人`, `${s.class_name} · ${s.distance} miles · level ${s.level} · ${s.kills} foes defeated`)),
     s.epitaph ? h("p", { class: "ep serif" }, s.epitaph) : null, h("p", { style: { color: "#c5b392", fontSize: "13px" } }, T(`最远纪录：${s.best} 里`, `Best record: ${s.best} miles`))));
 }
-let lastCardKey = "";
+let lastCardKey = "", toastSeen = null, toastUntil = 0;
+function toastEl(s) {
+  const t = s.toast || {}; if (!t.n) return null;
+  if (toastSeen === null) { toastSeen = t.n; return null; }   // 读档时不弹旧提示
+  if (t.n !== toastSeen) { toastSeen = t.n; toastUntil = Date.now() + 4200; setTimeout(render, 4300); }
+  if (Date.now() > toastUntil) return null;
+  return h("div", { class: "toast wood", style: { borderColor: RK[t.rk] } }, h("small", {}, T("✦ AI 发明的新道具", "✦ A new item, invented by the AI"), " · ", h("b", { style: { color: RK[t.rk] } }, t.rarity)),
+    h("h3", { class: "serif" }, t.title), h("div", { class: "eff" }, t.eff), t.curse ? h("div", { class: "cur" }, t.curse) : null, t.desc ? h("p", {}, t.desc) : null);
+}
 function render() {
   const s = S;
   const ui = $("ui");
   const cardKey = s.phase === "battle" ? "battle" : JSON.stringify([(s.ui_card || {}).mode, (s.ui_card || {}).title]);
   const kids = [hud(s), banner(s), journal(s), actions(s), menu(s), h("div", { class: "msg out" }, msg)];
+  const ib = itemBar(s); if (ib) kids.push(ib);
+  const t = toastEl(s); if (t) kids.push(t);
   const c = card(s); if (c) { if (cardKey === lastCardKey) c.style.animation = "none"; kids.push(c); }
   lastCardKey = cardKey;
   if (s.phase === "class") kids.push(title(s));

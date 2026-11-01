@@ -200,7 +200,7 @@ function clip(s, n) { return String(s || "").replace(/\s+/g, " ").trim().slice(0
 function d20(api) {
   const nat = api.random.int(1, 20), st = status(api);
   let bonus = 0; if (st.blessed) bonus += 2; if (st.cursed) bonus -= 2; if (has(api, "lucky_charm")) bonus += 1;
-  bonus -= fatiguePen(api);
+  bonus -= fatiguePen(api); bonus += passiveSum(api, "luck");
   return { nat, bonus };
 }
 function bonusText(b) { return b ? sign(b) : ""; }
@@ -211,6 +211,7 @@ function priceOf(api, k) { const v = PRICE[k] * (1 + get(api, "distance") / 50);
 function calcAc(api) {
   const g = gear(api); let ac = cls(api).ac + Math.min(2, abilMod(api, "dex")) + g.armor;
   if (has(api, "guardian_amulet")) ac += 1; if (status(api).exhausted) ac -= 2;
+  ac += passiveSum(api, "ac") - curseCount(api, "clumsy");
   return ac;
 }
 function heal(api, n) { const mx = get(api, "max_hp"), hp = get(api, "hp"); const v = Math.min(mx, hp + Math.max(0, Math.round(n))); set(api, "hp", v); return v - hp; }
@@ -282,7 +283,9 @@ function pickIntent(api, f) {
   if (f.trait === "armored") w.defend += 20; if (f.trait === "brute") w.charge += 22; if (f.trait === "swift") w.double = 30;
   if (f.trait === "venomous") w.poison = 30; if (f.trait === "arcane") { w.drain = 22; w.curse = 12; } if (f.trait === "thief") w.steal = 25;
   if (f.boss) w.charge += 8;
+  if (f.sig && !f.sigCd) w.sig = f.boss ? 32 : 28;
   const t = api.random.weighted(w);
+  if (t === "sig") return sigIntent(f);
   if (t === "defend") return { t, lo: 3 + Math.floor(f.threat * 0.8), hi: 3 + Math.floor(f.threat * 0.8) };
   if (t === "charge" || t === "curse") return { t, lo: 0, hi: 0 };
   if (t === "steal") return { t, lo: 5 + f.threat, hi: 5 + f.threat };
@@ -317,13 +320,14 @@ function finalizeOption(api, o, kind, idx, card) {
   if (kind === "quest") rsize = rsize === "large" ? "huge" : "large";
   // 收获
   let rw = REWARDS.indexOf(o.reward) >= 0 ? o.reward : "none";
-  const relicOk = (o.verb === "check" && opt.diff === "hard") || kind === "quest";
+  const relicOk = (o.verb === "check" && opt.diff === "hard") || kind === "quest" || (card.item && !card.itemOffered);
   if (rw === "relic" && !relicOk) rw = rsize === "large" || rsize === "huge" ? "essence" : "iron";
-  if (rw === "relic" && get(api, "relics").length >= 3) rw = "essence";
+  if (rw === "relic" && !card.item && get(api, "relics").length >= 3) rw = "essence";
+  if (rw === "relic" && card.item) { card.itemOffered = true; opt.rarity = (o.verb === "check" && opt.diff === "hard") || kind === "quest" || o.verb === "pay" ? "rare" : "common"; }
   if (rw === "essence" && rsize !== "large" && rsize !== "huge") rw = "iron";
   if (kind === "combat" && o.verb !== "fight") { rsize = "small"; if (rw === "relic" || rw === "essence") rw = "gold"; }
   opt.reward = rw; opt.ramt = rewardAmount(api, rw, rsize, T);
-  if (rw === "relic") opt.relic = RELIC_IDS.indexOf(o.relic) >= 0 && !has(api, o.relic) ? o.relic : null;
+  if (rw === "relic") opt.relic = card.item ? `✦ ${card.item.name}（${T2(api, RARITY[opt.rarity])}）` : RELIC_IDS.indexOf(o.relic) >= 0 && !has(api, o.relic) ? o.relic : null;
   // 风险（付出代价没有风险；战斗类的检定失败一律是被袭击）
   if (o.verb !== "pay") {
     let rk = RISKS.indexOf(o.risk) >= 0 ? o.risk : "hurt";
@@ -367,7 +371,7 @@ function canAfford(api, o) {
 }
 function amtText(api, r, n, relic) {
   if (r === "none") return T2(api, R_NAME.none);
-  if (r === "relic") return relic ? T2(api, RELICS[relic]) : L(api, "随机遗物", "a random relic");
+  if (r === "relic") return relic ? (relic[0] === "✦" ? relic : T2(api, RELICS[relic])) : L(api, "随机遗物", "a random relic");
   if (r === "blessing" || r === "curse" || r === "poison") return `${T2(api, R_NAME[r])} ${n}${L(api, " 里", " mi")}`;
   if (r === "map" || r === "ambush" || r === "lost" || r === "exhaust") return T2(api, R_NAME[r]);
   return `${T2(api, R_NAME[r])} ${r.indexOf("lose") === 0 || r === "hurt" ? "-" : "+"}${n}`;
@@ -428,7 +432,7 @@ function fillCard(api, draft, fromAi) {
   const card = get(api, "card"); const kind = card.kind;
   card.title = clip(T2(api, draft.title), 30) || card.title || T2(api, KIND_NAME[kind]);
   card.text = clip(T2(api, draft.text), 360);
-  if (draft.foe) card.foe = clip(T2(api, draft.foe), 30);
+  if (draft.foe && !card.sig) card.foe = clip(T2(api, draft.foe), 30);
   const opts = [];
   if (kind === "trade" || kind === "rest") { /* 交易、休憩不需要选项 */ }
   else if (card.boss) opts.push({ id: "o1", label: L(api, "迎战", "Face the warden"), verb: "fight" });
@@ -472,8 +476,9 @@ function genericOptions(api, kind) {
 function startBattle(api, name, free) {
   const card = get(api, "card");
   const spr = (sfx(api).cur || {}).sprite;
-  const trait = card.trait || SPRITE_TRAIT[spr] || "none";
-  const f = foeFor(api, name || card.foe || T2(api, defaultFoe(api)), card.boss, card.threat, trait);
+  const trait = (card.sig && card.sig.trait !== "none" ? card.sig.trait : "") || card.trait || SPRITE_TRAIT[spr] || "none";
+  const f = foeFor(api, (card.sig && card.sig.name) || name || card.foe || T2(api, defaultFoe(api)), card.boss, card.threat, trait);
+  if (card.sig) { f.sig = { move: card.sig.move, mk: card.sig.mk }; f.intent = pickIntent(api, f); if (!card.foe_line && card.sig.line) card.foe_line = card.sig.line; if (!card.foe_end && card.sig.end) card.foe_end = card.sig.end; codexAdd(api, "foe", card.sig.name, `${card.sig.move}：${T2(api, SIG_TEXT[card.sig.mk])}`, card.sig.desc); }
   set(api, "foe", f); set(api, "event_kind", "combat"); set(api, "phase", "battle");
   set(api, "hero_block", 0); set(api, "evade", false);
   // 职业资源：怒气、连击点每场清零；信仰至少 2；法力保留（只在扎营时补满）
@@ -481,10 +486,13 @@ function startBattle(api, name, free) {
   reveal(api);
   log(api, `⚔ ${L(api, "战斗开始", "Battle")}：${f.name}（${L(api, "生命", "HP")} ${f.hp} · AC ${f.ac}${f.trait !== "none" ? " · " + T2(api, TRAITS[f.trait]) : ""}）`);
   if (card.foe_line) log(api, `✦ ${f.name}：「${card.foe_line}」`);
-  if (free) { log(api, L(api, "它抢先出手！", "It strikes first!")); f.intent = { t: "attack", lo: dmgRange(f, 1, 0)[0], hi: dmgRange(f, 1, 0)[1] }; set(api, "foe", f); enemyTurn(api); }
+  fireItems(api, "battle_start");
+  if (get(api, "foe").hp <= 0) { victory(api, get(api, "foe")); return; }
+  if (free) { log(api, L(api, "它抢先出手！", "It strikes first!")); const ff = get(api, "foe"); ff.intent = { t: "attack", lo: dmgRange(ff, 1, 0)[0], hi: dmgRange(ff, 1, 0)[1] }; set(api, "foe", ff); enemyTurn(api); }
 }
 function endEvent(api, dying) {
   dropSubject(api, !!dying);
+  { const card = get(api, "card") || {}; if (!card.returned) { giveBack(api, { item: card.item && !card.itemGiven ? card.item : null, sig: null, wares: (card.wares || []).filter((w) => !w.sold) }); card.returned = true; set(api, "card", card); } }
   set(api, "event_kind", "none"); set(api, "event_title", "");
   settle(api);
 }
@@ -492,6 +500,7 @@ function endEvent(api, dying) {
 function settle(api) {
   if (get(api, "hp") <= 0) { set(api, "phase", "none"); return; }
   if ((get(api, "perk_offer") || []).length) set(api, "phase", "perk");
+  else if (get(api, "loot") && get(api, "loot").uid) set(api, "phase", "loot");
   else if (get(api, "distance") >= (get(api, "fork_at") || 5)) set(api, "phase", "fork");
   else set(api, "phase", "none");
 }
@@ -501,6 +510,7 @@ function offerPerks(api) {
   const pool = Object.keys(PERKS).filter((k) => (!PERKS[k].c || PERKS[k].c === id) && taken.indexOf(k) < 0);
   const pick = [];
   while (pool.length && pick.length < 3) pick.push(pool.splice(api.random.int(0, pool.length - 1), 1)[0]);
+  if (get(api, "pool") && (get(api, "pool").perks || []).length) pick[pick.length >= 3 ? 2 : pick.length] = "ai";
   set(api, "perk_offer", pick);
   if (get(api, "phase") === "none") settle(api);
 }
@@ -518,7 +528,7 @@ function applyReward(api, o) {
     case "xp": gainXp(api, n); return L(api, `获得 ${n} 经验`, `gained ${n} XP`);
     case "blessing": addStatus(api, "blessed", n); return L(api, `受到祝福（${n} 里）`, `blessed for ${n} miles`);
     case "map": addStatus(api, "scouted", 2); return L(api, "摸清了前面的路（接下来两里更容易避开战斗）", "scouted the road ahead (easier to avoid fights for 2 miles)");
-    case "relic": return giveRelic(api, o.relic);
+    case "relic": { const card = get(api, "card") || {}; return card.item ? giveItem(api, o.rarity || "common", card.title) : giveRelic(api, o.relic); }
     default: return L(api, "平安无事", "nothing more");
   }
 }
@@ -535,6 +545,14 @@ function applyRisk(api, o) {
     case "ambush": return "ambush";
     default: return L(api, "没出什么事", "nothing bad happened");
   }
+}
+// 给一件道具：优先用这张卡上 AI 发明的，其次从造物池里拿，都没有就给固定遗物
+function giveItem(api, rarity, origin) {
+  const card = get(api, "card") || {};
+  if (card.item && !card.itemGiven) { card.itemGiven = true; set(api, "card", card); return acquire(api, card.item, rarity, origin); }
+  const p = pool(api); const spec = p.items.shift(); set(api, "pool", p);
+  if (spec) return acquire(api, spec, rarity, origin);
+  return giveRelic(api, null);
 }
 function giveRelic(api, want) {
   const owned = get(api, "relics") || [];
@@ -608,6 +626,193 @@ function leaveCard(api) {
   endEvent(api);
 }
 
+// ===== AI 造物：道具、怪物、感悟 =====
+// AI 用一套“效果语法”发明新东西：什么时候触发（trig）× 产生什么效果（eff）× 可选的诅咒代价（curse），再起名字、写来历。
+// 规则只认语法里的词：按稀有度和等级算出具体数值；不合法的组合会被改成最接近的合法组合。所以 AI 可以随意发明，但不会把游戏玩坏。
+const TRIGS = ["passive", "battle_start", "on_hit", "on_hurt", "on_kill", "on_mile", "on_camp"];
+const EFFS = ["heal", "block", "damage", "poison", "stun", "resource", "gold", "ration", "ac", "luck", "maxhp", "fatigue", "xp"];
+const CURSES = ["none", "frail", "clumsy", "weary", "hungry"];
+const EFF_TRIGS = {
+  heal: ["on_kill", "on_hurt", "on_mile", "on_camp", "on_hit", "battle_start"], block: ["battle_start", "on_hurt", "on_hit"], damage: ["battle_start", "on_hit", "on_hurt"],
+  poison: ["battle_start", "on_hit"], stun: ["battle_start", "on_hit", "on_hurt"], resource: ["battle_start", "passive", "on_hit", "on_hurt", "on_kill"],
+  gold: ["on_kill", "on_mile"], ration: ["on_kill", "on_mile", "on_camp"], ac: ["passive"], luck: ["passive"], maxhp: ["passive"], fatigue: ["on_mile", "on_kill"], xp: ["on_kill", "on_mile"],
+};
+const USE_EFFS = ["heal", "block", "damage", "poison", "stun", "resource", "ration", "fatigue", "xp"]; // 消耗品能用的效果
+const BATTLE_EFFS = ["block", "damage", "poison", "stun"];
+const RARITY = { common: ["普通", "Common", 1], rare: ["稀有", "Rare", 1.6], legendary: ["传说", "Legendary", 2.4] };
+const RARITY_UP = { common: "rare", rare: "legendary", legendary: "legendary" };
+const TRIG_NAME = { passive: ["常驻", "Always"], battle_start: ["战斗开始时", "At battle start"], on_hit: ["命中时", "On hit"], on_hurt: ["受伤时", "When hurt"], on_kill: ["击败敌人时", "On kill"], on_mile: ["每走一里", "Each mile"], on_camp: ["扎营时", "When camping"], use: ["使用", "Use"] };
+const CURSE_NAME = { frail: ["虚弱：最大生命 -20%", "Frail: -20% max HP"], clumsy: ["笨拙：AC -1", "Clumsy: AC -1"], weary: ["沉重：每里 50% 额外 +1 疲劳", "Weary: 50% chance of +1 extra fatigue per mile"], hungry: ["饥饿：每里 25% 多吃 1 份口粮", "Hungry: 25% chance to eat an extra ration per mile"] };
+const FREQ = { passive: 1, battle_start: 1, on_hit: 0.45, on_hurt: 0.5, on_kill: 1, on_mile: 0.35, on_camp: 1.5, use: 2.5 };
+const SIG_KINDS = ["breath", "drain", "venom", "hex", "rob", "frenzy", "harden", "roar"];
+const MAX_TRINKETS = 4, MAX_BAG = 4;
+
+// 把 AI 的发明整理成合法的规格
+function cleanSpec(raw, isPerk) {
+  const name = clip(raw.name, 16); if (!name) return null;
+  let kind = isPerk ? "insight" : raw.kind === "consumable" ? "consumable" : "trinket";
+  let eff = EFFS.indexOf(raw.eff) >= 0 ? raw.eff : "heal", trig = raw.trig;
+  if (kind === "consumable") { if (USE_EFFS.indexOf(eff) < 0) eff = "heal"; trig = "use"; }
+  else if ((EFF_TRIGS[eff] || []).indexOf(trig) < 0) trig = EFF_TRIGS[eff][0];
+  const curse = kind === "trinket" && CURSES.indexOf(raw.curse) > 0 ? raw.curse : "none";
+  return { name, desc: clip(raw.desc, 90), kind, trig, eff, curse };
+}
+// 数值：按效果、触发频率、稀有度、等级算
+function itemAmt(api, it) {
+  const r = RARITY[it.rarity || "common"][2], lv = get(api, "level"), fq = FREQ[it.trig] || 1, k = fq * r;
+  switch (it.eff) {
+    case "heal": case "block": return Math.max(1, Math.round((3 + lv) * k));
+    case "damage": return Math.max(1, Math.round((2 + lv) * k));
+    case "poison": return Math.max(1, Math.round(2 * k));
+    case "stun": return it.trig === "use" ? (r >= 2.4 ? 2 : 1) : Math.min(100, Math.round((it.trig === "battle_start" ? 40 : 25) * fq * r * (it.trig === "battle_start" ? 1 : 2)));
+    case "resource": return it.trig === "passive" ? (r >= 2.4 ? 2 : 1) : Math.max(1, Math.round(1.5 * k));
+    case "gold": return Math.max(1, Math.round((2 + get(api, "distance") / 10) * k * 3));
+    case "ration": return it.trig === "on_camp" || it.trig === "use" ? Math.max(1, Math.round(r)) : Math.min(90, Math.round((it.trig === "on_mile" ? 15 : 30) * r));
+    case "ac": case "luck": return r >= 2.4 ? 2 : 1;
+    case "maxhp": return Math.round(5 * r);
+    case "fatigue": return it.trig === "use" ? 99 : Math.max(1, Math.round(r));
+    case "xp": return Math.max(1, Math.round(5 * lv * k));
+  }
+  return 0;
+}
+// 效果说明（规则算出的确切数值）
+function effText(api, it) {
+  const n = itemAmt(api, it), pct = it.eff === "stun" && it.trig !== "use" || it.eff === "ration" && (it.trig === "on_mile" || it.trig === "on_kill");
+  const e = {
+    heal: [`回复 ${n} 生命`, `heal ${n} HP`], block: [`格挡 +${n}`, `+${n} block`], damage: [`对敌人造成 ${n} 点伤害`, `deal ${n} damage to the foe`],
+    poison: [`敌人中毒 ${n} 回合`, `poison the foe for ${n} turns`], stun: pct ? [`${n}% 几率眩晕敌人`, `${n}% chance to stun the foe`] : [`眩晕敌人 ${n} 回合`, `stun the foe for ${n} turn(s)`],
+    resource: it.trig === "passive" ? [`职业资源上限 +${n}`, `+${n} max class resource`] : [`职业资源 +${n}`, `+${n} class resource`],
+    gold: [`获得 ${n} 金币`, `gain ${n} gold`], ration: pct ? [`${n}% 几率获得 1 份口粮`, `${n}% chance to find a ration`] : [`获得 ${n} 份口粮`, `gain ${n} ration(s)`],
+    ac: [`AC +${n}`, `AC +${n}`], luck: [`所有 d20 +${n}`, `+${n} to every d20`], maxhp: [`最大生命 +${n}`, `+${n} max HP`],
+    fatigue: it.trig === "use" ? ["清除全部疲劳", "clear all fatigue"] : [`疲劳 -${n}`, `fatigue -${n}`], xp: [`获得 ${n} 经验`, `gain ${n} XP`],
+  }[it.eff] || ["", ""];
+  return `${T2(api, TRIG_NAME[it.trig] || TRIG_NAME.passive)}：${T2(api, e)}${it.kind === "consumable" ? L(api, `（剩 ${it.charges} 次）`, ` (${it.charges} left)`) : ""}`;
+}
+function heldItems(api) { return get(api, "items") || []; }
+function activeItems(api) { return heldItems(api).filter((x) => x.kind !== "consumable"); }
+function passiveSum(api, eff) { return activeItems(api).filter((x) => x.trig === "passive" && x.eff === eff).reduce((a, x) => a + itemAmt(api, x), 0); }
+function curseCount(api, c) { return activeItems(api).filter((x) => x.curse === c).length; }
+// 效果生效（ctx.battle：在战斗中）
+function applyEff(api, it, n) {
+  switch (it.eff) {
+    case "heal": { const h = heal(api, n); if (h) pop(api, `+${h}`, "#7aff8a", false); return h ? L(api, `回复 ${h} 生命`, `healed ${h}`) : ""; }
+    case "block": set(api, "hero_block", (get(api, "hero_block") || 0) + n); return L(api, `格挡 +${n}`, `+${n} block`);
+    case "damage": { if (get(api, "phase") !== "battle") return ""; hitFoe(api, n, it.name); return ""; }
+    case "poison": { const f = get(api, "foe"); if (!f || !f.name || f.trait === "undead") return ""; f.poison = Math.max(f.poison || 0, n); set(api, "foe", f); return L(api, `${f.name}中毒 ${n} 回合`, `${f.name} poisoned ${n} turns`); }
+    case "stun": { const f = get(api, "foe"); if (!f || !f.name) return ""; f.stun = Math.max(f.stun || 0, it.trig === "use" ? n : 1); f.charged = false; set(api, "foe", f); return L(api, `${f.name}被眩晕`, `${f.name} is stunned`); }
+    case "resource": resGain(api, n); return L(api, `职业资源 +${n}`, `+${n} resource`);
+    case "gold": gain(api, "gold", n); return L(api, `+${n} 金币`, `+${n} gold`);
+    case "ration": { const g = gain(api, "rations", n); return g ? L(api, `+${g} 口粮`, `+${g} ration`) : ""; }
+    case "fatigue": { const f0 = get(api, "fatigue") || 0; set(api, "fatigue", Math.max(0, f0 - n)); return f0 ? L(api, `疲劳 -${Math.min(f0, n)}`, `fatigue -${Math.min(f0, n)}`) : ""; }
+    case "xp": gainXp(api, n); return L(api, `+${n} 经验`, `+${n} XP`);
+  }
+  return "";
+}
+// 触发某个时机的所有道具 / 感悟
+function fireItems(api, trig) {
+  for (const it of activeItems(api)) {
+    if (it.trig !== trig || it.trig === "passive") continue;
+    if (get(api, "phase") === "battle" && BATTLE_EFFS.indexOf(it.eff) >= 0 && (get(api, "foe") || {}).hp <= 0) continue;
+    let n = itemAmt(api, it);
+    if ((it.eff === "stun" && trig !== "use") || (it.eff === "ration" && (trig === "on_mile" || trig === "on_kill"))) { if (api.random.int(1, 100) > n) continue; n = 1; }
+    if (BATTLE_EFFS.indexOf(it.eff) >= 0 && get(api, "phase") !== "battle") continue;
+    const msg = applyEff(api, it, n);
+    if (msg) log(api, `✦ ${it.name}：${msg}`);
+  }
+}
+// 拿到一件道具（spec → 带稀有度的实物）；栏位满了进入“取舍”阶段
+function acquire(api, spec, rarity, origin) {
+  if (!spec) return "";
+  const it = Object.assign({}, spec, { uid: (get(api, "uid") || 0) + 1, rarity: spec.curse && spec.curse !== "none" ? RARITY_UP[rarity] : rarity, origin: origin || "" });
+  set(api, "uid", it.uid);
+  if (it.kind === "consumable") it.charges = it.rarity === "legendary" ? 3 : it.rarity === "rare" ? 2 : 1;
+  const own = heldItems(api), same = own.filter((x) => x.kind === it.kind).length;
+  const cap = it.kind === "trinket" ? MAX_TRINKETS : it.kind === "consumable" ? MAX_BAG : 999;
+  codexAdd(api, it.kind === "insight" ? "insight" : "item", it.name, effText(api, it), it.desc);
+  set(api, "toast", { id: it.uid + 1000 * ((get(api, "toast") || {}).n || 0), n: ((get(api, "toast") || {}).n || 0) + 1, title: it.name, rarity: T2(api, RARITY[it.rarity]), rk: it.rarity, eff: en(api, effText(api, it)), curse: it.curse !== "none" ? T2(api, CURSE_NAME[it.curse]) : "", desc: it.desc, kind: it.kind });
+  if (same >= cap) { set(api, "loot", it); return L(api, `发现【${it.name}】，但栏位满了`, `found [${it.name}], but your slots are full`); }
+  addItem(api, it);
+  return L(api, `获得${T2(api, RARITY[it.rarity])}道具【${it.name}】：${effText(api, it)}`, `gained ${T2(api, RARITY[it.rarity])} item [${it.name}]: ${effText(api, it)}`);
+}
+function addItem(api, it) {
+  set(api, "items", heldItems(api).concat([it]));
+  if (it.trig === "passive" && it.eff === "maxhp") { api.state.inc("max_hp", itemAmt(api, it)); heal(api, itemAmt(api, it)); }
+  if (it.trig === "passive" && it.eff === "resource") { const r = get(api, "res"); if (r && r.k) { r.max += itemAmt(api, it); set(api, "res", r); } }
+  if (it.curse === "frail") { const cut = Math.round(get(api, "max_hp") * 0.2); api.state.inc("max_hp", -cut); set(api, "hp", Math.min(get(api, "hp"), get(api, "max_hp"))); it.cut = cut; set(api, "items", heldItems(api).map((x) => (x.uid === it.uid ? it : x))); }
+}
+function removeItem(api, uid) {
+  const it = heldItems(api).filter((x) => x.uid === uid)[0]; if (!it) return;
+  set(api, "items", heldItems(api).filter((x) => x.uid !== uid));
+  if (it.trig === "passive" && it.eff === "maxhp") { api.state.inc("max_hp", -itemAmt(api, it)); set(api, "hp", Math.max(1, Math.min(get(api, "hp"), get(api, "max_hp")))); }
+  if (it.trig === "passive" && it.eff === "resource") { const r = get(api, "res"); if (r && r.k) { r.max = Math.max(1, r.max - itemAmt(api, it)); r.cur = Math.min(r.cur, r.max); set(api, "res", r); } }
+  if (it.curse === "frail" && it.cut) api.state.inc("max_hp", it.cut);
+}
+// 图鉴：跨局记录见过的 AI 造物；本局清单给界面显示
+function codexAdd(api, t, name, eff, desc) {
+  const made = get(api, "made") || []; if (!made.some((m) => m.n === name)) { made.push({ t, n: name, e: en(api, eff || ""), d: desc || "" }); set(api, "made", made.slice(-40)); }
+  let cx = api.storage.get("codex"); if (!Array.isArray(cx)) cx = [];
+  if (!cx.some((c) => c.n === name)) { cx.push({ t, n: name }); if (cx.length > 400) cx.splice(0, cx.length - 400); api.storage.set("codex", cx); }
+  set(api, "codex_n", cx.length);
+}
+
+// ---- 造物池：后台提前让 AI 发明一批（道具 3、感悟 1、怪物 2），用到时直接取 ----
+function pool(api) { const p = get(api, "pool"); return p && p.items ? p : { items: [], perks: [], foes: [], req: 0, born: 0 }; }
+function ensurePool(api) {
+  const p = pool(api);
+  if (p.req && api.time - p.born < 90000) return;
+  if (p.items.length >= 3 && p.foes.length >= 2 && p.perks.length >= 1) return;
+  const made = (get(api, "made") || []).map((m) => m.n);
+  const cx = (api.storage.get("codex") || []).slice(-25).map((c) => c.n);
+  const req = api.ai.request("invent", "", { biome: biomeName(api), mile: get(api, "distance"), hero: CLASSES[get(api, "hero_class")].name[0], level: get(api, "level"),
+    thread: get(api, "thread") || "（还没有）", path: PATHS[pathId(api)].n[0], made: made.join("、") || "（还没有）", codex: cx.join("、") || "（还没有）",
+    need: needText(api) });
+  p.req = req == null ? 0 : req; p.born = api.time; set(api, "pool", p);
+}
+function needText(api) {
+  const n = [];
+  if (get(api, "rations") <= 2) n.push("口粮快没了"); if (get(api, "hp") < get(api, "max_hp") * 0.5) n.push("伤得很重");
+  if ((get(api, "fatigue") || 0) >= 6) n.push("很疲劳"); if (get(api, "gold") < 10) n.push("没钱");
+  return n.join("、") || "状态还行";
+}
+function takeInvent(api, d) {
+  const p = pool(api);
+  for (const i of [1, 2, 3]) { const s = cleanSpec({ name: d[`i${i}_name`], desc: d[`i${i}_desc`], kind: d[`i${i}_kind`], trig: d[`i${i}_trig`], eff: d[`i${i}_eff`], curse: d[`i${i}_curse`] }); if (s && !p.items.some((x) => x.name === s.name)) p.items.push(s); }
+  { const s = cleanSpec({ name: d.p_name, desc: d.p_desc, trig: d.p_trig, eff: d.p_eff }, true); if (s) p.perks.push(s); }
+  for (const i of [1, 2]) {
+    const name = clip(d[`f${i}_name`], 16); if (!name) continue;
+    p.foes.push({ name, sprite: FOE_SPRITES.indexOf(d[`f${i}_sprite`]) >= 0 && d[`f${i}_sprite`] !== "warden" ? d[`f${i}_sprite`] : "bandit", tint: TINTS.indexOf(d[`f${i}_tint`]) >= 0 ? d[`f${i}_tint`] : "none",
+      trait: TRAITS[d[`f${i}_trait`]] ? d[`f${i}_trait`] : "none", move: clip(d[`f${i}_move`], 12) || L(api, "绝招", "Signature"), mk: SIG_KINDS.indexOf(d[`f${i}_kind`]) >= 0 ? d[`f${i}_kind`] : "breath",
+      line: clip(d[`f${i}_line`], 80), end: clip(d[`f${i}_end`], 120), desc: clip(d[`f${i}_desc`], 90) });
+  }
+  p.items = p.items.slice(-8); p.perks = p.perks.slice(-3); p.foes = p.foes.slice(-5);
+  p.req = 0; set(api, "pool", p);
+}
+// 把没用上的造物还回池子
+function giveBack(api, ev) {
+  if (!ev) return; const p = pool(api);
+  if (ev.item) p.items.unshift(ev.item); if (ev.sig) p.foes.unshift(ev.sig); if (ev.wares) for (const w of ev.wares) p.items.push(w);
+  set(api, "pool", p);
+}
+function itemHint(spec) { return spec ? `${spec.name}（${spec.kind === "consumable" ? "消耗品" : "饰品"}，${TRIG_NAME[spec.trig][0]}：${spec.eff}${spec.curse !== "none" ? "，带诅咒" : ""}）——${spec.desc}` : "（无）"; }
+function foeHint(sig) { return sig ? `${sig.name}（特性 ${sig.trait}，招牌招式「${sig.move}」）——${sig.desc}` : "（无）"; }
+// 怪物的招牌招式
+const SIG_TEXT = {
+  breath: ["必中的猛烈一击", "an unblockable blast"], drain: ["吸取生命", "drains life"], venom: ["剧毒，让你中毒 4 里", "venom — poisons you 4 miles"], hex: ["诅咒 3 里并削弱", "hexes you 3 miles"],
+  rob: ["抢走大量金币", "robs lots of gold"], frenzy: ["狂乱连击三次", "a frenzy of three strikes"], harden: ["大量格挡并回血", "hardens: big block and heal"], roar: ["怒吼：之后伤害永久 +2", "roars: +2 damage for the rest of the fight"],
+};
+function sigIntent(f) {
+  const s = f.sig, r = dmgRange(f, 1, 0);
+  switch (s.mk) {
+    case "breath": return { t: "sig", lo: Math.round(r[0] * 1.5) + 1, hi: Math.round(r[1] * 1.5) + 1 };
+    case "drain": return { t: "sig", lo: r[0] + 1, hi: r[1] + 1 };
+    case "venom": case "hex": return { t: "sig", lo: Math.max(1, r[0] - 1), hi: Math.max(1, r[1] - 1) };
+    case "rob": return { t: "sig", lo: 10 + 2 * f.threat, hi: 10 + 2 * f.threat };
+    case "frenzy": return { t: "sig", lo: Math.max(1, r[0] - 2), hi: Math.max(1, r[1] - 2) };
+    case "harden": return { t: "sig", lo: 4 + f.threat, hi: 4 + f.threat };
+    default: return { t: "sig", lo: 0, hi: 0 };
+  }
+}
+
 // ===== 战斗 =====
 function resGain(api, n) { const r = get(api, "res"); if (!r || !r.k) return; r.cur = Math.max(0, Math.min(r.max, r.cur + n)); set(api, "res", r); }
 // 伤害打到主角身上：先扣格挡，闪避则完全躲开
@@ -615,7 +820,7 @@ function damageHero(api, f, dmg, crit) {
   if (get(api, "evade")) {
     set(api, "evade", false); pop(api, "s", "#c8d8ff", false);
     log(api, L(api, `💨 你闪开了${f.name}的攻击！`, `💨 You evade ${f.name}'s attack!`));
-    if (hasPerk(api, "riposte")) { const r = d(api, 1, cls(api).die) + atkMod(api); hitFoe(api, r, L(api, "反击", "riposte")); }
+    if (hasPerk(api, "riposte")) set(api, "riposte", 1);
     return 0;
   }
   let b = get(api, "hero_block") || 0; const used = Math.min(b, dmg); b -= used; dmg -= used; set(api, "hero_block", b);
@@ -629,8 +834,10 @@ function damageHero(api, f, dmg, crit) {
 function hitRoll(api, f, bonus) { const roll = api.random.int(1, 20), total = roll + f.atk + (bonus || 0), ac = calcAc(api); return { roll, total, ac, hit: roll === 20 || (roll !== 1 && total >= ac), crit: roll === 20 }; }
 // 敌人按照预告的意图行动
 function enemyTurn(api) {
-  const f = get(api, "foe"); reveal(api);
+  let f = get(api, "foe"); reveal(api);
   const it = f.intent || { t: "attack" };
+  let hurts = 0; set(api, "riposte", 0);
+  if (it.t !== "sig" && f.sigCd) f.sigCd = 0;
   f.block = 0; // 上回合举起的格挡只挡你这一回合
   if (f.stun > 0) {
     f.stun -= 1; if (it.t === "smash") f.charged = false;
@@ -639,6 +846,26 @@ function enemyTurn(api) {
     f.block += it.lo; log(api, L(api, `🛡 ${f.name}摆出防御姿态（格挡 ${it.lo}）。`, `🛡 ${f.name} raises its guard (block ${it.lo}).`));
   } else if (it.t === "charge") {
     f.charged = true; log(api, L(api, `⚡ ${f.name}正在蓄力——下回合会重击！`, `⚡ ${f.name} is charging up — a heavy blow is coming!`));
+  } else if (it.t === "sig") {
+    const s = f.sig; f.sigCd = 1;
+    log(api, L(api, `✦ ${f.name}使出「${s.move}」！`, `✦ ${f.name} unleashes "${s.move}"!`));
+    if (s.mk === "harden") { f.block += it.lo; const hh = Math.min(f.max_hp - f.hp, Math.round(f.max_hp * 0.2)); f.hp += hh; log(api, L(api, `${f.name}的身体变得坚硬（格挡 ${it.lo}，回复 ${hh}）。`, `${f.name} hardens (block ${it.lo}, heals ${hh}).`)); }
+    else if (s.mk === "roar") { f.bonus += 2; log(api, L(api, `${f.name}的攻击变得更狠了（伤害 +2）。`, `${f.name} grows fiercer (+2 damage).`)); }
+    else {
+      const hits = s.mk === "frenzy" ? 3 : 1;
+      for (let i = 0; i < hits; i++) {
+        const h = s.mk === "breath" ? { hit: true, crit: false } : hitRoll(api, f, 1);
+        if (!h.hit) { pop(api, "s", "#c8d8ff", false); log(api, L(api, `🛡 「${s.move}」落空了。`, `🛡 "${s.move}" misses.`)); continue; }
+        const dmg = api.random.int(it.lo, Math.max(it.lo, it.hi));
+        const taken = damageHero(api, f, s.mk === "rob" ? Math.max(1, dmgRange(f, 1, 0)[0]) : dmg, false);
+        if (taken) { hurts++; log(api, L(api, `🩸 「${s.move}」造成 ${taken} 点伤害。`, `🩸 "${s.move}" deals ${taken} damage.`)); }
+        if (s.mk === "drain" && taken) { f.hp = Math.min(f.max_hp, f.hp + taken); log(api, L(api, `${f.name}吸走了你的生命（回复 ${taken}）。`, `${f.name} drinks your life (+${taken}).`)); }
+        if (s.mk === "venom" && taken) { addStatus(api, "poisoned", 4); log(api, L(api, "🤢 剧毒渗进伤口（中毒 4 里）。", "🤢 Venom seeps in (poisoned 4 miles).")); }
+        if (s.mk === "hex") { addStatus(api, "cursed", 3); log(api, L(api, "🌀 你被诅咒了（d20 -2，3 里）。", "🌀 You are hexed (d20 -2, 3 miles).")); }
+        if (s.mk === "rob") { const g = Math.min(get(api, "gold"), it.lo); if (g) { api.state.inc("gold", -g); log(api, L(api, `💰 ${f.name}抢走了 ${g} 金币！`, `💰 ${f.name} robs ${g} gold!`)); } }
+        if (get(api, "hp") <= 0) break;
+      }
+    }
   } else if (it.t === "curse") {
     addStatus(api, "cursed", 2); log(api, L(api, `🌀 ${f.name}对你施加了诅咒（d20 -2，2 里）。`, `🌀 ${f.name} curses you (d20 -2 for 2 miles).`));
   } else {
@@ -648,7 +875,7 @@ function enemyTurn(api) {
       if (!h.hit) { pop(api, "s", "#c8d8ff", false); log(api, L(api, `🛡 ${f.name}攻击落空（d20=${h.roll}，${h.total} 对 AC ${h.ac}）`, `🛡 ${f.name} misses (d20=${h.roll}, ${h.total} vs AC ${h.ac})`)); continue; }
       let dmg = it.t === "smash" ? d(api, f.dice * 2, f.sides) + f.bonus + 2 : it.t === "double" ? Math.max(1, d(api, f.dice, f.sides) + f.bonus - 1) : d(api, f.dice, f.sides) + f.bonus;
       if (h.crit) dmg += d(api, f.dice, f.sides);
-      const taken = damageHero(api, f, dmg, h.crit);
+      const taken = damageHero(api, f, dmg, h.crit); if (taken) hurts++;
       const verb = { smash: L(api, "重击", "smashes"), double: L(api, "连击", "strikes"), poison: L(api, "毒咬", "bites"), drain: L(api, "吸取", "drains"), steal: L(api, "扒窃", "swipes at") }[it.t] || L(api, "击中", "hits");
       if (taken) log(api, L(api, `🩸 ${f.name}${verb}你${h.crit ? "（暴击）" : ""}，造成 ${taken} 点伤害。`, `🩸 ${f.name} ${verb} you${h.crit ? " (critical)" : ""} for ${taken} damage.`));
       if (it.t === "poison" && taken) { addStatus(api, "poisoned", 3); log(api, L(api, "🤢 你中毒了（每里 -1d4，喝药水可解）。", "🤢 You are poisoned (-1d4 per mile; a potion cures it).")); }
@@ -663,6 +890,12 @@ function enemyTurn(api) {
   if (f.trait === "regenerating" && f.hp > 0 && f.hp < f.max_hp) { const rg = 1 + Math.floor(f.threat / 3); f.hp = Math.min(f.max_hp, f.hp + rg); log(api, L(api, `🌿 ${f.name}的伤口在愈合（+${rg}）。`, `🌿 ${f.name} regenerates (+${rg}).`)); }
   f.intent = pickIntent(api, f);
   set(api, "foe", f);
+  // 受伤时触发的道具、还击：在敌人回合写回之后再结算
+  if (get(api, "hp") > 0) {
+    if (get(api, "riposte") && f.hp > 0) { hitFoe(api, d(api, 1, cls(api).die) + atkMod(api), L(api, "还击", "riposte")); set(api, "riposte", 0); }
+    for (let i = 0; i < hurts; i++) fireItems(api, "on_hurt");
+  }
+  f = get(api, "foe");
   if (f.hp <= 0) { victory(api, f); return; }
   // 每回合：牧师 +1 信仰，法师（奥术涌流）+1 法力
   const r = get(api, "res"); if (r && r.k === "faith") resGain(api, 1); if (r && r.k === "mana" && hasPerk(api, "arcane_flow")) resGain(api, 1);
@@ -683,10 +916,12 @@ function victory(api, f) {
   const beast = ["wolf", "drake", "spider"].indexOf((sfx(api).cur || {}).sprite) >= 0;
   if (beast && api.random.int(1, 100) <= 60) { const n = gain(api, "rations", 1); if (n) parts.push(L(api, `${n} 份口粮`, `${n} ration(s)`)); }
   if (api.random.int(1, 100) <= (hasPerk(api, "scavenger") ? 75 : 45)) { const n = 1 + Math.floor(f.threat / 5); gain(api, "iron", n); parts.push(L(api, `${n} 铁料`, `${n} iron`)); }
-  if (f.boss) { gain(api, "essence", 2); gain(api, "potions", 1); parts.push(L(api, "2 魔晶、1 瓶药水", "2 essence, 1 potion")); parts.push(giveRelic(api, null)); }
+  if (f.boss) { gain(api, "essence", 2); gain(api, "potions", 1); parts.push(L(api, "2 魔晶、1 瓶药水", "2 essence, 1 potion")); parts.push(giveItem(api, "legendary", L(api, `${f.name}的遗物`, `${f.name}'s relic`))); }
+  else if (f.sig && api.random.int(1, 100) <= 50 && pool(api).items.length) parts.push(giveItem(api, f.threat >= 6 ? "rare" : "common", f.name));
   log(api, L(api, `🏆 你击败了${f.name}！${parts.join("、")}。`, `🏆 You defeated ${f.name}! ${parts.join(", ")}.`));
   const c = get(api, "card"); if (c && c.foe_end) log(api, `✦ ${c.foe_end}`);
   set(api, "hero_block", 0); set(api, "evade", false);
+  fireItems(api, "on_kill");
   endEvent(api, true);
   gainXp(api, xp);
   settle(api);
@@ -733,6 +968,8 @@ function refresh(api) {
   else s = L(api, `前路漫漫。你身在${biomeName(api)}，第 ${get(api, "distance")} 里。`, `The road goes on. You are in the ${biomeName(api)}, mile ${get(api, "distance")}.`);
   set(api, "event_title", ph === "none" ? "" : card.title || "");
   set(api, "ui_battle", ph === "battle" ? battleUi(api) : {});
+  set(api, "items_ui", heldItems(api).map((it) => ({ uid: it.uid, name: it.name, kind: it.kind, rk: it.rarity, rarity: T2(api, RARITY[it.rarity]), eff: en(api, effText(api, it)), curse: it.curse !== "none" ? T2(api, CURSE_NAME[it.curse]) : "", desc: it.desc,
+    usable: it.kind === "consumable" && (BATTLE_EFFS.indexOf(it.eff) < 0 || ph === "battle") && ["battle", "none", "card"].indexOf(ph) >= 0 && !(ph === "card" && BATTLE_EFFS.indexOf(it.eff) >= 0) })));
   showUi(api);
   set(api, "situation", en(api, s));
 }
@@ -743,7 +980,16 @@ function showUi(api) {
   if (get(api, "hp") > 0 && ph === "perk") {
     set(api, "ui_card", enSpec(api, { mode: "card", kind: L(api, `⭐ 升到 ${get(api, "level")} 级`, `⭐ Level ${get(api, "level")}`), title: L(api, "选择一个天赋", "Choose a talent"),
       text: L(api, "你在路上学到了新的东西。选一个——之后的冒险都会用到它。", "The road has taught you something. Pick one — it stays with you for the rest of the journey."),
-      items: (get(api, "perk_offer") || []).map((k) => ({ id: k, icon: PERKS[k].c ? "star" : "check", text: T2(api, PERKS[k].n), sub: "", tags: [{ k: PERKS[k].c ? "dc" : "good", t: T2(api, PERKS[k].d) }] })), action: "pick_perk" }));
+      items: (get(api, "perk_offer") || []).map((k) => { if (k === "ai") { const sp = pool(api).perks[0]; const it = Object.assign({ rarity: "rare" }, sp); return { id: k, icon: "scroll", text: `✦ ${sp.name}`, sub: "", tags: [{ k: "dc", t: L(api, "旅途感悟 · AI 根据你的旅程写成", "Insight · written by the AI from your journey") }, { k: "good", t: effText(api, it) }, { k: "info", t: sp.desc }] }; }
+        return { id: k, icon: PERKS[k].c ? "star" : "check", text: T2(api, PERKS[k].n), sub: "", tags: [{ k: PERKS[k].c ? "dc" : "good", t: T2(api, PERKS[k].d) }] }; }), action: "pick_perk" }));
+    return;
+  }
+  if (get(api, "hp") > 0 && ph === "loot") {
+    const it = get(api, "loot");
+    set(api, "ui_card", enSpec(api, { mode: "card", kind: L(api, "🎒 栏位满了", "🎒 Slots full"), title: `✦ ${it.name}`, ai: true,
+      text: `${T2(api, RARITY[it.rarity])} · ${effText(api, it)}${it.curse !== "none" ? " · " + T2(api, CURSE_NAME[it.curse]) : ""}。${it.desc}`,
+      items: heldItems(api).filter((x) => x.kind === it.kind).map((x) => ({ id: String(x.uid), icon: "cross", text: L(api, `丢掉【${x.name}】`, `Drop [${x.name}]`), sub: "", tags: [{ k: "bad", t: effText(api, x) }] }))
+        .concat([{ id: "new", icon: "boot", text: L(api, "不要新道具", "Leave the new item"), sub: "", tags: [] }]), action: "drop_item" }));
     return;
   }
   if (get(api, "hp") > 0 && ph === "fork") {
@@ -780,6 +1026,7 @@ function intentUi(api, f) {
     drain: ["heart", L(api, `吸血 ${rng}`, `Drain ${rng}`), "atk"], steal: ["coin", L(api, `扒窃 ${it.lo} 金币 + 伤害`, `Steal ${it.lo} gold + damage`), "atk"],
     defend: ["shield", L(api, `防御（格挡 ${it.lo}）`, `Guard (block ${it.lo})`), "def"], charge: ["hourglass", L(api, "蓄力：下回合重击！", "Charging: big hit next turn!"), "warn"],
     curse: ["cross", L(api, "施咒：d20 -2", "Hex: d20 -2"), "warn"],
+    sig: f.sig ? ["star", `✦ ${f.sig.move}：${T2(api, SIG_TEXT[f.sig.mk])}${it.hi ? ` ${f.sig.mk === "rob" ? L(api, `（${it.lo} 金币）`, ` (${it.lo} gold)`) : f.sig.mk === "harden" ? L(api, `（格挡 ${it.lo}）`, ` (block ${it.lo})`) : (f.sig.mk === "frenzy" ? "3×" : "") + rng}` : ""}`, "big"] : ["sword", rng, "atk"],
   }[it.t] || ["sword", rng, "atk"];
   return { icon: m[0], text: f.stun > 0 ? L(api, "💫 眩晕中，下回合无法行动", "💫 Stunned — skips its turn") : m[1], k: f.stun > 0 ? "def" : m[2] };
 }
@@ -817,11 +1064,23 @@ function shopItems(api) {
     items.push({ id: `up_${k}`, icon: "hammer", text: `${T2(api, GEAR[k].name)} ${k === "weapon" || k === "armor" ? "+" : "Lv"}${lv} → ${cost.max ? L(api, "已满", "max") : lv + 1}`,
       sub: cost.max ? "" : `${cost.gold}g · ${L(api, "铁料", "iron")} ${cost.iron}${cost.essence ? ` · ${L(api, "魔晶", "essence")} ${cost.essence}` : ""} · ${T2(api, GEAR[k].desc)}`, disabled: !okay });
   }
+  const card = get(api, "card") || {};
+  (card.wares || []).forEach((w, i) => { if (w.sold) return; const rk = i === 0 ? "common" : "rare", price = warePrice(api, rk);
+    items.unshift({ id: `ware_${i}`, icon: w.kind === "consumable" ? "potion" : "gem", text: `✦ ${w.name}`, sub: "", tags: [{ k: "dc", t: T2(api, RARITY[rk]) }, { k: "good", t: effText(api, Object.assign({ rarity: rk, charges: rk === "rare" ? 2 : 1 }, w)) }, { k: "bad", t: `${price}g` }].concat(w.curse !== "none" ? [{ k: "bad", t: T2(api, CURSE_NAME[w.curse]) }] : []), disabled: gold < price }); });
   items.push({ id: "leave", icon: "boot", text: L(api, "告别行商", "Say goodbye"), sub: "" });
   return items;
 }
+function warePrice(api, rk) { return Math.round((rk === "rare" ? 45 : 22) * (1 + get(api, "distance") / 60) * (hasPerk(api, "haggler") ? 0.75 : 1)); }
 function shopBuy(api, id) {
   const gold = get(api, "gold"), c = caps(api);
+  if (id.indexOf("ware_") === 0) {
+    const card = get(api, "card"), i = Number(id.slice(5)), w = (card.wares || [])[i]; if (!w || w.sold) return;
+    const rk = i === 0 ? "common" : "rare", price = warePrice(api, rk); if (gold < price) return;
+    api.state.inc("gold", -price); w.sold = true; set(api, "card", card);
+    log(api, `🛒 ${acquire(api, w, rk, card.title)}`);
+    if (get(api, "loot") && get(api, "loot").uid) { endEvent(api); }
+    return;
+  }
   if (id === "leave") { log(api, L(api, "你向行商道别。", "You bid the peddler farewell.")); endEvent(api); return; }
   if (id === "buy_ration" && gold >= priceOf(api, "ration") && get(api, "rations") < c.rations) { api.state.inc("gold", -priceOf(api, "ration")); gain(api, "rations", 1); }
   else if (id === "buy_potion" && gold >= priceOf(api, "potion") && get(api, "potions") < c.potions) { api.state.inc("gold", -priceOf(api, "potion")); gain(api, "potions", 1); }
@@ -874,6 +1133,7 @@ export function pick_class(api) {
   log(api, L(api, `🧭 你是一名${c.name[0]}。${abilText(api)}`, `🧭 You are a ${c.name[1]}. ${abilText(api)}`));
   log(api, L(api, `生命 ${hp} · AC ${calcAc(api)} · ${c.weapon[0]} 1d${c.die}${sign(atkMod(api))}`, `HP ${hp} · AC ${calcAc(api)} · ${c.weapon[1]} 1d${c.die}${sign(atkMod(api))}`));
   log(api, L(api, `技能：${SKILLS[id].map((k) => k.name[0]).join("、")}（消耗${RES_NAME[RES[id].k][0]}）`, `Skills: ${SKILLS[id].map((k) => k.name[1]).join(", ")} (cost ${RES_NAME[RES[id].k][1]})`));
+  ensurePool(api);
   rollNext(api, 1, 0);
   refresh(api);
   return true;
@@ -900,6 +1160,12 @@ function rollNext(api, mile, prev) {
   }
   ev.mile = mile; ev.biome = biome; ev.path = path; ev.threat = Math.max(1, base + ev.tier);
   ev.req = 0; ev.draft = null; ev.failed = false; ev.born = api.time;
+  giveBack(api, get(api, "next"));               // 之前预留给下一里、但没用上的造物还回池子
+  const P = pool(api);
+  if (ev.kind === "combat" && (ev.boss || ev.tier >= 1 || api.random.int(1, 100) <= 35) && P.foes.length) ev.sig = P.foes.shift();
+  if ((["discovery", "mystic", "quest", "encounter", "dilemma"].indexOf(ev.kind) >= 0 || ev.boss) && P.items.length) ev.item = P.items.shift();
+  if (ev.kind === "trade" && P.items.length) ev.wares = P.items.splice(0, 2);
+  set(api, "pool", P);
   set(api, "next", ev);
   askAi(api, "next");
 }
@@ -909,7 +1175,8 @@ function askAi(api, which) {
   if (!ev || !ev.kind) return;
   const tierName = ev.boss ? "boss" : ["weak", "normal", "tough", "elite"][(ev.tier || 0) + 1] || "normal";
   const q = get(api, "quest") || {};
-  const req = api.ai.request("road_event", "", { mile: ev.mile, kind: ev.kind, tier: tierName, threat: ev.threat, biome: ev.biome || get(api, "biome"), boss: !!ev.boss, quest: q.title || "", hero: CLASSES[get(api, "hero_class")] ? CLASSES[get(api, "hero_class")].name[0] : "", path: PATHS[ev.path || pathId(api)].n[0], thread: get(api, "thread") || "（还没有，由你开启）", perks: (get(api, "perks") || []).map((k) => PERKS[k].n[0]).join("、") || "无" });
+  const req = api.ai.request("road_event", "", { mile: ev.mile, kind: ev.kind, tier: tierName, threat: ev.threat, biome: ev.biome || get(api, "biome"), boss: !!ev.boss, quest: q.title || "", hero: CLASSES[get(api, "hero_class")] ? CLASSES[get(api, "hero_class")].name[0] : "", path: PATHS[ev.path || pathId(api)].n[0], thread: get(api, "thread") || "（还没有，由你开启）", perks: (get(api, "perks") || []).map((k) => PERKS[k].n[0]).join("、") || "无",
+    item: itemHint(ev.item), sig: foeHint(ev.sig), wares: (ev.wares || []).map((w) => w.name).join("、") || "（无）", inv: heldItems(api).map((x) => x.name).join("、") || "（无）" });
   if (req == null) { ev.failed = true; } else { ev.req = req; ev.born = api.time; ev.failed = false; }
   set(api, which, ev);
 }
@@ -935,8 +1202,8 @@ function applyDraft(api, p) {
   const s = sfx(api);
   if (s.cur) {
     const allowed = card.kind === "combat" ? (card.boss ? FOE_SPRITES : FOE_SPRITES.filter((x) => x !== "warden")) : KIND_SPRITES[card.kind] || [];
-    if (allowed.indexOf(p.sprite) >= 0) s.cur.sprite = p.sprite;
-    if (TINTS.indexOf(p.tint) >= 0) s.cur.tint = p.tint;
+    if (!card.sig && allowed.indexOf(p.sprite) >= 0) s.cur.sprite = p.sprite;
+    if (!card.sig && TINTS.indexOf(p.tint) >= 0) s.cur.tint = p.tint;
     s.cur.pending = false; saveFx(api, s);
   }
   const art = get(api, "art");
@@ -974,6 +1241,10 @@ export function walk_rules(api) {
   // 采集：平原、森林、丘陵有时能在路边找到吃的
   const forage = path === "road" ? 0 : (["plains", "forest"].indexOf(get(api, "biome")) >= 0 || hasPerk(api, "forager") ? 12 : 0) + (path === "wilds" ? 15 : 0) + (hasPerk(api, "forager") ? 15 : 0);
   if (api.random.int(1, 100) <= forage && gain(api, "rations", 1)) log(api, L(api, "🫐 路边采到一些浆果和蘑菇（+1 口粮）。", "🫐 You forage berries and mushrooms by the road (+1 ration)."));
+  // 道具：每里触发、诅咒
+  fireItems(api, "on_mile");
+  for (let i = 0; i < curseCount(api, "weary"); i++) if (api.random.int(1, 2) === 1) api.state.inc("fatigue", 1);
+  for (let i = 0; i < curseCount(api, "hungry"); i++) if (api.random.int(1, 4) === 1 && get(api, "rations") > 0) { api.state.inc("rations", -1); log(api, L(api, "✦ 诅咒让你饿得更快（多吃了 1 份口粮）。", "✦ A curse gnaws at you (an extra ration eaten).")); }
   // 状态效果
   const st = status(api);
   if (st.poisoned) { const dmg = d(api, 1, 4); hurt(api, dmg); log(api, L(api, `🤢 毒性发作，失去 ${dmg} 生命。`, `🤢 Poison burns: -${dmg} HP.`)); }
@@ -984,11 +1255,15 @@ export function walk_rules(api) {
   // 生成这一里的卡：写好了就直接用，还在写就等它，失败了就重新请求
   spawn(api, ev.kind, ev.tier, ev.boss, ev.threat);
   const card = get(api, "card"); card.mile = dist; card.biome = ev.biome; card.tier = ev.tier;
+  card.item = ev.item || null; card.wares = ev.wares || null; card.sig = ev.sig || null;
+  if (card.sig) { card.foe = card.sig.name; card.title = card.sig.name; const sx = sfx(api); if (sx.cur) { if (!card.boss) sx.cur.sprite = card.sig.sprite; sx.cur.tint = card.sig.tint; saveFx(api, sx); } }
+  set(api, "next", {});  // 这一里的预留已经交给卡片
   if (ev.draft) { set(api, "card", card); applyDraft(api, ev.draft); }
   else if (ev.req && !ev.failed) { card.req = ev.req; card.born = ev.born; set(api, "card", card); }
   else { set(api, "card", card); askAi(api, "card"); }
   // 马上开始准备下一里
   rollNext(api, nextMile(api, dist), dist);
+  ensurePool(api);
   refresh(api);
   return { kind: get(api, "event_kind") };
 }
@@ -998,6 +1273,8 @@ export function on_ai(api) {
   const p = api.params, data = p.data;
   const card = get(api, "card"), next = get(api, "next");
   const ok = !p.error && data && typeof data === "object";
+  const P = pool(api);
+  if (P.req && P.req === p.request) { if (ok) takeInvent(api, data); else { P.req = 0; set(api, "pool", P); } refresh(api); return; }
   if (card && card.pending && card.req === p.request && (get(api, "phase") === "card")) {
     if (ok) applyDraft(api, data);
     else { card.stale = true; set(api, "card", card); log(api, L(api, `AI 没能写出这张卡：${p.error || "格式不对"}`, `The AI couldn't write this card: ${p.error || "bad format"}`)); }
@@ -1028,6 +1305,7 @@ export function watch(api) {
   const card = get(api, "card"), next = get(api, "next");
   if (card && card.pending && !card.stale && get(api, "phase") === "card" && api.time - card.born >= AI_STALE_MS) { card.stale = true; set(api, "card", card); refresh(api); }
   if (next && next.kind && !next.draft && (next.failed || (next.req && api.time - next.born >= AI_STALE_MS * 2))) askAi(api, "next");
+  if (get(api, "phase") !== "class" && get(api, "hp") > 0) ensurePool(api);
 }
 
 // 一次武器攻击（技能也用）：extra 额外伤害骰 [n, sides]，auto 必中
@@ -1061,7 +1339,8 @@ function strike(api, o) {
   if (has(api, "vampiric_blade")) heal(api, 2);
   if (id === "fighter") resGain(api, 1);
   if (id === "rogue") resGain(api, crit ? 2 : 1);
-  return { hit: true, crit, dmg, killed };
+  if (!killed) fireItems(api, "on_hit");
+  return { hit: true, crit, dmg, killed: killed || get(api, "foe").hp <= 0 };
 }
 // 玩家回合开始：上回合的格挡、闪避作废
 function turnStart(api) { set(api, "hero_block", 0); set(api, "evade", false); reveal(api); }
@@ -1124,6 +1403,12 @@ export function skill(api) {
 export function pick_perk(api) {
   const id = String(api.params.id || ""), offer = get(api, "perk_offer") || [];
   if (offer.indexOf(id) < 0) api.fail(L(api, "没有这个天赋。", "No such talent."));
+  if (id === "ai") {
+    const P = pool(api), spec = P.perks.shift(); set(api, "pool", P); set(api, "perk_offer", []);
+    if (spec) log(api, `🌟 ${L(api, "旅途感悟", "Insight")}：${acquire(api, spec, "rare", L(api, "感悟", "insight"))}`);
+    if (get(api, "perk_queue") > 0) { api.state.inc("perk_queue", -1); offerPerks(api); }
+    settle(api); refresh(api); return true;
+  }
   set(api, "perks", (get(api, "perks") || []).concat([id])); set(api, "perk_offer", []);
   const P = PERKS[id];
   if (id === "toughness") { api.state.inc("max_hp", 6); heal(api, 6); }
@@ -1131,6 +1416,29 @@ export function pick_perk(api) {
   log(api, L(api, `🌟 学会天赋【${P.n[0]}】：${P.d[0]}。`, `🌟 New talent [${P.n[1]}]: ${P.d[1]}.`));
   if (get(api, "perk_queue") > 0) { api.state.inc("perk_queue", -1); offerPerks(api); }
   settle(api); refresh(api); return true;
+}
+// 使用消耗品（战斗中算一个回合）
+export function use_item(api) {
+  const uid = Number(api.params.id), it = heldItems(api).filter((x) => x.uid === uid && x.kind === "consumable")[0];
+  if (!it) api.fail(L(api, "没有这件道具。", "No such item."));
+  const battle = get(api, "phase") === "battle";
+  if (BATTLE_EFFS.indexOf(it.eff) >= 0 && !battle) api.fail(L(api, "这件道具只能在战斗中用。", "That item only works in battle."));
+  if (battle) turnStart(api);
+  const n = itemAmt(api, it);
+  const msg = it.eff === "fatigue" ? (set(api, "fatigue", 0), L(api, "疲劳全消", "fatigue cleared")) : applyEff(api, it, n);
+  log(api, `✦ ${L(api, "使用", "Used")}【${it.name}】${msg ? "：" + msg : ""}`);
+  it.charges -= 1;
+  set(api, "items", heldItems(api).map((x) => (x.uid === uid ? it : x)).filter((x) => x.kind !== "consumable" || x.charges > 0));
+  if (battle) return turnEnd(api);
+  refresh(api); return true;
+}
+// 栏位满了：丢掉一件旧的，或放弃新的
+export function drop_item(api) {
+  const id = String(api.params.id || ""), it = get(api, "loot");
+  if (!it || !it.uid) api.fail(L(api, "没有要取舍的道具。", "Nothing to choose."));
+  if (id === "new") log(api, L(api, `你把【${it.name}】留在了路边。`, `You leave [${it.name}] by the road.`));
+  else { const old = heldItems(api).filter((x) => String(x.uid) === id)[0]; if (!old) api.fail(L(api, "没有这件道具。", "No such item.")); removeItem(api, old.uid); addItem(api, it); log(api, L(api, `你丢下【${old.name}】，换上了【${it.name}】：${effText(api, it)}。`, `You drop [${old.name}] for [${it.name}]: ${effText(api, it)}.`)); }
+  set(api, "loot", {}); settle(api); refresh(api); return true;
 }
 // 岔路
 export function go(api) {
@@ -1179,6 +1487,7 @@ export function potion(api) {
 
 function campHere(api, safe) {
   set(api, "camped", true); set(api, "fatigue", 0);
+  fireItems(api, "on_camp");
   const st = status(api); if (st.exhausted) { st.exhausted = 0; set(api, "status", st); }
   { const r = get(api, "res"); if (r && r.k === "mana" && r.cur < r.max) { r.cur = r.max; set(api, "res", r); log(api, L(api, "🔮 冥想让法力恢复满了。", "🔮 Meditation restores your Mana.")); } }
   if (safe) {
