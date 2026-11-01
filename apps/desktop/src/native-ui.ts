@@ -28,6 +28,8 @@ export class NativeUi {
     return L === "en" ? en : zh;
   }
 
+  /** 不经过界面操作的结果（例如画布里的视频播完）也交给 on_ui */
+  deliverExternal(res: Record<string, any> & { type: "video"; id: string }) { this.host.deliver(res); }
   /** 正在输入时，游戏键盘映射要让路（realtime 已对 INPUT/TEXTAREA 跳过按键） */
   get typing() { return !!this.text; }
 
@@ -125,6 +127,15 @@ export class NativeUi {
       if (st.border !== undefined) c.border = `${len(st.border)} solid ${st.border_color ?? "currentColor"}`;
       if (st.font) c.fontFamily = `"${st.font}", sans-serif`; if (st.bold) c.fontWeight = "bold"; if (st.italic) c.fontStyle = "italic";
       if (st.align) c.textAlign = st.align; if (st.scroll) c.overflow = "auto";
+      if (st.bg_image) nine(el, st.bg_image, st.bg_slice, st.bg_repeat);
+    };
+    // 九宫格：CSS border-image（图片是包内素材的 blob 地址，符合 CSP 的 img-src）
+    const nine = (el: HTMLElement, asset: string, sl: number[] = [8], rep = "stretch") => {
+      const u = this.host.url(asset); if (!u) return;
+      const [t, r = t, b = t, l = r] = sl.length ? sl : [8];
+      el.classList.add("nui-nine"); const c = el.style;
+      c.borderWidth = `${t}px ${r}px ${b}px ${l}px`;
+      c.borderImage = `url("${u}") ${t} ${r} ${b} ${l} fill / ${t}px ${r}px ${b}px ${l}px ${rep}`;
     };
     const node = (n: any): HTMLElement => {
       let el: HTMLElement;
@@ -136,7 +147,7 @@ export class NativeUi {
           for (const it of n.items ?? []) el.append(h("button", { class: "nui-item", disabled: it.disabled, onclick: (e: Event) => { e.stopPropagation(); this.host.deliver({ type: "select", overlay: id, list: n.id ?? "", id: it.id }); } }, h("div", {}, tx(it.text)), it.sub ? h("div", { class: "nui-sub" }, tx(it.sub)) : null));
           break;
         }
-        case "image": { const im = h("img", { class: "nui-img", alt: "", draggable: "false" }) as HTMLImageElement; const u = this.host.url(n.asset); if (u) im.src = u; el = im; break; }
+        case "image": if (n.slice) { el = h("div", { class: "nui-img" }); nine(el, n.asset, n.slice, n.repeat); break; } else { const im = h("img", { class: "nui-img", alt: "", draggable: "false" }) as HTMLImageElement; const u = this.host.url(n.asset); if (u) im.src = u; el = im; break; }
         case "row": case "column": el = h("div", { class: `nui-${n.type}` }); for (const c of n.children ?? []) el.append(node(c)); break;
         case "space": el = h("div", { class: "nui-space" }); break;
         default: el = h("div", { class: "nui-otext" }, tx(n.text));

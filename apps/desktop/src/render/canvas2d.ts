@@ -1,5 +1,5 @@
-// Canvas2D 后备渲染器：设备不支持 WebGL 时使用（tint 在这里不生效，其余效果一致）
-import { walk, type Backend, type Mat } from "./walk";
+// Canvas2D 后备渲染器：设备不支持 WebGL 时使用（tint 和自定义着色器在这里不生效，其余效果一致）
+import { walk, type Backend, type Mat, type WalkExtras } from "./walk";
 import { ParticleField, type Renderer, type ImageSource, type RGBA, type Blend } from "./common";
 import { TextCache } from "./text";
 
@@ -10,11 +10,11 @@ export class Canvas2DRenderer implements Renderer, Backend {
   readonly kind = "canvas2d" as const;
   private ctx: CanvasRenderingContext2D; private dpr = 1; private W = 0; private H = 0;
   private texts = new TextCache(300); particles = new ParticleField();
-  constructor(private el: HTMLCanvasElement, private img: ImageSource, private pixelated = false) { this.ctx = el.getContext("2d")!; }
+  constructor(private el: HTMLCanvasElement, private img: ImageSource, private pixelated = false, private extras: WalkExtras = {}) { this.ctx = el.getContext("2d")!; }
   resize(w: number, h: number, dpr: number) { this.W = w; this.H = h; this.dpr = dpr; }
   draw(cmds: any[], timeMs: number, dtMs: number) {
     this.particles.advance(dtMs); this.texts.frame++;
-    return { drawn: walk(this, cmds, this.img, this.particles, timeMs, !this.pixelated) };
+    return { drawn: walk(this, cmds, this.img, this.particles, timeMs, !this.pixelated, { ...this.extras, view: { w: this.W, h: this.H } }) };
   }
   private set(m: Mat, c: RGBA | null, blend: Blend) {
     const d = this.dpr, x = this.ctx;

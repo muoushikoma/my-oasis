@@ -42,8 +42,11 @@ export function sanitizeOverlay(spec: any): any {
     if (typeof o.font === "string") r.font = o.font.slice(0, 60).replace(/[^\w\s-]/g, "");
     for (const k of ["bold", "italic", "scroll"]) if (typeof o[k] === "boolean") r[k] = o[k];
     if (["left", "center", "right"].includes(o.align)) r.align = o.align;
+    // 九宫格背景：bg_image 是图片素材 id，bg_slice 是四边不拉伸的像素（一个数或 [上, 右, 下, 左]）
+    if (typeof o.bg_image === "string" && /^[a-z][a-z0-9_]{0,39}$/.test(o.bg_image)) { r.bg_image = o.bg_image; r.bg_slice = slice(o.bg_slice ?? 8); if (["stretch", "round", "repeat"].includes(o.bg_repeat)) r.bg_repeat = o.bg_repeat; }
     return r;
   };
+  const slice = (v: any) => (Array.isArray(v) ? v : [v]).slice(0, 4).map((k: any) => Math.max(0, Math.min(1024, Math.floor(Number(k) || 0))));
   const node = (x: any, depth: number): any => {
     if (!x || typeof x !== "object" || depth > 8 || ++n > 300) return null;
     const t = ["text", "rich", "button", "list", "image", "row", "column", "space"].includes(x.type) ? x.type : "text";
@@ -53,7 +56,7 @@ export function sanitizeOverlay(spec: any): any {
     if (t === "button" && typeof x.disabled === "boolean") o.disabled = x.disabled;
     if (t === "rich") o.spans = (Array.isArray(x.spans) ? x.spans : []).slice(0, 100).map((sp: any) => ({ text: str(sp?.text), style: style(sp) }));
     if (t === "list") o.items = (Array.isArray(x.items) ? x.items : []).slice(0, 200).map((it: any) => ({ id: String(it?.id ?? "").slice(0, 40), text: str(it?.text ?? it?.label), sub: str(it?.sub), disabled: !!it?.disabled }));
-    if (t === "image") { o.asset = String(x.asset ?? "").slice(0, 40); }
+    if (t === "image") { o.asset = String(x.asset ?? "").slice(0, 40); if (x.slice != null) { o.slice = slice(x.slice); if (["stretch", "round", "repeat"].includes(x.repeat)) o.repeat = x.repeat; } }
     if (t === "row" || t === "column") o.children = (Array.isArray(x.children) ? x.children : []).map((c: any) => node(c, depth + 1)).filter(Boolean);
     return o;
   };

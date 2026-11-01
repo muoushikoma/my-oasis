@@ -1,10 +1,15 @@
 // 把 render 函数给出的绘制指令翻译成后端调用（WebGL 和 Canvas2D 共用同一套语义）
 import { num, clamp01, parseColor, blendOf, spriteFrame, lerpColor, ParticleField, type RGBA, type Blend, type ImageSource } from "./common";
+import { tiledTile, type TiledMap } from "@my-oasis/schema";
 
 export type Mat = [number, number, number, number, number, number]; // a b c d e f（同 canvas setTransform）
 export const I: Mat = [1, 0, 0, 1, 0, 0];
 export const mul = (m: Mat, n: Mat): Mat => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
 
+/** 每个精灵自己的片元着色器（WebGL 才有；Canvas2D 忽略） */
+export interface SpriteFx { shader: string; uniforms: Record<string, any> }
+/** 绘制时还需要的外部数据：Tiled 地图、视频元素、画布可见区域（用于地图裁剪） */
+export interface WalkExtras { tiled?(id: string): TiledMap | undefined; video?(id: string): HTMLVideoElement | undefined; view?: { w: number; h: number } }
 export interface TextStyle { size: number; font: string; bold: boolean; color: string; align: "left" | "center" | "right"; glow?: { color: string; size: number }; stroke?: { color: string; width: number } }
 export interface Backend {
   begin(): void;
@@ -12,12 +17,19 @@ export interface Backend {
   rect(m: Mat, w: number, h: number, c: RGBA, blend: Blend, stroke: number): void;
   circle(m: Mat, r: number, c: RGBA, blend: Blend, stroke: number, glow: number): void;
   line(m: Mat, x1: number, y1: number, x2: number, y2: number, c: RGBA, width: number, blend: Blend): void;
-  image(m: Mat, im: HTMLImageElement | ImageBitmap, sx: number, sy: number, sw: number, sh: number, w: number, h: number, tint: RGBA, blend: Blend, smooth: boolean): void;
+  image(m: Mat, im: HTMLImageElement | ImageBitmap | HTMLVideoElement, sx: number, sy: number, sw: number, sh: number, w: number, h: number, tint: RGBA, blend: Blend, smooth: boolean, fx?: SpriteFx): void;
   text(m: Mat, s: string, st: TextStyle, alpha: number, blend: Blend): void;
   end(): void;
 }
-const imgW = (im: any) => im.naturalWidth ?? im.width, imgH = (im: any) => im.naturalHeight ?? im.height;
-const ready = (im: any) => !!im && (im.complete === undefined || im.complete) && imgW(im) > 0;
+export const imgW = (im: any) => im.videoWidth ?? im.naturalWidth ?? im.width, imgH = (im: any) => im.videoHeight ?? im.naturalHeight ?? im.height;
+const ready = (im: any) => !!im && (im.readyState === undefined || im.readyState >= 2) && (im.complete === undefined || im.complete) && imgW(im) > 0;
+const fxOf = (o: any): SpriteFx | undefined => (typeof o.shader === "string" && o.shader ? { shader: o.shader, uniforms: o.uniforms && typeof o.uniforms === "object" ? o.uniforms : {} } : undefined);
+/** 九宫格切片：一个数，或 [上, 右, 下, 左] */
+export function sliceOf(v: any): [number, number, number, number] {
+  const a = Array.isArray(v) ? v : [v, v, v, v];
+  const q = (x: any) => Math.max(0, Math.min(4096, num(x, 0)));
+  return [q(a[0]), q(a[1] ?? a[0]), q(a[2] ?? a[0]), q(a[3] ?? a[1] ?? a[0])];
+}
 
 /** 物体变换：位置 (x,y) 是锚点所在处；rotation（弧度）、scale / scale_x / scale_y、anchor_x / anchor_y（0~1）、flip_x / flip_y */
 function objMat(base: Mat, x: number, y: number, w: number, h: number, o: any): Mat {
@@ -32,7 +44,7 @@ function objMat(base: Mat, x: number, y: number, w: number, h: number, o: any): 
   return m;
 }
 
-export function walk(b: Backend, cmds: any[], img: ImageSource, particles: ParticleField, timeMs: number, smooth: boolean): number {
+export function walk(b: Backend, cmds: any[], img: ImageSource, particles: ParticleField, timeMs: number, smooth: boolean, ex: WalkExtras = {}): number {
   let cam: Mat = I; let n = 0;
   b.begin();
   // 图层：选项里写 z（数字，越大越靠前）就按 z 排序；z 相同保持原顺序。camera / clear 指令视为 z 跟随所在位置
@@ -74,9 +86,69 @@ export function walk(b: Backend, cmds: any[], img: ImageSource, particles: Parti
         const f = spriteFrame(o, imgW(im), imgH(im), timeMs);
         const w = c[0] === "image" && c[4] != null ? num(c[4]) : num(o.w, f.sw), h = c[0] === "image" && c[5] != null ? num(c[5]) : num(o.h, f.sh);
         const t = o.tint ? parseColor(o.tint) : ([1, 1, 1, 1] as RGBA);
-        b.image(objMat(base, num(c[2]), num(c[3]), w, h, o), im!, f.sx, f.sy, f.sw, f.sh, w, h, [t[0], t[1], t[2], t[3] * alpha], blend, smooth && !o.pixelated);
+        b.image(objMat(base, num(c[2]), num(c[3]), w, h, o), im!, f.sx, f.sy, f.sw, f.sh, w, h, [t[0], t[1], t[2], t[3] * alpha], blend, smooth && !o.pixelated, fxOf(o));
         break;
       }
+      case "video": {
+        // [id, x, y, w?, h?, o]：当前视频帧当作图片画
+        const v = ex.video?.(String(c[1])); if (!ready(v)) break;
+        const w = c[4] != null ? num(c[4]) : imgW(v), h = c[5] != null ? num(c[5]) : imgH(v);
+        const t = o.tint ? parseColor(o.tint) : ([1, 1, 1, 1] as RGBA);
+        b.image(objMat(base, num(c[2]), num(c[3]), w, h, o), v!, 0, 0, imgW(v), imgH(v), w, h, [t[0], t[1], t[2], t[3] * alpha], blend, smooth, fxOf(o));
+        break;
+      }
+      case "nine": {
+        // [id, x, y, w, h, { slice, sx?, sy?, sw?, sh? }]：四角原样，四边单向拉伸，中间双向拉伸
+        const im = img(String(c[1])); if (!ready(im)) break;
+        const W = Math.max(0, num(c[4])), H = Math.max(0, num(c[5]));
+        const [st, sr, sb, sl] = sliceOf(o.slice ?? 8), k = Math.max(0.01, num(o.slice_scale, 1));
+        const ox = num(o.sx), oy = num(o.sy), iw = num(o.sw, imgW(im) - ox), ih = num(o.sh, imgH(im) - oy);
+        const m = objMat(base, num(c[2]), num(c[3]), W, H, o), t = o.tint ? parseColor(o.tint) : ([1, 1, 1, 1] as RGBA), col: RGBA = [t[0], t[1], t[2], t[3] * alpha];
+        let dl = sl * k, dr = sr * k, dt = st * k, db = sb * k;
+        if (dl + dr > W) { const f = W / (dl + dr); dl *= f; dr *= f; } if (dt + db > H) { const f = H / (dt + db); dt *= f; db *= f; }
+        const xs = [0, sl, iw - sr, iw], ys = [0, st, ih - sb, ih], dx = [0, dl, W - dr, W], dy = [0, dt, H - db, H];
+        for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++) {
+          const sw = xs[q + 1] - xs[q], sh = ys[r + 1] - ys[r], dw = dx[q + 1] - dx[q], dh = dy[r + 1] - dy[r];
+          if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) continue;
+          b.image(mul(m, [1, 0, 0, 1, dx[q], dy[r]]), im!, ox + xs[q], oy + ys[r], sw, sh, dw, dh, col, blend, smooth);
+        }
+        n += 8; break;
+      }
+      case "tiled": {
+        // [id, { x?, y?, layers?: [图层名], scale? }]：只画可见的图块层；镜头不旋转时只画屏幕里的格子
+        const map = ex.tiled?.(String(c[1])); if (!map) break;
+        const ox = num(o.x), oy = num(o.y), want: string[] | null = Array.isArray(o.layers) ? o.layers.map(String) : null;
+        const m0 = mul(base, [1, 0, 0, 1, ox, oy]);
+        const view = ex.view, noRot = m0[1] === 0 && m0[2] === 0 && m0[0] > 0 && m0[3] > 0;
+        for (const l of map.layers) {
+          if (l.type !== "tiles" || (want ? !want.includes(l.name) : !l.visible)) continue;
+          const la = alpha * l.opacity; if (la <= 0) continue;
+          const tw = map.tile_w, th = map.tile_h;
+          let x0 = 0, y0 = 0, x1 = l.width, y1 = l.height;
+          if (view && noRot) {
+            const sx = m0[0], sy = m0[3], tx = m0[4] + l.offset_x * sx, ty = m0[5] + l.offset_y * sy;
+            x0 = Math.max(0, Math.floor(-tx / (tw * sx)) - 1); x1 = Math.min(l.width, Math.ceil((view.w - tx) / (tw * sx)) + 1);
+            y0 = Math.max(0, Math.floor(-ty / (th * sy)) - 1); y1 = Math.min(l.height, Math.ceil((view.h - ty) / (th * sy)) + 1);
+          }
+          const col: RGBA = [1, 1, 1, la];
+          for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+            const g = l.data[y * l.width + x]; if (!g) continue;
+            const t = tiledTile(map, g); if (!t || !t.ts.asset) continue;
+            const im = img(t.ts.asset); if (!ready(im)) continue;
+            const w = t.ts.tile_w, h = t.ts.tile_h;
+            // 图块比格子高时底部对齐（Tiled 的规则）
+            let mm = mul(m0, [1, 0, 0, 1, l.offset_x + x * tw, l.offset_y + y * th + th - h]);
+            // Tiled：先对角翻转（转置），再水平、竖直翻转
+            if (t.flipV) mm = mul(mm, [1, 0, 0, -1, 0, h]);
+            if (t.flipH) mm = mul(mm, [-1, 0, 0, 1, w, 0]);
+            if (t.flipD) mm = mul(mm, [0, 1, 1, 0, 0, 0]);
+            b.image(mm, im!, t.sx, t.sy, w, h, w, h, col, "normal", smooth);
+            n++;
+          }
+        }
+        break;
+      }
+      case "post": n--; break; // 后期处理由渲染器在整帧画完后执行
       case "tilemap": {
         const t: any = c[1] ?? {}; const ts = Math.max(1, num(t.tile_size, 16)), cols = Math.max(1, num(t.columns, 1));
         const im = t.tileset ? img(String(t.tileset)) : undefined, ok = ready(im);

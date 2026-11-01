@@ -156,3 +156,19 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .nui-item { text-align: left; padding: 8px 10px; border-radius: 6px; border: 1px solid #8884; background: rgba(0,0,0,.25); color: inherit; font: inherit; } .nui-item:disabled { opacity: .5; } .nui-sub { opacity: .65; font-size: .85em; }
 .nui-rich, .nui-otext { white-space: pre-wrap; } .nui-img { max-width: 100%; }
 .nui-fade { position: fixed; inset: 0; z-index: 2147482500; pointer-events: none; }
+/* 故事自己摆放的屏幕控件（input.controls）：在画面之上、出口按钮和暂停菜单之下 */
+.rt-ctl-layer { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.rt-ctl { position: absolute; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; box-sizing: border-box; display: grid; place-items: center;
+  --ctl: rgba(160,160,160,.55); background: color-mix(in srgb, var(--ctl) 45%, transparent); border: 2px solid var(--ctl); color: #fff; font-weight: bold; font-size: 15px; text-shadow: 0 1px 2px #000;
+  background-size: 100% 100%; background-repeat: no-repeat; }
+.rt-ctl.round { border-radius: 50%; } .rt-ctl.rect { border-radius: 12px; }
+.rt-ctl.has-img { background-color: transparent; border: none; }
+.rt-ctl.on { filter: brightness(1.35); }
+.rt-ctl[hidden] { display: none; }
+.rt-ctl-knob { width: 40%; height: 40%; border-radius: 50%; background: var(--ctl); pointer-events: none; }
+.rt-ctl-arrow { position: absolute; width: 0; height: 0; border: 9px solid transparent; pointer-events: none; }
+.rt-ctl-arrow.up { top: 8%; border-bottom-color: #fff; } .rt-ctl-arrow.down { bottom: 8%; border-top-color: #fff; }
+.rt-ctl-arrow.left { left: 8%; border-right-color: #fff; } .rt-ctl-arrow.right { right: 8%; border-left-color: #fff; }
+@media (hover: hover) and (pointer: fine) { .rt-ctl.touch-only { display: none; } }
+/* 界面层九宫格背景 */
+.nui-nine { box-sizing: border-box; border-style: solid; border-color: transparent; }

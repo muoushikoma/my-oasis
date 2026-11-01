@@ -10,6 +10,9 @@ import { Canvas2DRenderer } from "./render/canvas2d";
 import { AudioEngine } from "./render/audio";
 import { NativeUi } from "./native-ui";
 import { pollGamepad } from "./gamepad";
+import { parseTiled, type TiledMap } from "@my-oasis/schema";
+import type { WalkExtras } from "./render/walk";
+import { buildControls } from "./controls";
 
 export interface RtHost {
   game: Game; story: Story; assets: AssetBox; llm?: LLM;
@@ -42,6 +45,9 @@ export class RealtimeDriver {
   private dbg?: HTMLElement; private stats = { frames: 0, since: 0, fps: 0, frameMs: 0, tickMs: 0, renderMs: 0, drawMs: 0, drawn: 0, ticks: 0 };
   /** 原生输入框 / 全屏视频（api.textinput、api.video） */
   ui: NativeUi;
+  // 视频纹理（api.video.texture / api.draw.video）、Tiled 地图缓存、着色器错误（F3 显示）
+  private videos = new Map<string, HTMLVideoElement>(); private tiledMaps = new Map<string, TiledMap | null>(); private shaderErrors: string[] = [];
+  private setControlsVisible?: (ids: string[] | null) => void;
   private fonts: FontFace[] = [];
   private padHeld = new Set<string>(); private padStick = false;
   private shakeAmt = 0; private shakeUntil = 0; private shakeMs = 1; private touches = new Map<number, { id: number; x: number; y: number; target?: string }>();
@@ -106,7 +112,11 @@ export class RealtimeDriver {
   private renderer(v: View): Renderer | undefined {
     const dpr = v.fixedDpr ?? Math.min(MAX_DPR, Math.max(1, globalThis.devicePixelRatio || 1), 4096 / Math.max(v.w, v.h));
     if (!v.r) {
-      v.r = (!this.forceCanvas2d && WebGLRenderer.create(v.el, (id) => this.image(id), v.pixelated)) || new Canvas2DRenderer(v.el, (id) => this.image(id), v.pixelated);
+      const extras: WalkExtras = { tiled: (id) => this.tiled(id), video: (id) => this.videos.get(id) };
+      v.r = (!this.forceCanvas2d && WebGLRenderer.create(v.el, (id) => this.image(id), v.pixelated, {
+        extras, shader: (id) => this.shaderSrc(id),
+        onShaderError: (id, msg) => { const line = `${id}: ${msg}`; if (!this.shaderErrors.includes(line)) this.shaderErrors = [...this.shaderErrors, line].slice(-4); },
+      })) || new Canvas2DRenderer(v.el, (id) => this.image(id), v.pixelated, extras);
     }
     if (dpr !== v.dpr) { v.dpr = dpr; v.el.width = Math.round(v.w * dpr); v.el.height = Math.round(v.h * dpr); v.r.resize(v.w, v.h, dpr); }
     return v.r;
@@ -115,10 +125,53 @@ export class RealtimeDriver {
   forceCanvas2d = typeof location !== "undefined" && /[?&]canvas2d\b/.test(location.search);
   get rendererKind() { for (const v of this.views.values()) if (v.r) return v.r.kind; return undefined; }
 
-  /** 屏幕上的虚拟摇杆和按钮（触摸设备；桌面上也可以用鼠标点） */
+  /** 着色器素材源码（只认登记成 type: shader 的素材） */
+  private shaderSrc(id: string): string | undefined {
+    const a: any = (this.s.story.assets as any)?.[id]; if (a?.type !== "shader") return undefined;
+    const b = this.s.assets.bytes(`asset:${id}`); return b ? new TextDecoder().decode(b) : undefined;
+  }
+  /** Tiled 地图：第一次画时解析，坏地图只记一次错误 */
+  private tiled(id: string): TiledMap | undefined {
+    if (this.tiledMaps.has(id)) return this.tiledMaps.get(id) ?? undefined;
+    let m: TiledMap | null = null;
+    const assets: Record<string, any> = (this.s.story.assets as any) ?? {}, a = assets[id];
+    try {
+      const b = a?.type === "tilemap" ? this.s.assets.bytes(`asset:${id}`) : undefined;
+      if (b) m = parseTiled(new TextDecoder().decode(b), a.path, (path, name) => a.tilesets?.[name] ?? Object.entries(assets).find(([, x]) => x?.type === "image" && x.path === path)?.[0]);
+    } catch (e) { console.warn(`[tiled ${id}]`, e); }
+    this.tiledMaps.set(id, m); return m ?? undefined;
+  }
+  /** 画布里的视频：最多同时 4 个；暂停菜单时暂停；静音设置生效 */
+  private videoTexture(u: { id: string; play?: boolean; loop?: boolean; muted?: boolean; rate?: number; seek_ms?: number; volume?: number }) {
+    let v = this.videos.get(u.id);
+    if (!v) {
+      const src = this.s.assets.url(`asset:${u.id}`); if (!src) return;
+      if (this.videos.size >= 4) { const [k, old] = this.videos.entries().next().value!; old.pause(); old.removeAttribute("src"); old.load(); this.videos.delete(k); }
+      v = document.createElement("video"); v.playsInline = true; v.preload = "auto"; v.src = src;
+      const id = u.id, vv = v;
+      v.onended = () => { if (!vv.loop) this.ui.deliverExternal({ type: "video", id, ended: true, skipped: false, texture: true }); };
+      this.videos.set(u.id, v);
+    }
+    const x = v as HTMLVideoElement & { storyMuted?: boolean; wantPlay?: boolean };
+    if (u.loop !== undefined) x.loop = u.loop;
+    if (u.muted !== undefined) x.storyMuted = u.muted;
+    x.muted = !!x.storyMuted || this.s.muted();
+    if (u.volume !== undefined) x.volume = u.volume;
+    if (u.rate !== undefined) x.playbackRate = u.rate;
+    if (u.seek_ms !== undefined) { try { x.currentTime = u.seek_ms / 1000; } catch { /* 还没加载元数据 */ } }
+    if (u.play === true) { x.wantPlay = true; if (!this.paused) void x.play().catch(() => { x.muted = true; void x.play().catch(() => {}); }); }
+    else if (u.play === false) { x.wantPlay = false; x.pause(); }
+  }
+
+  /** 屏幕上的虚拟摇杆和按钮（触摸设备；桌面上也可以用鼠标点）；input.controls 是故事自己摆放的控件 */
   controlsEl(): HTMLElement | null {
-    const inp: any = this.s.story.input; if (!inp || (!inp.joystick && !inp.buttons?.length)) return null;
+    const inp: any = this.s.story.input; if (!inp || (!inp.joystick && !inp.buttons?.length && !inp.controls?.length)) return null;
     if (this.controls) return this.controls;
+    if (inp.controls?.length) {
+      const c = buildControls(inp.controls, this.s.game.lang, this.input, (id) => this.s.assets.url(`asset:${id}`));
+      this.setControlsVisible = c.show; this.off.push(c.dispose);
+      return (this.controls = c.el);
+    }
     const wrap = h("div", { class: "rt-controls" });
     if (inp.joystick) {
       const knob = h("div", { class: "rt-knob" }), pad = h("div", { class: `rt-joy ${inp.joystick?.side === "right" ? "right" : ""}` }, knob);
@@ -198,6 +251,7 @@ export class RealtimeDriver {
     this.running = false;
     cancelAnimationFrame(this.raf); this.raf = 0; this.off.forEach((f) => f()); this.off = [];
     this.audio?.dispose(); this.audio = undefined;
+    for (const v of this.videos.values()) { v.pause(); v.removeAttribute("src"); v.load(); } this.videos.clear();
     this.ui.dispose();
     for (const f of this.fonts) (document as any).fonts?.delete(f); this.fonts = [];
     this.dbg?.remove(); this.dbg = undefined;
@@ -211,12 +265,14 @@ export class RealtimeDriver {
     const st = this.stats; st.frames++;
     if (now - st.since < 500) return;
     st.fps = (st.frames * 1000) / (now - st.since); st.frames = 0; st.since = now;
-    if (this.dbg) this.dbg.textContent = `${st.fps.toFixed(0)} FPS · 帧 ${st.frameMs.toFixed(1)}ms\ntick ${st.tickMs.toFixed(2)}ms ×${st.ticks} · render ${st.renderMs.toFixed(2)}ms\n绘制 ${st.drawMs.toFixed(2)}ms · ${st.drawn} 个 · ${this.rendererKind ?? "-"} · ${this.hz}Hz${this.interpolate ? " 插值" : ""}`;
+    if (this.dbg) this.dbg.textContent = (this.shaderErrors.length ? `着色器 shader:\n${this.shaderErrors.join("\n")}\n` : "") + `${st.fps.toFixed(0)} FPS · 帧 ${st.frameMs.toFixed(1)}ms\ntick ${st.tickMs.toFixed(2)}ms ×${st.ticks} · render ${st.renderMs.toFixed(2)}ms\n绘制 ${st.drawMs.toFixed(2)}ms · ${st.drawn} 个 · ${this.rendererKind ?? "-"} · ${this.hz}Hz${this.interpolate ? " 插值" : ""}`;
   }
 
   /** 暂停菜单打开时：不推进时间、松开所有按键 */
   paused = false;
-  setPaused(p: boolean) { this.paused = p; this.ui.setPaused(p); this.padHeld.clear(); this.input.held = {}; this.input.pressed = {}; this.input.joystick = { x: 0, y: 0 }; this.input.pointer = { ...this.input.pointer, down: false }; }
+  setPaused(p: boolean) {
+    for (const v of this.videos.values()) { if (p) v.pause(); else if ((v as any).wantPlay) void v.play().catch(() => {}); }
+    this.paused = p; this.ui.setPaused(p); this.padHeld.clear(); this.input.held = {}; this.input.pressed = {}; this.input.joystick = { x: 0, y: 0 }; this.input.pointer = { ...this.input.pointer, down: false }; }
 
   /**
    * 每个显示帧调用一次（跟屏幕刷新率走，通常 60fps 或更高）：
@@ -304,11 +360,19 @@ export class RealtimeDriver {
 
   effects() {
     const e = this.s.game.takeEffects();
-    if (e.ui?.length) this.ui.apply(e.ui);
+    const ui = (e.ui ?? []).filter((u) => {
+      if (u.op === "vtex") { this.videoTexture(u); return false; }
+      if (u.op === "controls") { this.setControlsVisible?.(u.visible); return false; }
+      return true;
+    });
+    if (ui.length) this.ui.apply(ui);
     this.audio ??= new AudioEngine((id) => this.s.assets.url(`asset:${id}`), (id) => this.s.assets.bytes(`asset:${id}`));
-    this.audio.setMaster(this.s.muted() ? 0 : 1);
+    this.audio.setMaster(this.s.muted() ? 0 : 1); this.audio.setSfx(this.s.sfx());
+    for (const v of this.videos.values()) v.muted = !!(v as any).storyMuted || this.s.muted();
     for (const snd of e.sounds) {
-      if (snd.op === "stop") { this.audio.stop(snd.id, snd.fade_ms ?? 0); continue; }
+      if (snd.op === "stop") { this.audio.stop(snd.id, snd.fade_ms ?? 0, snd.voice); continue; }
+      if (snd.op === "listener") { this.audio.listener(snd.x ?? 0, snd.y ?? 0, snd.scale); continue; }
+      if (snd.op === "set") { if (snd.voice) this.audio.set(snd.voice, snd as any); continue; }
       if (this.s.muted() || !snd.id) continue;
       const meta = this.s.assets.meta(`asset:${snd.id}`) ?? {};
       this.audio.play(snd.id, snd, (snd.volume ?? meta.volume ?? 1) * this.s.sfx());
