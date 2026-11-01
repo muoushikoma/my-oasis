@@ -8,8 +8,10 @@ export class ScriptError extends Error {
   constructor(message: string, public kind: "timeout" | "memory" | "error" | "fail") { super(message); }
 }
 export const FAIL_MARK = "__OASIS_FAIL__:";
+import { PHYSICS_JS } from "./physics-sandbox.js";
 
 const PRELUDE = `
+${PHYSICS_JS}
 const __c = (m, a) => JSON.parse(__host(m, JSON.stringify(a)));
 const api = {
   state: { get: (k) => __c("state.get", [k]), set: (k, v) => __c("state.set", [k, v]), inc: (k, n) => __c("state.inc", [k, n]),
@@ -21,9 +23,12 @@ const api = {
   fail: (msg) => __c("fail", [String(msg)]),
   log: (msg) => __c("log", [String(msg)]),
   // ---- oasis/0.4 实时 ----
-  sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id, o) => __c("sound.stop", [id == null ? null : String(id), o || {}]) },
+  sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id, o) => __c("sound.stop", [id == null ? null : String(id), o || {}]),
+           set: (voice, o) => __c("sound.set", [String(voice), o || {}]), listener: (o) => __c("sound.listener", [o || {}]) },
+  controls: { show: (ids) => __c("controls.show", [ids == null ? null : ids]) },
+  tiled: { get: (id) => __c("tiled.get", [String(id)]), solids: (id) => __c("tiled.solids", [String(id)]) },
   textinput: { open: (o) => __c("textinput.open", [o || {}]), close: () => __c("textinput.close", []) },
-  video: { play: (id, o) => __c("video.play", [String(id), o || {}]), stop: () => __c("video.stop", []) },
+  video: { play: (id, o) => __c("video.play", [String(id), o || {}]), stop: () => __c("video.stop", []), texture: (id, o) => __c("video.texture", [String(id), o || {}]) },
   // ---- 常用引擎工具（纯计算，在沙箱里运行，结果可重现） ----
   ease: (() => {
     const P = Math.PI, b = (t) => { const n = 7.5625, d = 2.75; if (t < 1 / d) return n * t * t; if (t < 2 / d) return n * (t -= 1.5 / d) * t + 0.75; if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + 0.9375; return n * (t -= 2.625 / d) * t + 0.984375; };
@@ -52,6 +57,8 @@ const api = {
     tile_at: (map, tile, px, py) => { const row = map[Math.floor(py / tile)]; if (row == null) return null; const v = row[Math.floor(px / tile)]; return v === undefined ? null : v; },
   },
   physics: {
+    // 刚体物理世界（见 physics-sandbox.ts）：world / add / remove / get / joint / step / touching / at / impulse / vertices
+    ...__phys,
     /**
      * 简单平台/俯视物理：按 x、y 分两步移动矩形 body {x,y,w,h}，碰到墙就停。
      * world: { rects?: [{x,y,w,h}], map?, tile?, solid?: [格子值] }。返回 { x, y, hit_x, hit_y, on_ground }
@@ -74,7 +81,7 @@ const api = {
   },
   // ---- 原生界面与设备 ----
   overlay: { show: (id, spec) => __c("overlay.show", [String(id), spec || {}]), hide: (id) => __c("overlay.hide", [id == null ? null : String(id)]) },
-  scene: { go: (name, o) => __c("scene.go", [String(name), o || {}]) },
+  scene: { go: (name, o) => __c("scene.go", [String(name), o || {}]), current: () => __c("scene.current", []) },
   fx: { shake: (amount, ms) => __c("fx.shake", [Number(amount) || 4, Number(ms) || 300]), fade: (o) => __c("fx.fade", [o || {}]), filter: (o) => __c("fx.filter", [o || {}]) },
   device: { vibrate: (p) => __c("device.vibrate", [p]), copy: (text) => __c("device.copy", [String(text)]) },
   save: { now: (label) => __c("save.now", [label == null ? "" : String(label)]) },
@@ -91,6 +98,14 @@ const api = {
     camera: (x, y, zoom, o) => __d(["camera", x || 0, y || 0, zoom || 1, o || {}]),
     sprite: (id, x, y, o) => __d(["sprite", String(id), x, y, o || {}]),
     particles: (key, x, y, o) => __d(["particles", String(key), x, y, o || {}]),
+    // 自定义着色器后期处理：整个画布画完后再过一遍（最多 4 遍，按顺序）
+    post: (shader, uniforms) => __d(["post", String(shader), uniforms || {}]),
+    // 九宫格图片：四角不拉伸；slice 是四边留的像素（一个数或 [上, 右, 下, 左]）
+    nine: (id, x, y, w, h, o) => __d(["nine", String(id), x, y, w, h, o || {}]),
+    // Tiled 地图（type: tilemap 素材）：{ x?, y?, layers?: [图层名], z? }
+    tiled: (id, o) => __d(["tiled", String(id), o || {}]),
+    // 画布里的视频（先用 api.video.texture 播放）
+    video: (id, x, y, w, h, o) => __d(["video", String(id), x, y, w == null ? null : w, h == null ? null : h, o || {}]),
   },
 };
 let __draw = [];

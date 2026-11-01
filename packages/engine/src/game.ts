@@ -1,4 +1,4 @@
-import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit, localizeStory, type Lang } from "@my-oasis/schema";
+import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit, localizeStory, type Lang, parseTiled, tiledSolids, type TiledMap, SHADER_UNIFORM_RE } from "@my-oasis/schema";
 import { Rng, rollDice } from "./rng.js";
 import { FAIL_MARK, ScriptError, type ScriptRunner } from "./script.js";
 
@@ -81,7 +81,14 @@ const clone = <T>(x: T): T => (x === undefined ? x : JSON.parse(JSON.stringify(x
 
 interface Ctx { params: Record<string, any>; locals: Record<string, any>; out?: any; event?: any; depth: number; caller: Caller; changed: Set<string>; render?: boolean }
 /** 实时模式产生的副作用：声音、异步 AI 请求（客户端取走后执行，不阻塞循环） */
-export interface SoundEffect { op: "play" | "stop"; id: string | null; volume?: number; loop?: boolean; channel?: string; fade_ms?: number; rate?: number; pan?: number }
+/** 声音滤波器（WebAudio BiquadFilter） */
+export interface SoundFilter { type: "lowpass" | "highpass" | "bandpass" | "notch" | "peaking" | "lowshelf" | "highshelf"; freq: number; q?: number; gain?: number }
+export interface SoundEffect {
+  op: "play" | "stop" | "set" | "listener"; id: string | null; volume?: number; loop?: boolean; channel?: string; fade_ms?: number; rate?: number; pan?: number;
+  /** 声音句柄名：之后用 api.sound.set(voice, …) 改它 */ voice?: string;
+  filter?: SoundFilter | null; /** 混响湿声比例 0–1 */ reverb?: number; /** 空间声音：世界坐标（配合 api.sound.listener） */ x?: number; y?: number;
+  /** listener：缩放（像素 → 米），默认 0.01 */ scale?: number;
+}
 /** 客户端原生界面请求：文字输入框（支持中文输入法/安卓软键盘）、全屏视频 */
 export type UiEffect =
   | { op: "text.open"; req: number; id: string; title?: any; placeholder?: any; value?: string; multiline?: boolean; max_length: number; ok?: any; cancel?: any }
@@ -95,9 +102,43 @@ export type UiEffect =
   | { op: "vibrate"; pattern: number[] }
   | { op: "copy"; text: string }
   | { op: "save"; label: string }
-  | { op: "filter"; css: string };
+  | { op: "filter"; css: string }
+  | { op: "vtex"; id: string; play?: boolean; loop?: boolean; muted?: boolean; rate?: number; seek_ms?: number; volume?: number }
+  | { op: "controls"; visible: string[] | null };
 export interface Effects { sounds: SoundEffect[]; ai: { req: number; entry: string; input: string; data: any }[]; ui: UiEffect[] }
 export type DrawCmd = any[];
+
+const FILTER_TYPES = ["lowpass", "highpass", "bandpass", "notch", "peaking", "lowshelf", "highshelf"];
+const finite = (v: any): v is number => typeof v === "number" && isFinite(v);
+/** api.sound.play / set 的选项：只留数字和白名单字段 */
+export function soundOpts(o: any): Partial<SoundEffect> {
+  o = o && typeof o === "object" ? o : {};
+  const pick: any = {};
+  for (const k of ["volume", "fade_ms", "rate", "pan", "x", "y"]) if (finite(o[k])) pick[k] = o[k];
+  if (finite(o.reverb)) pick.reverb = Math.max(0, Math.min(1, o.reverb));
+  if (typeof o.loop === "boolean") pick.loop = o.loop;
+  if (typeof o.channel === "string") pick.channel = o.channel.slice(0, 40);
+  if (typeof o.voice === "string") pick.voice = o.voice.slice(0, 40);
+  if (o.filter === null || o.filter === false) pick.filter = null;
+  else if (o.filter && typeof o.filter === "object" && FILTER_TYPES.includes(o.filter.type)) {
+    const f = o.filter; pick.filter = { type: f.type, freq: Math.max(10, Math.min(22000, finite(f.freq) ? f.freq : 1000)) };
+    if (finite(f.q)) pick.filter.q = Math.max(0.0001, Math.min(100, f.q));
+    if (finite(f.gain)) pick.filter.gain = Math.max(-40, Math.min(40, f.gain));
+  }
+  return pick;
+}
+/** 自定义着色器的 uniform：名字 u_xxx，值是数字或 2–4 个数字 */
+export function shaderUniforms(u: any): Record<string, number | number[]> {
+  const out: Record<string, number | number[]> = {};
+  if (!u || typeof u !== "object") return out;
+  for (const [k, v] of Object.entries(u).slice(0, 16)) {
+    if (!SHADER_UNIFORM_RE.test(k)) continue;
+    if (finite(v)) out[k] = v;
+    else if (Array.isArray(v) && v.length >= 2 && v.length <= 4 && v.every(finite)) out[k] = v.slice();
+  }
+  return out;
+}
+const hasFnRe = (fn: string) => new RegExp(`(^|[^\\w$.])(function\\s+${fn}\\s*\\(|(const|let|var)\\s+${fn}\\s*=)`);
 
 export class Game {
   state: Record<string, any> = {};
@@ -398,15 +439,27 @@ export class Game {
           case "time": return [this.rtDt, this.rtTime, this.rtAlpha];
           case "lang": return this.lang;
           case "screen": return { ...this.screen };
-          case "draw.commit": if (!ctx.render) throw new Error("api.draw 只能在画布的 render 函数里用"); this.drawBuf = a[0]; return null;
+          case "draw.commit": if (!ctx.render) throw new Error("api.draw 只能在画布的 render 函数里用"); this.drawBuf = this.drawBuf.length ? this.drawBuf.concat(a[0]).slice(0, 10000) : a[0]; return null;
           case "sound.play": case "sound.stop": {
             if (ctx.render) throw new Error("render 函数里不能播放声音");
             const id = a[0]; if (id !== null && !this.story.assets?.[id]) throw new Error(`素材「${id}」没有登记`);
-            const o = a[1] && typeof a[1] === "object" ? a[1] : {};
-            const pick: any = {}; for (const k of ["volume", "fade_ms", "rate", "pan"]) if (typeof o[k] === "number" && isFinite(o[k])) pick[k] = o[k];
-            if (typeof o.loop === "boolean") pick.loop = o.loop; if (typeof o.channel === "string") pick.channel = o.channel.slice(0, 40);
-            if (this.effects.sounds.length < 32) this.effects.sounds.push(m === "sound.play" ? { op: "play", id, ...pick } : { op: "stop", id, ...(pick.fade_ms !== undefined ? { fade_ms: pick.fade_ms } : {}) });
+            const pick = soundOpts(a[1]);
+            if (this.effects.sounds.length < 32) this.effects.sounds.push(m === "sound.play" ? { op: "play", id, ...pick } : { op: "stop", id, ...(pick.fade_ms !== undefined ? { fade_ms: pick.fade_ms } : {}), ...(pick.voice ? { voice: pick.voice } : {}) });
             return null;
+          }
+          case "sound.set": {
+            // 改正在播放的声音（按 voice 句柄名或声道名）：音量、速度、声像、位置、滤波器、混响
+            if (ctx.render) throw new Error("render 函数里不能改声音");
+            const pick = soundOpts(a[1]); delete (pick as any).voice; delete (pick as any).channel; delete (pick as any).loop;
+            if (this.effects.sounds.length < 32) this.effects.sounds.push({ op: "set", id: null, voice: String(a[0]).slice(0, 40), ...pick });
+            return null;
+          }
+          case "sound.listener": {
+            if (ctx.render) throw new Error("render 函数里不能改声音");
+            const o = a[0] && typeof a[0] === "object" ? a[0] : {};
+            const e: SoundEffect = { op: "listener", id: null, x: finite(o.x) ? o.x : 0, y: finite(o.y) ? o.y : 0 };
+            if (finite(o.scale) && o.scale > 0) e.scale = Math.min(10, o.scale);
+            this.effects.sounds = this.effects.sounds.filter((x) => x.op !== "listener"); this.effects.sounds.push(e); return null;
           }
           case "textinput.open": {
             if (ctx.render) throw new Error("render 函数里不能打开输入框");
@@ -437,8 +490,16 @@ export class Game {
           case "overlay.hide": if (ctx.render) throw new Error("render 函数里不能改界面"); this.effects.ui.push({ op: "overlay.hide", id: a[0] }); return null;
           case "scene.go": {
             if (ctx.render) throw new Error("render 函数里不能切换场景");
-            if (!this.story.state?.scene) throw new Error("要用 api.scene.go，先在 state 里声明 scene（比如 type: string）");
-            this.write("scene", a[0], ctx);
+            const sc = this.scenes;
+            if (sc) {
+              if (!sc.list[a[0]]) throw new Error(`场景「${a[0]}」没有在 scenes.list 里声明`);
+              const o = a[1] && typeof a[1] === "object" ? a[1] : {};
+              this.pendingScene = { name: a[0], data: o.data === undefined ? null : clone(o.data) };
+              if (this.story.state?.scene) this.write("scene", a[0], ctx);
+            } else {
+              if (!this.story.state?.scene) throw new Error("要用 api.scene.go，先在 state 里声明 scene（比如 type: string），或者在 scenes 里声明场景文件");
+              this.write("scene", a[0], ctx);
+            }
             const o = a[1] || {}; const ms = Math.max(0, Math.min(5000, Number(o.fade_ms ?? 400) || 0));
             if (ms) this.effects.ui.push({ op: "fade", color: typeof o.color === "string" ? o.color.slice(0, 30) : "#000", out_ms: 0, in_ms: ms, hold_ms: 0 });
             return null;
@@ -471,6 +532,28 @@ export class Game {
             if (json && json.length > 64 * 1024) throw new Error("一条本地数据最多 64 KB");
             this.opts.storage?.set(k, a[1]); return null;
           }
+          case "video.texture": {
+            // 画布里的视频（纹理）：加载/播放/暂停/跳转；画面用 api.draw.video 画
+            if (ctx.render) throw new Error("render 函数里不能控制视频");
+            const id = String(a[0]); const as: any = this.story.assets?.[id];
+            if (!as) throw new Error(`素材「${id}」没有登记`);
+            if (!/\.(webm|mp4)$/i.test(String(as.path ?? ""))) throw new Error(`素材「${id}」不是视频（webm/mp4）`);
+            const o = a[1] && typeof a[1] === "object" ? a[1] : {};
+            const e: any = { op: "vtex", id };
+            for (const k of ["play", "loop", "muted"]) if (typeof o[k] === "boolean") e[k] = o[k];
+            if (finite(o.rate)) e.rate = Math.max(0.25, Math.min(4, o.rate));
+            if (finite(o.seek_ms)) e.seek_ms = Math.max(0, o.seek_ms);
+            if (finite(o.volume)) e.volume = Math.max(0, Math.min(1, o.volume));
+            this.effects.ui.push(e); return null;
+          }
+          case "controls.show": {
+            if (ctx.render) throw new Error("render 函数里不能改屏幕控件");
+            const v = a[0] === null ? null : (Array.isArray(a[0]) ? a[0] : [a[0]]).slice(0, 32).map((x: any) => String(x).slice(0, 40));
+            this.effects.ui.push({ op: "controls", visible: v }); return null;
+          }
+          case "tiled.get": return clone(this.tiledMap(String(a[0])));
+          case "tiled.solids": return tiledSolids(this.tiledMap(String(a[0])));
+          case "scene.current": return this.currentScene ?? null;
           case "video.stop": if (ctx.render) throw new Error("render 函数里不能停止视频"); this.effects.ui.push({ op: "video.stop" }); return null;
           case "ai.request": {
             if (ctx.render) throw new Error("render 函数里不能请求 AI");
@@ -487,6 +570,50 @@ export class Game {
     };
     try { return this.opts.scripts.run(file, src, fn, host, lim); }
     catch (e: any) { if (e instanceof ScriptError) throw new StepFail(e.kind === "fail" ? e.message : `${file}：${e.message}`); throw e; }
+  }
+
+  // ---------- Tiled 地图 ----------
+  private tiledCache = new Map<string, TiledMap>();
+  /** 解析一张登记成 type: tilemap 的 .tmj 地图（结果缓存） */
+  tiledMap(id: string): TiledMap {
+    let m = this.tiledCache.get(id); if (m) return m;
+    const as: any = this.story.assets?.[id];
+    if (!as || as.type !== "tilemap") throw new Error(`地图素材「${id}」没有登记（type: tilemap）`);
+    const src = this.opts.files ? textFile(this.opts.files, as.path) : undefined;
+    if (src === undefined) throw new Error(`找不到地图文件「${as.path}」`);
+    const assets: Record<string, any> = this.story.assets ?? {};
+    m = parseTiled(src, as.path, (path, name) => as.tilesets?.[name] ?? Object.entries(assets).find(([, x]) => x?.type === "image" && x.path === path)?.[0]);
+    this.tiledCache.set(id, m); return m;
+  }
+
+  // ---------- 场景文件（scenes） ----------
+  get scenes(): { start?: string; list: Record<string, { script: string }> } | undefined { return (this.story as any).scenes; }
+  get currentScene(): string | undefined { return this.extra.rt_scene; }
+  private pendingScene: { name: string; data: any } | null = null;
+  private fnCache = new Map<string, boolean>();
+  /** 场景脚本里有没有这个函数（没有就跳过，不算错） */
+  private sceneFn(name: string | undefined, fn: string): string | undefined {
+    const d = name ? this.scenes?.list[name] : undefined; if (!d) return;
+    const k = `${d.script}#${fn}`; let ok = this.fnCache.get(k);
+    if (ok === undefined) { const src = this.opts.files ? textFile(this.opts.files, d.script) : undefined; ok = !!src && hasFnRe(fn).test(src); this.fnCache.set(k, ok); }
+    return ok ? k : undefined;
+  }
+  /** 第一次进入循环时进入开始场景；之后处理 api.scene.go 请求的切换（先 exit 旧场景，再 enter 新场景） */
+  private sceneFlow(ctx: Ctx) {
+    const sc = this.scenes; if (!sc) return;
+    if (this.extra.rt_scene === undefined) {
+      const first = sc.start ?? Object.keys(sc.list)[0];
+      this.extra.rt_scene = first;
+      const f = this.sceneFn(first, "enter"); if (f) this.runScript(f, { from: null, data: null }, ctx, this.rtLimits());
+    }
+    for (let n = 0; this.pendingScene && n < 4; n++) {
+      const { name, data } = this.pendingScene; this.pendingScene = null;
+      const from = this.extra.rt_scene;
+      const fx = this.sceneFn(from, "exit"); if (fx) this.runScript(fx, { to: name }, ctx, this.rtLimits());
+      this.extra.rt_scene = name;
+      const fe = this.sceneFn(name, "enter"); if (fe) this.runScript(fe, { from, data }, ctx, this.rtLimits());
+    }
+    this.pendingScene = null;
   }
 
   // ---------- 实时（oasis/0.4） ----------
@@ -525,11 +652,12 @@ export class Game {
     if (!rt || this.ending) return { ok: true };
     if (input) this.input = { ...this.input, ...clone(input) };
     const dt = Math.max(0, Math.min(250, Number(dtMs) || 0)); this.rtAlpha = 0;
-    const s = this.snap(); const tBefore = this.rtTime, timersBefore = { ...(this.extra.rt_timers ?? {}) };
+    const s = this.snap(); const tBefore = this.rtTime, timersBefore = { ...(this.extra.rt_timers ?? {}) }, sceneBefore = this.extra.rt_scene;
     const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
     const hooks: { hook: string; data?: any }[] = [];
     this.rtDt = dt; this.extra.rt_time = tBefore + dt;
     try {
+      this.sceneFlow(ctx);
       const next: Record<string, number> = (this.extra.rt_timers ??= {});
       for (const [id, t] of Object.entries(rt.timers ?? {})) {
         if (next[id] === undefined) next[id] = tBefore + (t.after_ms ?? t.every_ms ?? 0);
@@ -543,10 +671,16 @@ export class Game {
         if (next[id] !== -1 && this.rtTime >= next[id]) next[id] = this.rtTime + (t.every_ms ?? 0); // 落后太多时不追帧
       }
       const sig = `${this.screen.width}x${this.screen.height}@${this.screen.dpr}`;
-      if (rt.on_resize && this.screen.width && sig !== this.lastResize) { this.lastResize = sig; this.runScript(rt.on_resize, { ...this.screen }, ctx, this.rtLimits()); }
+      if (this.screen.width && sig !== this.lastResize) {
+        this.lastResize = sig;
+        if (rt.on_resize) this.runScript(rt.on_resize, { ...this.screen }, ctx, this.rtLimits());
+        const fr = this.sceneFn(this.currentScene, "resize"); if (fr) this.runScript(fr, { ...this.screen }, ctx, this.rtLimits());
+      }
       if (rt.on_tick) this.runScript(rt.on_tick, {}, ctx, this.rtLimits());
+      const ft = this.sceneFn(this.currentScene, "tick"); if (ft) this.runScript(ft, {}, ctx, this.rtLimits());
+      this.sceneFlow(ctx);
     } catch (e: any) {
-      this.restore(s); this.extra.rt_time = tBefore + dt; this.extra.rt_timers = timersBefore;
+      this.restore(s); this.extra.rt_time = tBefore + dt; this.extra.rt_timers = timersBefore; this.extra.rt_scene = sceneBefore; this.pendingScene = null;
       this.rtError("实时循环", e); this.input = { ...this.input, pressed: {} };
       return { ok: false, error: e.message };
     }
@@ -559,9 +693,15 @@ export class Game {
   renderCanvas(cid: string, alpha = 0): DrawCmd[] {
     this.rtAlpha = Math.max(0, Math.min(1, Number(alpha) || 0));
     const c: any = this.story.ui?.components?.[cid];
-    if (!c?.render) return [];
+    const sr = this.sceneFn(this.currentScene, "render");
+    if (!c?.render && !sr) return [];
     const s = this.snap(); this.drawBuf = [];
-    try { this.runScript(c.render, { ...this.canvasSize(cid), dpr: this.screen.dpr }, { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set(), render: true }, this.rtLimits()); }
+    const params = { ...this.canvasSize(cid), dpr: this.screen.dpr, canvas: cid };
+    const rctx = (): Ctx => ({ params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set(), render: true });
+    try {
+      if (c?.render) this.runScript(c.render, params, rctx(), this.rtLimits());
+      if (sr) this.runScript(sr, params, rctx(), this.rtLimits()); // 场景的 render 画在画布 render 之后
+    }
     catch (e: any) { this.restore(s); this.rtError(`画布「${cid}」`, e); return []; }
     this.restore(s);
     return this.drawBuf;
@@ -573,20 +713,21 @@ export class Game {
    * 界面层：{ type: "button", overlay, id } / { type: "select", overlay, list, id }
    */
   deliverUi(res: Record<string, any> & { type: "text" | "video" | "button" | "select"; id: string }) {
-    const on = (this.story.realtime as any)?.on_ui; if (!on || this.ending) return;
+    const on = (this.story.realtime as any)?.on_ui, fs = this.sceneFn(this.currentScene, "ui"); if ((!on && !fs) || this.ending) return;
     if (res.type === "text" && typeof res.text === "string") res = { ...res, text: res.text.slice(0, 2000) };
-    const s = this.snap(); const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
-    try { this.runScript(on, res, ctx, this.rtLimits()); }
-    catch (e: any) { this.restore(s); this.rtError("on_ui", e); return; }
+    const s = this.snap(), sb = this.extra.rt_scene; const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
+    try { if (on) this.runScript(on, res, ctx, this.rtLimits()); if (fs) this.runScript(fs, res, ctx, this.rtLimits()); this.sceneFlow(ctx); }
+    catch (e: any) { this.restore(s); this.extra.rt_scene = sb; this.pendingScene = null; this.rtError("on_ui", e); return; }
     this.dispatch(ctx.changed); this.checkEndings();
   }
   /** 异步 AI 结果回来后调用：交给 realtime.on_ai（params: request, entry, data, text, error） */
   deliverAi(res: { req: number; entry: string; data?: any; text?: string; error?: string }) {
     this.aiInFlight = Math.max(0, this.aiInFlight - 1);
-    const on = this.story.realtime?.on_ai; if (!on || this.ending) return;
-    const s = this.snap(); const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
-    try { this.runScript(on, { request: res.req, entry: res.entry, data: res.data ?? null, text: res.text ?? "", error: res.error ?? null }, ctx, this.rtLimits()); }
-    catch (e: any) { this.restore(s); this.rtError("on_ai", e); return; }
+    const on = this.story.realtime?.on_ai, fs = this.sceneFn(this.currentScene, "ai"); if ((!on && !fs) || this.ending) return;
+    const s = this.snap(), sb = this.extra.rt_scene; const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
+    const p = { request: res.req, entry: res.entry, data: res.data ?? null, text: res.text ?? "", error: res.error ?? null };
+    try { if (on) this.runScript(on, p, ctx, this.rtLimits()); if (fs) this.runScript(fs, p, ctx, this.rtLimits()); this.sceneFlow(ctx); }
+    catch (e: any) { this.restore(s); this.extra.rt_scene = sb; this.pendingScene = null; this.rtError("on_ai", e); return; }
     this.dispatch(ctx.changed); this.checkEndings();
   }
 
