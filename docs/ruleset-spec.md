@@ -32,7 +32,7 @@ ui:
       region: input
       input:
         actions: [move, search, tend_light]      # 玩家打的字最多只能变成这三个动作
-        words: { tend_light: [点灯, 添油] }        # 不经 AI 时按关键词对应
+        words: { tend_light: [点灯, 添油] }        # 关键词直达：命中就直接执行，不用等 AI（AI 出错/超时也能用）
         reject: 这件事在这座岛上做不到。你可以移动、搜索或照看灯塔。
         max_length: 300
     keeper_chat:
@@ -113,7 +113,7 @@ my-story.oasis
 | `events` | 列表 | 可选 | 事件，§7 |
 | `endings` | 对象 | 可选 | 结局，§8；可以没有（故事不会自动结束） |
 | `tools` | 对象 | 可选 | 向 AI 暴露的工具，§9 |
-| `ai` | 对象 | 可选 | AI 全局规则与接入点，§10；**省略 = 无 AI 的纯规则故事** |
+| `ai` | 对象 | **必填** | AI 全局规则与接入点，§10；**必须至少有一个 AI 接入点**（`entry_points`），否则校验报错 `ai_required`。平台不收纯规则故事 |
 | `ui` | 对象 | 可选 | 界面，§13；省略 = 默认简约模板 |
 | `scripts` | 对象 | 可选 | 脚本设置，§12 |
 | `start` | 对象 | 可选 | 开局设置，§3.1 |
@@ -133,14 +133,17 @@ my-story.oasis
 | `title` | 字符串 | **必填** | 1–40 字 |
 | `version` | 字符串 | **必填** | 语义化版本 `主.次.修`，如 `1.0.0`；再次上传必须更大 |
 | `summary` | 字符串 | **必填** | 1–200 字 |
-| `language` | 字符串 | **必填** | 如 `zh-CN` `en` `ja` |
+| `languages` | 字符串列表 | **必填**（或旧写法 `language`） | 故事和 AI 支持的语言，如 `[zh, en, ja]`；旧写法 `language: zh-CN` 等同 `[zh]` |
+| `ai_role` | 文本 | 可选（投稿必填，中英双语） | AI 在故事里做什么，一两句，≤ 120 字 |
+| `est_tokens_per_min` | 整数 | 可选（投稿必填） | 每分钟大约多少 token（输入 + 输出） |
+| `description` | 文本 | 可选 | 详情页长介绍，≤ 4000 字，纯文本（空行分段、`# ` 小标题、`- ` 列表） |
 | `rating` | 字符串 | **必填** | `all-ages` \| `teen` \| `mature`；**不接受成人内容**；公开故事库只收 `all-ages`；`teen`、`mature` 只能本地导入游玩 |
 | `authors` | 字符串列表 | 可选 | 作者名 |
 | `tags` | 字符串列表 | 可选 | ≤ 10 个，每个 ≤ 12 字 |
 | `content_warnings` | 字符串列表 | 可选 | 如 `[恐怖, 暴力]`；`mature` 时**必填** |
 | `cover` | 路径 | 可选 | 包内图片 |
 | `setting` | 路径 | 可选 | 包内 Markdown，作为 AI 设定资料 |
-| `est_minutes` | 整数 | 可选 | 1–600 |
+| `est_minutes` | 整数 | 可选（投稿必填） | 1–600 |
 | `min_engine` | 字符串 | 可选 | 最低引擎版本，默认 `0.3.0` |
 | `license` | 字符串 | 可选 | 作者授权声明（平台条款待定） |
 
@@ -425,7 +428,44 @@ export function run(api) {
 | `text-block` | `bind: 状态id` 或 `text` | 显示一段文字 |
 | `image` | `src`，或 `bind`（一个状态）+ `images: { 值: 素材引用 }`（可再写 `src` 作默认图），或 `generated: 生图点id`；`fit: cover\|contain` | 图片 / 随状态切换 / AI 生图 |
 | `dice-log` | —（需 `oasis/dice`） | 随机结果记录 |
-| `node-map`、`portrait`、`item-grid`、`timer`、`custom` | — | MVP 之后 |
+| `custom` | `src`（包内 `.html`），`actions`（可调用的动作 id 列表），`emits`（可发出的事件名），`config`（任意数据，原样交给组件），`height`，`fallback`（关闭时显示的文字） | 作者自带的 HTML/JS 组件，沙箱运行，见下方“自定义组件” |
+| `node-map`、`portrait`、`item-grid`、`timer` | — | 以后再加（可先用 `custom` 自己做） |
+
+**自定义组件（type: custom）**
+
+```yaml
+ui:
+  components:
+    map:
+      type: custom
+      region: side
+      src: ui/map.html        # 可引用同包的 map.js / map.css / 图片
+      actions: [move]
+      emits: [opened]         # AI 接入点用 trigger: "ui:map.opened"
+      height: 120
+      config: { title: 小岛 }
+      fallback: 小地图已关闭，你可以用下面的按钮移动。
+```
+
+- 组件写在故事包里（`src: ui/xxx.html`，可引用同包的 `.js`/`.css`/图片/音频/字体，相对 HTML 所在文件夹）；客户端把这些文件内联成一份文档，放进**无同源权限的沙箱 iframe**（`sandbox="allow-scripts"`），文档 CSP 为 `default-src 'none'`，只允许内联脚本/样式和 `data:` 素材，**不能联网**。桌面/安卓客户端经单独的 `oasisui:` 协议加载（独立源与 CSP，主窗口的 Tauri IPC 不可用）。
+- 只能通过 `postMessage` 和客户端说话，协议版本 `oasis-ui/1`（只做向后兼容的增加）。组件里直接用全局对象 `window.oasis`：
+
+| 接口 | 说明 |
+|---|---|
+| `oasis.ready` | Promise，收到初始数据后完成（返回 `oasis` 本身） |
+| `oasis.state` | 玩家可见的状态（`visible` 不含 player 的状态拿不到） |
+| `oasis.onState(cb)` | 状态变化时回调 `cb(state, changedKeys)`；返回取消函数 |
+| `oasis.action(id, params)` | 调用动作，返回 `Promise<{ ok, error? }>`；只能调 `actions` 里列出、玩家可调用的动作，照常检查 `require`、参数和回合；AI 正在处理时会被拒绝；每秒最多 20 次 |
+| `oasis.emit(event, payload)` | 发事件，触发 AI 接入点 `trigger: "ui:<组件id>.<event>"`；只能发 `emits` 里列出的；`payload` 转成 JSON（≤ 2 KB）作为 `{{input}}` |
+| `oasis.lang` / `oasis.config` / `oasis.component` | 当前语言、组件的 `config`、组件 id |
+| `oasis.ended` / `oasis.busy` | 是否已结局、AI 是否在处理 |
+| `oasis.resize(height)` | 调整高度（40–2000 px） |
+| `oasis.log(...)` | 调试日志（打开“调试”时出现在控制台） |
+
+- 拿不到 Key、令牌、存档、文件、Tauri 命令，也不能直接写状态、调模型，只能“调用声明过的动作”和“发声明过的事件”。
+- 玩家可在“设置”里全局关闭自定义组件，此时显示组件的 `fallback` 文字。作者应保证关掉后故事仍能玩（同样的动作另外给按钮或输入框）。
+- 校验：`src` 必须是包里存在的 `.html`（`custom_no_src` / `custom_src_type` / `missing_file`）；HTML 里相对引用的文件必须存在（`missing_file`）；引用外网地址给警告（`custom_network`，运行时也加载不到）；内联后总大小 ≤ 8 MB（`custom_too_big`）；`actions` 必须是存在且玩家可调用的动作；`ui:<id>.<事件>` 触发器的事件必须写在 `emits` 里（`component_event`）；没写 `fallback` 给提示。
+- 示例：`tests/fixtures/custom-ui-mini/`。
 
 **AI 生成的选项按钮（choices 约定）**
 `choice-buttons` 写 `from_ai: true` 时，选项由 AI 给出：
@@ -618,7 +658,7 @@ ui:
       placeholder: 你要做什么？
       input:
         actions: [move, search, tend_light]     # 玩家打的字最多只能变成这三个动作
-        words: { tend_light: [点灯, 添油, 守灯] }  # 没配 Key 时按关键词映射
+        words: { tend_light: [点灯, 添油, 守灯] }  # 关键词直达，AI 出错/超时时也能用
         reject: 这件事在这座岛上做不到。你可以移动、搜索或照看灯塔。
         max_length: 300
     stats: { type: stat-list, region: side, bind: [oil, day, location, clues] }

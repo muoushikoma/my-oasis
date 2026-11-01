@@ -21,7 +21,7 @@
 
 【最高原则，必须遵守】
 1. 每一处内容要么固定、要么 AI 处理，不写就是固定。AI 要输出到的组件必须写 content: ai（choice-buttons 用 from_ai: true）。
-2. 玩家只能做 actions 里声明的事。放 text-input（自由输入）或 chat-box 时可写 input: { actions: [允许导致的动作], reject: 做不到时的固定回应 }；不写 input 时玩家文字不能触发任何动作。可加 words: { 动作id: [关键词] } 让没有 AI 时也能用。
+2. 玩家只能做 actions 里声明的事。放 text-input（自由输入）或 chat-box 时可写 input: { actions: [允许导致的动作], reject: 做不到时的固定回应 }；不写 input 时玩家文字不能触发任何动作。可加 words: { 动作id: [关键词] } 让常用指令直接执行（不用等 AI，AI 出错或超时时也能用）。
 3. 不要设计“玩家说一句话就能改数值或跳结局”的地方；这些只能通过动作和规则发生。
 
 【输出要求】
@@ -47,8 +47,8 @@ meta（必填）、state（可选）、endings（可选）
 所有 id（状态、动作、事件、工具、接入点、组件、结局）只能用小写英文字母开头、小写字母/数字/下划线，最长 40，例如 oil、keeper_trust。中文名写在 label。
 meta.id 用小写字母、数字、连字符，如 lighthouse-keeper。
 
-【meta】必填：id, title(≤40字), version("1.0.0"), summary(≤200字), language("zh-CN"), rating。可选：languages, authors, tags, content_warnings, cover, setting, est_minutes, license。
-要投稿到公开故事库时必须：rating 写 all-ages（只收全年龄，禁止成人、色情、血腥内容）；title 和 summary 都写成中英双语 { zh: …, en: … }；tags 正好 3 个，每个都写成 { zh: …, en: … }；并写 languages: [zh, en]。
+【meta】必填：id, title(≤40字), version("1.0.0"), summary(一句话，≤200字), languages(列表，如 [zh, en]), rating。可选：ai_role, est_minutes, est_tokens_per_min, description(详情页长介绍，纯文本),  platforms([desktop] / [mobile] / [desktop, mobile]，不写=两端都支持；只适合键盘或只适合触屏时一定要写), authors, tags, content_warnings, cover, setting, est_minutes, license。
+要投稿到公开故事库时必须：rating 写 all-ages（只收全年龄，禁止成人、色情、血腥内容）；title 和 summary 都写成中英双语 { zh: …, en: … }；tags 正好 3 个，每个都写成 { zh: …, en: … }；并写 languages: [zh, en]；还必须写 ai_role（中英双语，一两句说清 AI 在故事里做什么：扮演哪些角色、是否当叙述者/主持人、是否判定玩家的自由输入、是否生成图片）、est_minutes（玩一遍大概几分钟）、est_tokens_per_min（每分钟大约多少 token，按“每分钟大约几次 AI 调用 × 每次输入+输出 token”估算，例如每分钟 2 次 × 1000 = 2000）。这些信息会显示在故事库卡片和详情页，让玩家玩之前就知道。
 
 【中英双语】所有玩家能看到的文字（title、summary、tags、intro、label、desc、text、require_message、fail、opening、fallback、placeholder、reject、alt、choices 的 label 等）都写成 { zh: 中文, en: English }，中英意思一致。写给 AI 看的 system/task/prompt/must/forbid 不用双语。引擎会让 AI 按玩家选的语言回复；脚本里用 api.lang（"zh" 或 "en"）判断语言。
 
@@ -93,7 +93,7 @@ hook 取值：game_start | turn_start | turn_end | action:<动作id> | state:<�
   { query: 表达式 }（只读）
   { write: 状态id }（该状态 writable_by 要含 ai）
 
-【ai】（不需要 AI 的纯规则故事可以整个省略）
+【ai】必填：每个故事都必须接 AI，entry_points 里至少写一个接入点（平台不再收纯规则故事）
 一个故事只用一个 AI 模型，不要为不同地方指定不同模型。
 ai:
   model_hint: { tier: light|standard|strong }
@@ -153,6 +153,7 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 【实时与接管整个页面】（oasis/0.4，可省略；完整说明见 docs/story-format.md 第 10 节）
 realtime: { tick_hz: 30, tick_ms: 16(1-50), on_tick: 文件#函数, on_ai, on_resize, on_ui, interpolate: false, timers: {...} }
 input: { keys: { ArrowLeft: left, ... }, joystick: true, buttons: [...], pointer: true }
+自定义组件：{ type: custom, region, src: ui/xxx.html, actions: [动作id], emits: [事件名], config, height, fallback }。HTML 可引用同包 .js/.css/图片（相对路径），不能联网（不要用 CDN）。组件里用 window.oasis：await oasis.ready；oasis.state（玩家可见状态）；oasis.onState((state, changed) => ...)；await oasis.action(id, params) → { ok, error }（只能调 actions 里列出的玩家动作）；oasis.emit(事件, 数据)（只能发 emits 里的，AI 接 trigger: "ui:组件id.事件"）；oasis.lang、oasis.config、oasis.resize(高度)。拿不到 Key/文件/网络。一定写 fallback，并另外给按钮或输入框，玩家关掉自定义组件也能玩。示例：tests/fixtures/custom-ui-mini/
 画布组件：{ type: canvas, region, render: 文件#函数, width/height（固定）或 size: fill（铺满，跟着窗口/转屏变化）, hidpi: true, pixelated }
 ui.takeover: true → 客户端不显示顶栏，整个窗口/手机屏幕交给故事（安卓沉浸全屏）。脚本读 api.screen { width, height, dpr, takeover }；render 的 api.params.width/height 是画布当前尺寸；坐标最好按比例存。
 玩家始终可以打开暂停菜单（按住 Esc 1 秒 / 安卓返回键 / 右上角 ⋯），故事关不掉；不要把右上角那一小块当成必须点的位置，也不要依赖“长按 Esc”。
@@ -198,7 +199,7 @@ render 只读状态，用 api.draw.*：clear、camera、rect、circle、line、t
 ---
 
 ## 给 AI 的参考示例
-完整、可通过校验的示例见 [ruleset-spec.md §16《守灯人（迷你版）》](ruleset-spec.md)。下面是一个**不用 AI 的纯规则故事**，展示最小写法：
+完整、可通过校验的示例见 [ruleset-spec.md §16《守灯人（迷你版）》](ruleset-spec.md)。下面是一个最小写法：规则和结局在本地判定，AI 只负责在结局时收尾（**每个故事都必须至少有一个 AI 接入点**）：
 
 ```yaml
 spec: oasis/0.3
@@ -207,13 +208,15 @@ meta:
   title: { zh: 三个箱子, en: Three Boxes }
   version: 1.0.0
   summary: { zh: 三次机会，找出藏着钥匙的箱子。, en: Three tries to find the box with the key. }
-  language: zh-CN
   languages: [zh, en]
+  est_minutes: 15
+  est_tokens_per_min: 1500
+  ai_role: { zh: AI 负责叙述剧情，并在你打开箱子时描写结果。, en: The AI narrates the story and describes what you find in each box. }
   rating: all-ages
   tags:
     - { zh: 解谜, en: Puzzle }
     - { zh: 短篇, en: Short }
-    - { zh: 纯规则, en: Rules only }
+    - { zh: 运气, en: Luck }
 start:
   intro:
     zh: 面前有三个箱子，只有一个里面有钥匙。你有三次机会。
@@ -246,6 +249,17 @@ ui:
         - { label: { zh: 二号箱, en: Box 2 }, action: open_box, params: { n: 2 } }
         - { label: { zh: 三号箱, en: Box 3 }, action: open_box, params: { n: 3 } }
     stats: { type: stat-list, region: status, bind: [chances] }
+ai:
+  entry_points:
+    narrator:
+      kind: narrate
+      trigger: game_end
+      prompt: 用一两句话为结局收尾。
+      fallback: { zh: 故事结束了。, en: The story ends. }
+      card:
+        task: 为结局写一句收尾
+        authority: 0
+        output: { format: text, max_chars: 120 }
 ```
 
 ## 常见问题

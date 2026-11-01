@@ -124,6 +124,8 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .play.takeover .region { gap: 0; }
 .play.takeover .comp-canvas { flex: 1; min-height: 0; display: flex; }
 .rt-canvas.rt-fill { width: 100%; height: 100%; display: block; flex: 1; min-height: 0; touch-action: none; }
+.rt-canvas.rt-fill { max-width: none; border-radius: 0; }
+.play.takeover .comp-canvas { padding: 0; background: none; border-radius: 0; box-shadow: none; backdrop-filter: none; }
 .comp-canvas:has(.rt-fill) { flex: 1; min-height: 0; display: flex; }
 .takeover-exit { position: fixed; top: calc(6px + env(safe-area-inset-top)); right: calc(6px + env(safe-area-inset-right)); z-index: 2147483000;
   width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid #fff4; background: #0007; color: #fff; font-size: 18px; line-height: 1;
@@ -156,3 +158,11 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .nui-item { text-align: left; padding: 8px 10px; border-radius: 6px; border: 1px solid #8884; background: rgba(0,0,0,.25); color: inherit; font: inherit; } .nui-item:disabled { opacity: .5; } .nui-sub { opacity: .65; font-size: .85em; }
 .nui-rich, .nui-otext { white-space: pre-wrap; } .nui-img { max-width: 100%; }
 .nui-fade { position: fixed; inset: 0; z-index: 2147482500; pointer-events: none; }
+/* 自定义组件（沙箱 iframe） */
+.custom-frame { width: 100%; border: 0; display: block; background: transparent; }
+.custom-parking { position: fixed; left: -10000px; top: 0; width: 1px; height: 1px; overflow: hidden; }
+.story-meta p { margin: 3px 0; } .story-meta .warn { color: #e67e22; }
+.story-card.clickable { cursor: pointer; } .story-card.clickable:hover { outline: 2px solid #c938; }
+.story-card .brief { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.story-detail { width: min(640px, 94vw) !important; } .story-detail .cover { width: 100%; max-height: 260px; object-fit: cover; border-radius: 8px; }
+.story-desc p { white-space: pre-wrap; } .story-desc h4 { margin: 10px 0 4px; }

@@ -1,6 +1,6 @@
 [package]
 name = "oasis-native"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 description = "我的绿洲 客户端的本地能力：读取故事包、本地存档/故事库、SSE 解析、模型请求（Key 不出 Rust）"
 

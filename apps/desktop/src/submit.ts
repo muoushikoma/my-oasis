@@ -1,5 +1,5 @@
 // 投稿：GitHub 登录（Device Flow）+ 一键上传投稿 + 我的投稿状态。不登录也能浏览、下载、游玩。
-import { validateFiles, pickText, libraryProblems, libraryWarnings, type StoryFiles } from "@my-oasis/schema";
+import { validateFiles, pickText, libraryProblems, libraryWarnings, metaLanguages, fmtTokensPerMin, type StoryFiles } from "@my-oasis/schema";
 import { h, toast } from "./dom";
 import { bridge, bytesToB64 } from "./bridge";
 import { issuesView } from "./issues";
@@ -12,6 +12,9 @@ const PR_BODY = (meta: any, ai: boolean) => `## 投稿信息 / Submission / 投�
 - 故事名称 / Title：${pickText(meta.title, "zh")} / ${pickText(meta.title, "en")}
 - 标签 / Tags：${(meta.tags ?? []).map((t: any) => `${pickText(t, "zh")}/${pickText(t, "en")}`).join("，")}
 - 文件夹（= meta.id）：\`stories/${meta.id}/\`
+- AI 做什么 / AI role：${pickText(meta.ai_role, "zh")} / ${pickText(meta.ai_role, "en")}
+- 语言 / Languages：${metaLanguages(meta).join(", ")}
+- 时长 / Play time：约 ${meta.est_minutes ?? "?"} 分钟 · ${meta.est_tokens_per_min ? fmtTokensPerMin(meta.est_tokens_per_min) : "每分钟 token 未填写"}
 - 是否需要 AI：${ai ? "是" : "否"}
 - 分级：${meta.rating === "all-ages" ? "全年龄 all-ages" : meta.rating ?? "?"}
 
@@ -108,7 +111,7 @@ export function submitView(drafts: { title: string; files: () => StoryFiles }[],
       };
       out.replaceChildren(h("div", { class: "card" }, h("h3", {}, `准备投稿：${pickText(meta.title, "zh")} / ${pickText(meta.title, "en")}`),
         warns.length ? h("details", {}, h("summary", {}, `提醒：有 ${warns.length} 处文字只有一种语言（不影响投稿）`), h("ul", { class: "small" }, ...warns.slice(0, 30).map((t) => h("li", {}, t)))) : null,
-        h("p", { class: "small muted" }, `会放到 stories/${meta.id}/，共 ${files.size} 个文件。分级：全年龄；${ai ? "需要 AI" : "纯规则"}。如果这个 id 已经上架，会作为新版本覆盖（记得把 meta.version 改大）。`),
+        h("p", { class: "small muted" }, `会放到 stories/${meta.id}/，共 ${files.size} 个文件。分级：全年龄；AI 故事。如果这个 id 已经上架，会作为新版本覆盖（记得把 meta.version 改大）。`),
         h("label", { class: "row" }, ok, h("span", {}, "我确认：不含色情等不适合公开的内容；文字和素材是我原创或有权使用；没有 Key 或隐私信息。版权仍归我，同意授权本平台公开分发。")),
         h("div", { class: "row" }, btn)));
     };

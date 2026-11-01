@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { withAi } from "../../schema/test/with-ai.js";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { validateFiles, filesFromText, type Story, type StoryFiles } from "@my-oasis/schema";
@@ -86,7 +87,7 @@ state:
   blob: { type: json, init: null }
 realtime: { tick_ms: 20, on_tick: s.js#tick }
 ${extra}`;
-    const f = filesFromText(y, { "s.js": tick });
+    const f = filesFromText(withAi(y), { "s.js": tick });
     const v = validateFiles(f); if (!v.ok) throw new Error(JSON.stringify(v.issues));
     const g = new Game(v.story as Story, { files: f, scripts: strict }); g.start(); return g;
   };

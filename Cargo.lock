@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "my-oasis-desktop"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64 0.22.1",
  "oasis-native",
@@ -2349,7 +2349,7 @@ dependencies = [
 
 [[package]]
 name = "oasis-native"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "android-keyring",
  "base64 0.22.1",

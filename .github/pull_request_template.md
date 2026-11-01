@@ -3,7 +3,10 @@
 - 故事名称 / Title（中文 / English）：
 - 文件夹（= meta.id）/ Folder：`stories/`
 - 标签 / Tags（正好 3 个，中英双语 / exactly 3, zh + en）：
-- 是否需要 AI / Needs AI：是 / 否
+- AI 做什么 / What the AI does（meta.ai_role）：
+- 语言 / Languages（meta.languages）：
+- 时长 / Play time（meta.est_minutes）：　分钟
+- 每分钟 token / Tokens per minute（meta.est_tokens_per_min）：
 - 分级 / Rating：all-ages（故事库只收全年龄 / all-ages only）
 
 ## 自检（请在方框里打 x）/ Checklist
@@ -12,6 +15,7 @@
 - [ ] 文件夹名和 `story.yaml` 里的 `meta.id` 一样
 - [ ] 名称 `meta.title`、简介 `meta.summary` 都同时写了中文和英文 / title & summary in both zh and en
 - [ ] `meta.tags` 正好 3 个，每个都有中文和英文 / exactly 3 bilingual tags
+- [ ] 写了 `meta.languages`、`meta.ai_role`（中英双语）、`meta.est_minutes`、`meta.est_tokens_per_min` / languages, bilingual ai_role, est_minutes, est_tokens_per_min
 - [ ] `meta.rating: all-ages`，内容适合任何年龄的玩家 / suitable for all ages
 - [ ] 在「我的绿洲」客户端「创作 → 导入检查」里检查通过，并亲自试玩过（最好中英文各玩一遍）
 - [ ] **不含色情内容**，也没有血腥猎奇、仇恨、违法等不适合公开发布的内容

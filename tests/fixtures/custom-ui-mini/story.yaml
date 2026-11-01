@@ -1,0 +1,58 @@
+spec: oasis/0.3
+meta:
+  id: custom-ui-mini
+  title: 小岛地图（自定义组件示例）
+  version: 0.1.0
+  summary: 演示故事自带的自定义组件：一张能点的小地图。
+  languages: [zh]
+  est_minutes: 5
+  est_tokens_per_min: 800
+  ai_role: AI 描写你到达的地方，并在你打开地图时给出提示。
+  tags: [示例, 地图, 自定义组件]
+  rating: all-ages
+start:
+  intro: 你站在小岛的灯塔下。点右边的小地图去别的地方看看。
+state:
+  location: { type: enum, values: [灯塔, 海滩, 村庄], init: 灯塔, label: 地点 }
+  visited:  { type: set, of: string, init: [灯塔], label: 去过 }
+endings:
+  list:
+    - { id: tour, label: 走遍小岛, kind: good, when: "len(state.visited) >= 3" }
+actions:
+  move:
+    label: 前往
+    params: { to: { type: enum, values: [灯塔, 海滩, 村庄] } }
+    require: "params.to != state.location"
+    require_message: 你已经在这里了
+    steps: [ { set: { location: "params.to" } }, { add: { visited: "params.to" } } ]
+ai:
+  entry_points:
+    arrive:
+      kind: narrate
+      trigger: "action:move"
+      prompt: 用一两句话描写玩家刚到达的地方（state.location）。
+      fallback: 你到了新的地方。
+      card: { task: 描写新地点, authority: 0, output: { format: text, max_chars: 200, to: "region:main" } }
+    map_opened:
+      kind: narrate
+      trigger: "ui:map.opened"
+      prompt: 玩家第一次展开小地图，用一句话提示他可以去哪里。
+      fallback: 地图上标着灯塔、海滩和村庄。
+      card: { task: 提示地图用法, authority: 0, output: { format: text, max_chars: 120, to: "region:main" } }
+ui:
+  layout: { template: two-column }
+  components:
+    log:   { type: text-log, region: main, content: ai }
+    map:                     # 自定义组件：故事包里的 HTML/JS/CSS，在沙箱里运行
+      type: custom
+      region: side
+      label: 小地图
+      src: ui/map.html
+      actions: [move]        # 组件只能调用这里列出的动作（还要过动作自己的 require）
+      emits: [opened]        # 组件能发出的事件，AI 用 trigger: "ui:map.opened" 接
+      height: 90
+      config: { title: 小岛 }
+      fallback: 小地图已关闭（设置里关掉了自定义组件）。
+    go1: { type: button, region: side, label: 去灯塔, action: move, params: { to: 灯塔 } }
+    go2: { type: button, region: side, label: 去海滩, action: move, params: { to: 海滩 } }
+    go3: { type: button, region: side, label: 去村庄, action: move, params: { to: 村庄 } }

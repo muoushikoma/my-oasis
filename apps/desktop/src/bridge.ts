@@ -140,8 +140,18 @@ export const bridge = {
     if (isTauri) { const t = await tauri(); return t.invoke("key_delete", { providerId: provider }); }
     sessionStorage.removeItem("devkey:" + provider);
   },
+  /** 自定义组件：Tauri 里经 oasisui:// 协议加载（独立源和 CSP），浏览器开发模式用 srcdoc */
+  async loadCustomFrame(iframe: HTMLIFrameElement, html: string) {
+    if (isTauri) {
+      const core = await import("@tauri-apps/api/core");
+      const token = await core.invoke<string>("ui_frame_put", { html });
+      iframe.src = core.convertFileSrc(token, "oasisui");
+      return;
+    }
+    iframe.srcdoc = html;
+  },
   // ---------- GitHub 登录与投稿：token 只在 Rust 端和系统安全存储里 ----------
-  async gh<T = any>(cmd: "gh_status" | "gh_device_start" | "gh_device_poll" | "gh_logout" | "gh_submit" | "gh_my_prs", args: Record<string, any> = {}): Promise<T> {
+  async gh<T = any>(cmd: "gh_status" | "gh_device_start" | "gh_device_poll" | "gh_logout" | "gh_submit" | "gh_my_prs" | "gh_like", args: Record<string, any> = {}): Promise<T> {
     if (isTauri) { const t = await tauri(); return t.invoke(cmd, args); }
     return devGh(cmd, args) as T;
   },
@@ -198,6 +208,7 @@ function devGh(cmd: string, args: any): any {
     case "gh_status": return { configured: on, login: st() };
     case "gh_device_start": if (!on) throw new Error("GitHub 登录暂未开放（客户端还没配置登录应用）。不登录也可以浏览、下载和游玩。"); return { device_code: "x", user_code: "WDJB-MJHT", verification_uri: "https://github.com/login/device", expires_in: 900, interval: 1 };
     case "gh_device_poll": sessionStorage.setItem("mockgh:login", "demo-author"); return { status: "ok" };
+    case "gh_like": { const k = "mockgh:like:" + args.issue, n = Number(sessionStorage.getItem(k) ?? "3") + (args.on ? 1 : -1); sessionStorage.setItem(k, String(Math.max(0, n))); return Math.max(0, n); }
     case "gh_logout": sessionStorage.removeItem("mockgh:login"); return null;
     case "gh_submit": { const l = JSON.parse(sessionStorage.getItem("mockgh:prs") ?? "[]"); const pr = { number: 12 + l.length, url: "https://github.com/muoushikoma/my-oasis/pull/" + (12 + l.length), title: "投稿：" + args.title, state: "open", merged: false, checks: "running", updated_at: new Date().toISOString() }; l.unshift(pr); sessionStorage.setItem("mockgh:prs", JSON.stringify(l)); return pr; }
     case "gh_my_prs": return [...JSON.parse(sessionStorage.getItem("mockgh:prs") ?? "[]"), { number: 7, url: "https://github.com/muoushikoma/my-oasis/pull/7", title: "投稿：雨夜书店", state: "closed", merged: true, checks: "passed", updated_at: "2026-10-30T10:00:00Z" }];

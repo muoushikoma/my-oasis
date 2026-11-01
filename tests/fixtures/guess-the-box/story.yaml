@@ -5,6 +5,9 @@ meta:
   version: 1.0.0
   summary: 三次机会，找出藏着钥匙的箱子。
   language: zh-CN
+  est_minutes: 10
+  est_tokens_per_min: 1200
+  ai_role: { zh: AI 负责叙述，并在你打开箱子时描写里面有什么。, en: The AI narrates and describes what you find in each box. }
   rating: all-ages
 start:
   intro: 面前有三个箱子，只有一个里面有钥匙。你有三次机会。
@@ -36,3 +39,15 @@ ui:
         - { label: 二号箱, action: open_box, params: { n: 2 } }
         - { label: 三号箱, action: open_box, params: { n: 3 } }
     stats: { type: stat-list, region: status, bind: [chances] }
+
+ai:
+  entry_points:
+    narrator:
+      kind: narrate
+      trigger: game_end
+      prompt: 用一两句话为结局写一句收尾。
+      fallback: { zh: 故事结束了。, en: The story ends. }
+      card:
+        task: 简短为结局写一句收尾
+        authority: 0
+        output: { format: text, max_chars: 120 }

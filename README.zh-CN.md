@@ -11,10 +11,13 @@
 
 ## 怎么玩
 
-1. 安装客户端。第一次打开时按向导接入你自己的 AI（DeepSeek、通义千问、Kimi、OpenAI 等，或本地模型）；纯规则的故事不需要 AI。
+1. 安装客户端。第一次打开时按向导接入你自己的 AI（DeepSeek、通义千问、Kimi、OpenAI 等，或本地模型）；每个故事都由 AI 讲述，必须先接好 AI 才能玩。
 2. 打开“游玩 → 在线故事库”，**不用登录**就能浏览、下载、游玩。故事目录 `index.json` 在每次合并后自动生成，挂在固定发布 [`story-index`](https://github.com/muoushikoma/my-oasis/releases/tag/story-index) 上（不存进仓库）；客户端默认读它，读不到就直接列出 `main` 分支的 `stories/` 现场生成。故事文件来自 `main` 分支的 `stories/`。
 3. 列表打不开？在顶部换“线路”：GitHub 直连、jsDelivr 加速、GitHub Pages，或填自己的镜像/代理地址。
-4. 也可以在发布页直接下载 `.oasis` 文件，在客户端里导入。
+4. 列表只显示**这台设备能玩**的故事（故事在 `meta.platforms` 里声明支持电脑、手机或两者）。
+5. 喜欢的故事点“☆ 收藏”，收藏只保存在你这台设备上；点“👍 点赞”要先在“创作 → 投稿”里登录 GitHub，点赞数就是仓库里该故事点赞帖（标签 `story-likes` 的 Issue）上的 👍 数，所有玩家共享，不需要服务器。
+6. 屏幕虚拟摇杆默认只在手机上显示，电脑上不显示（“设置”里可改）。
+7. 也可以在发布页直接下载 `.oasis` 文件，在客户端里导入。
 
 ## 怎么投稿
 
@@ -30,7 +33,7 @@
 
 ### 内容规则
 - **只收全年龄故事**（`rating: all-ages`），不收色情内容；
-- 故事名称、简介和标签（正好 3 个）都必须同时写中文和英文（见《故事交付格式》第 11 节）；不收血腥猎奇、仇恨、违法内容和他人隐私。
+- 故事名称、简介、标签（正好 3 个）和 `ai_role`（AI 在故事里做什么）都必须同时写中文和英文（见《故事交付格式》第 11 节）；还要写支持的语言 `languages`、时长 `est_minutes`、每分钟大约多少 token `est_tokens_per_min`，玩家玩之前就能看到；不收血腥猎奇、仇恨、违法内容和他人隐私。
 - 只上传自己创作或有权使用的文字、图片和音乐；绝对不要放 API Key 或密码。
 - 维护者有权拒绝或下架任何故事。
 
@@ -58,7 +61,7 @@ pnpm install
 pnpm typecheck && pnpm test
 cargo test -p oasis-native
 pnpm oasis validate examples/lighthouse-mini
-npm ci --prefix tools/stories && node tools/stories/validate.mjs   # 检查 stories/
+pnpm install && npm ci --prefix tools/stories && pnpm exec tsx tools/stories/validate.mjs   # 检查 stories/
 ```
 API Key、GitHub token 只存在系统安全存储里（Windows 凭据管理器 / 安卓 Keystore），请求由 Rust 端代发。绝不要提交任何 Key 或密码。
 
@@ -66,7 +69,7 @@ API Key、GitHub token 只存在系统安全存储里（Windows 凭据管理器 
 
 | 文档 | 用途 |
 |---|---|
-| ⭐ [故事交付格式](docs/story-format.md) | **写故事只看这一份，可直接交给 AI。** 规定 `.oasis` 故事包的文件结构和字段格式（含 oasis/0.4 实时游戏：循环、定时器、键盘/触摸/摇杆、画布、声音、异步 AI），不限制故事内容 |
+| ⭐ [故事交付格式](docs/story-format.md) | **写故事只看这一份，可直接交给 AI。** 规定 `.oasis` 故事包的文件结构和字段格式（含 oasis/0.4 实时游戏：循环、定时器、键盘/触摸/摇杆、画布、声音、异步 AI）以及故事自带的自定义组件（沙箱里的 HTML/JS），不限制故事内容 |
 | [JSON Schema](docs/schema/story.schema.json) | 故事主文件的机器可读格式定义，客户端和投稿检查都用它校验 |
 | [故事包格式规范（完整版）](docs/ruleset-spec.md) | 每个字段的详细说明，以及引擎怎么执行它们 |
 | [AI 创作指南](docs/ai-authoring-guide.md) | 旧版的 AI 写故事提示词，内容含创作建议，仅供参考 |

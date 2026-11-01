@@ -15,6 +15,8 @@ main{padding:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minm
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
 .cover{aspect-ratio:16/9;background:#2f7d5b22;display:flex;align-items:center;justify-content:center;font-size:42px;color:var(--acc)}
 .cover img{width:100%;height:100%;object-fit:cover}.body{padding:12px 14px;flex:1;display:flex;flex-direction:column;gap:6px}
+.card.click{cursor:pointer}.card.click:hover{border-color:var(--acc)}.brief{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ov{position:fixed;inset:0;background:#0008;display:grid;place-items:center;z-index:10;padding:12px}.ov .panel{background:var(--card);border-radius:14px;padding:16px 18px;width:min(680px,96vw);max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:8px}.cover.big{border-radius:10px;overflow:hidden}table.info{border-collapse:collapse;font-size:14px}table.info{width:100%}table.info th{width:1%;text-align:left;color:var(--muted);font-weight:normal;padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top}table.info td{padding:3px 0}
 .body h3{margin:0;font-size:17px}.tag{font-size:12px;border:1px solid var(--line);border-radius:99px;padding:1px 8px;margin-right:4px}
 .empty{text-align:center;padding:60px 10px}footer{text-align:center;padding:24px;font-size:13px}
 </style></head><body>
@@ -29,8 +31,8 @@ main{padding:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minm
 <main class="wrap"><div id="list"></div></main>
 <footer class="muted wrap" data-t="foot"></footer>
 <script>
-const T={zh:{title:"我的绿洲",tagline:"故事引擎 · 走进故事，规则由作者决定",dl:"下载客户端（Windows / 安卓）",submit:"如何投稿",src:"源代码（开源）",empty:"暂无故事，欢迎投稿！",get:"下载 .oasis",big:"大型故事，请在客户端下载",by:"作者",ai:"需要 AI",noai:"纯规则",rating:{"all-ages":"全年龄"},foot:"非盈利开源项目。故事版权归各自作者所有。下载 .oasis 后在客户端「游玩 → 导入」打开。",load:"加载中…",err:"读取故事目录失败"},
-en:{title:"My Oasis",tagline:"A story engine · step inside stories, rules set by authors",dl:"Download the app (Windows / Android)",submit:"How to submit",src:"Source code",empty:"No stories yet — submissions welcome!",get:"Download .oasis",big:"Large story — get it in the app",by:"by",ai:"Needs AI",noai:"Rules only",rating:{"all-ages":"All ages"},foot:"A non-profit open-source project. Stories are copyright of their authors. Open a downloaded .oasis via Play → Import in the app.",load:"Loading…",err:"Failed to load the story index"},};
+const T={zh:{title:"我的绿洲",tagline:"故事引擎 · 走进故事，规则由作者决定",dl:"下载客户端（Windows / 安卓）",submit:"如何投稿",src:"源代码（开源）",empty:"暂无故事，欢迎投稿！",get:"下载 .oasis",big:"大型故事，请在客户端下载",by:"作者",ai:"AI 故事",rating:{"all-ages":"全年龄"},foot:"非盈利开源项目。故事版权归各自作者所有。下载 .oasis 后在客户端「游玩 → 导入」打开。",load:"加载中…",err:"读取故事目录失败",plat:"支持平台",pf:{desktop:"电脑",mobile:"手机"},langs:"语言",ln:{zh:"中文",en:"英文",ja:"日文",ko:"韩文"},airole:"AI 做什么",min:n=>`约 ${n} 分钟`,tpm:n=>`约 ${n>=1e4?+(n/1e4).toFixed(1)+" 万":n} token/分钟`,tpmh:"每分钟 AI 用量（作者估计）",cw:"内容提示",more:"详细信息",mint:"游玩时长",ver:"版本",likehint:"点赞和收藏请在客户端「在线故事库」里操作"},
+en:{title:"My Oasis",tagline:"A story engine · step inside stories, rules set by authors",dl:"Download the app (Windows / Android)",submit:"How to submit",src:"Source code",empty:"No stories yet — submissions welcome!",get:"Download .oasis",big:"Large story — get it in the app",by:"by",ai:"AI story",rating:{"all-ages":"All ages"},foot:"A non-profit open-source project. Stories are copyright of their authors. Open a downloaded .oasis via Play → Import in the app.",load:"Loading…",err:"Failed to load the story index",plat:"Platforms",pf:{desktop:"Desktop",mobile:"Mobile"},langs:"Languages",ln:{zh:"Chinese",en:"English",ja:"Japanese",ko:"Korean"},airole:"What the AI does",min:n=>`~${n} min`,tpm:n=>`~${n>=1e3?+(n/1e3).toFixed(1)+"k":n} tokens/min`,tpmh:"AI usage per minute (author estimate)",cw:"Content notes",more:"Details",mint:"Play time",ver:"Version",likehint:"Like and favorite stories in the app's online library"},};
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let lang=["zh","en"].includes(localStorage.lang)?localStorage.lang:((navigator.language||"").toLowerCase().startsWith("zh")?"zh":"en"),idx=null;
 // 故事文字可以是普通字符串或 {zh,en}；缺当前语言时用另一种
@@ -41,6 +43,24 @@ function draw(){const t=T[lang];document.documentElement.lang=lang==="zh"?"zh-CN
  if(!idx){L.innerHTML=`<p class="muted">${t.load}</p>`;return}
  if(idx.error){L.innerHTML=`<p class="empty muted">${t.err}</p>`;return}
  if(!idx.stories.length){L.innerHTML=`<p class="empty muted">${t.empty}</p>`;return}
- L.innerHTML='<div class="grid">'+idx.stories.map(s=>`<div class="card"><div class="cover">${s.cover?`<img loading="lazy" src="${esc(s.cover)}" alt="">`:esc((tx(s.title)||"?").slice(0,1))}</div><div class="body"><h3>${esc(tx(s.title))}</h3><div><span class="tag">${esc(t.rating[s.rating]||s.rating||"")}</span><span class="tag">${s.ai?t.ai:t.noai}</span></div>${(s.tags||[]).length?`<div>${s.tags.map(g=>`<span class="tag">#${esc(tx(g))}</span>`).join("")}</div>`:""}<div class="muted">${esc(tx(s.summary))}</div><div class="muted" style="font-size:13px">${t.by} ${esc(s.author||"—")} · v${esc(s.version)}</div><div class="sp"></div><a class="btn pri" href="${esc(s.download)}" ${s.external?'target="_blank" rel="noopener"':"download"}>${s.external?t.big:t.get}</a></div></div>`).join("")+"</div>"}
+ L.innerHTML='<div class="grid">'+idx.stories.map((s,i)=>`<div class="card click" tabindex="0" role="button" data-i="${i}"><div class="cover">${coverHtml(s)}</div><div class="body"><h3>${esc(tx(s.title))}</h3>${(s.tags||[]).length?`<div>${s.tags.map(g=>`<span class="tag">#${esc(tx(g))}</span>`).join("")}</div>`:""}<div class="muted brief">${esc(tx(s.summary))}</div></div></div>`).join("")+"</div>";
+ L.querySelectorAll(".card.click").forEach(c=>{const o=()=>detail(idx.stories[+c.dataset.i]);c.onclick=o;c.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();o()}}});
+ if(cur)detail(cur)}
+const coverHtml=s=>s.cover?`<img loading="lazy" src="${esc(s.cover)}" alt="">`:esc((tx(s.title)||"?").slice(0,1));
+// 长介绍：纯文本（空行分段，# 小标题，- 列表），全部转义
+const desc=v=>{const x=tx(v).trim();if(!x)return"";return x.split(/\n\s*\n/).map(b=>{const L=b.split("\n");if(L.every(l=>/^\s*[-*] /.test(l)))return"<ul>"+L.map(l=>`<li>${esc(l.replace(/^\s*[-*] /,""))}</li>`).join("")+"</ul>";if(L.length===1&&/^#{1,6} /.test(L[0]))return`<h4>${esc(L[0].replace(/^#+ /,""))}</h4>`;return`<p style="white-space:pre-wrap">${esc(b)}</p>`}).join("")};
+let cur=null;
+function detail(s){cur=s;const t=T[lang];let d=document.getElementById("detail");if(!d){d=document.createElement("div");d.id="detail";d.className="ov";document.body.append(d);d.onclick=e=>{if(e.target===d)closeDetail()}}
+ const row=(k,v)=>v?`<tr><th>${k}</th><td>${v}</td></tr>`:"";
+ const langs=(s.languages||[]).map(l=>esc(t.ln[l.split("-")[0]]||l)).join(" / ");
+ const plats=((s.platforms||[]).length?s.platforms:["desktop","mobile"]).map(p=>esc(t.pf[p]||p)).join(" / ");
+ d.innerHTML=`<div class="panel"><div style="display:flex;gap:8px;align-items:center"><h2 style="flex:1;margin:0">${esc(tx(s.title))}</h2><button class="btn" id="dx" aria-label="close">✕</button></div>${s.cover?`<div class="cover big">${coverHtml(s)}</div>`:""}
+ ${(s.tags||[]).length?`<div>${s.tags.map(g=>`<span class="tag">#${esc(tx(g))}</span>`).join("")}<span class="tag">${t.ai}</span><span class="tag">${esc(t.rating[s.rating]||s.rating||"")}</span></div>`:""}
+ <p>${esc(tx(s.summary))}</p>${desc(s.description)}
+ <table class="info">${row("🤖 "+t.airole,esc(tx(s.ai_role)))}${row("🌐 "+t.langs,langs)}${row("⏱ "+t.mint,s.est_minutes?t.min(+s.est_minutes):"")}${row("🔢 "+t.tpmh,s.est_tokens_per_min?t.tpm(+s.est_tokens_per_min):"")}${row("💻 "+t.plat,plats)}${row("⚠️ "+t.cw,(s.content_warnings||[]).map(w=>esc(tx(w))).join(", "))}${row(t.by,esc(s.author||"—"))}${row(t.ver,"v"+esc(s.version))}</table>
+ <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn pri" href="${esc(s.download)}" ${s.external?'target="_blank" rel="noopener"':"download"}>${s.external?t.big:t.get}</a><span class="muted" style="font-size:13px;align-self:center">${t.likehint}</span></div></div>`;
+ d.querySelector("#dx").onclick=closeDetail}
+function closeDetail(){cur=null;document.getElementById("detail")?.remove()}
+addEventListener("keydown",e=>{if(e.key==="Escape")closeDetail()});
 draw();fetch("index.json",{cache:"no-cache"}).then(r=>r.json()).then(j=>{idx=j;draw()}).catch(()=>{idx={error:1};draw()});
 </script></body></html>

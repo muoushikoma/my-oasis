@@ -22,7 +22,7 @@ export function missingLangs(v: unknown): Lang[] | null {
 
 /** 故事里所有玩家可见文字字段的位置（用于本地化与检查） */
 const TEXT_KEYS: Record<string, string[]> = {
-  meta: ["title", "summary"], start: ["intro"], state: ["label", "desc"], param: ["desc"],
+  meta: ["title", "summary", "ai_role", "description"], start: ["intro"], state: ["label", "desc"], param: ["desc"],
   action: ["label", "desc", "require_message"], ending: ["label", "text"], entry: ["fallback", "opening"],
   asset: ["alt"], image: ["alt"], component: ["label", "placeholder", "title", "text"],
 };
@@ -68,8 +68,21 @@ export function localizeStory<T>(story: T, lang: Lang = "zh"): T {
 /** 故事支持哪些语言：meta.languages，否则按 meta.language 推断 */
 export function storyLangs(story: any): Lang[] {
   const l = story?.meta?.languages;
-  if (Array.isArray(l) && l.length) return l.filter((x: any) => x === "zh" || x === "en");
+  if (Array.isArray(l) && l.length) { const r = [...new Set(l.map((x: any) => String(x).split("-")[0]).filter((x: string) => x === "zh" || x === "en"))] as Lang[]; if (r.length) return r; }
   return [String(story?.meta?.language ?? "zh").startsWith("en") ? "en" : "zh"];
+}
+/** 故事声明支持的全部语言代码（含 ja 等，不限于界面能切换的 zh/en）；旧写法 language: zh-CN → [zh] */
+export function metaLanguages(meta: any): string[] {
+  if (Array.isArray(meta?.languages) && meta.languages.length) return meta.languages.map(String);
+  return typeof meta?.language === "string" && meta.language ? [meta.language.split("-")[0]] : [];
+}
+const LANG_NAMES: Record<string, [string, string]> = { zh: ["中文", "Chinese"], en: ["英文", "English"], ja: ["日文", "Japanese"], ko: ["韩文", "Korean"], fr: ["法文", "French"], de: ["德文", "German"], es: ["西班牙文", "Spanish"], ru: ["俄文", "Russian"] };
+export function langName(code: string, ui: Lang = "zh"): string { const n = LANG_NAMES[code.split("-")[0]]; return n ? n[ui === "en" ? 1 : 0] : code; }
+/** 每分钟 token 的易读写法：约 2000 token/分钟、约 1.2 万 token/分钟 */
+export function fmtTokensPerMin(n: number, ui: Lang = "zh"): string {
+  if (!(n > 0)) return "";
+  if (ui === "en") return `~${n >= 1000 ? `${+(n / 1000).toFixed(1)}k` : Math.round(n)} tokens/min`;
+  return `约 ${n >= 10000 ? `${+(n / 10000).toFixed(1)} 万` : Math.round(n)} token/分钟`;
 }
 
 /** 公开故事库（投稿）的额外要求；本地导入不受限。与 tools/stories/validate.mjs 保持一致。 */
@@ -80,6 +93,10 @@ export function libraryProblems(story: any): string[] {
   if (!both(m.summary)) out.push("简介 meta.summary 要同时写中文和英文：summary: { zh: …, en: … }");
   if (!Array.isArray(m.tags) || m.tags.length !== 3) out.push(`标签 meta.tags 必须正好 3 个（现在 ${Array.isArray(m.tags) ? m.tags.length : 0} 个）`);
   else m.tags.forEach((t: unknown, i: number) => { if (!both(t)) out.push(`第 ${i + 1} 个标签要同时写中文和英文：{ zh: 悬疑, en: Mystery }`); });
+  if (!metaLanguages(m).length) out.push("支持的语言 meta.languages 必须写，例如 languages: [zh, en]");
+  if (!both(m.ai_role)) out.push("AI 在故事里做什么 meta.ai_role 要同时写中文和英文（各一两句），例如 ai_role: { zh: AI 扮演守灯老人并叙述剧情, en: The AI plays the old keeper and narrates }");
+  if (!Number.isInteger(m.est_minutes) || m.est_minutes < 1) out.push("大概要玩多久 meta.est_minutes 必须写（整数，分钟），例如 est_minutes: 20");
+  if (!Number.isInteger(m.est_tokens_per_min) || m.est_tokens_per_min < 1) out.push("每分钟大约用多少 token meta.est_tokens_per_min 必须写（整数），例如 est_tokens_per_min: 2000");
   if (m.rating !== "all-ages") out.push(`故事库只收全年龄（rating: all-ages）的故事（现在是 "${m.rating ?? ""}"）`);
   return out;
 }
@@ -87,7 +104,7 @@ export function libraryProblems(story: any): string[] {
 export function libraryWarnings(story: any): string[] {
   const out: string[] = [];
   mapStoryTexts(story, (p, v) => {
-    if (p === "meta.title" || p === "meta.summary" || p.startsWith("meta.tags")) return v;
+    if (p === "meta.title" || p === "meta.summary" || p === "meta.ai_role" || p.startsWith("meta.tags")) return v;
     const miss = missingLangs(v);
     if (miss === null && typeof v === "string" && v.trim()) out.push(`${p} 只有一种语言`);
     else if (miss?.length) out.push(`${p} 缺少 ${miss.join("、")}`);

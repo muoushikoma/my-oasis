@@ -11,7 +11,7 @@ export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg", ".gif", ".avif"];
 export const AUDIO_EXT = [".ogg", ".mp3", ".m4a", ".wav", ".flac", ".opus"];
 export const TEXT_EXT = [".yaml", ".yml", ".json", ".md", ".txt"];
 /** 与客户端一致：脚本和字体也可以放进故事包 */
-export const SCRIPT_EXT = [".js", ".ts", ".lua", ".py"];
+export const SCRIPT_EXT = [".js", ".ts", ".lua", ".py", ".html", ".htm", ".css"];
 export const FONT_EXT = [".woff2", ".woff", ".ttf", ".otf"];
 export const VIDEO_EXT = [".webm", ".mp4"];
 export const ID_RE = /^[a-z][a-z0-9-]{2,63}$/;

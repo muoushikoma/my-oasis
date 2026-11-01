@@ -9,8 +9,8 @@ use std::time::Duration;
 /// 投稿目标仓库（代码与故事同一个公开仓库）
 pub const UPSTREAM_OWNER: &str = "muoushikoma";
 pub const UPSTREAM_REPO: &str = "my-oasis";
-/// OAuth App 的 Client ID（公开信息，不是密钥）。GitHub Bot 登记应用后填入；为空时客户端提示“登录暂未开放”。
-pub const CLIENT_ID: &str = match option_env!("OASIS_GITHUB_CLIENT_ID") { Some(s) => s, None => "" };
+/// OAuth App 的 Client ID（公开信息，不是密钥）。构建时可用 OASIS_GITHUB_CLIENT_ID 覆盖；默认用本仓库登记的应用。
+pub const CLIENT_ID: &str = match option_env!("OASIS_GITHUB_CLIENT_ID") { Some(s) if !s.is_empty() => s, _ => "Ov23lix1IQ8cEIKBD3Rw" };
 /// 公开仓库只需 public_repo：用于 fork、建分支、提交 PR
 pub const SCOPE: &str = "public_repo";
 
@@ -152,6 +152,28 @@ impl Gh {
             state: p["state"].as_str().unwrap_or_default().into(), merged: p["merged"].as_bool().unwrap_or(false), checks, updated_at: p["updated_at"].as_str().unwrap_or_default().into() })
     }
     /// 我提交到主仓库的投稿（最近 20 个）
+    /// 点赞：给故事对应的点赞 Issue（标签 story-likes）加/去掉 👍。返回操作后的 👍 总数。
+    pub async fn like(&self, token: &str, issue: u64, on: bool) -> Result<u64> {
+        let base = format!("/repos/{UPSTREAM_OWNER}/{UPSTREAM_REPO}/issues/{issue}");
+        let v = self.ok(token, reqwest::Method::GET, &base, None).await?;
+        if !v["labels"].as_array().into_iter().flatten().any(|l| l["name"] == "story-likes") { return msg("这个 Issue 不是故事点赞帖"); }
+        if on {
+            self.ok(token, reqwest::Method::POST, &format!("{base}/reactions"), Some(json!({ "content": "+1" }))).await?;
+        } else {
+            let me = self.login(token).await?;
+            for page in 1..=10 {
+                let list = self.ok(token, reqwest::Method::GET, &format!("{base}/reactions?content=%2B1&per_page=100&page={page}"), None).await?;
+                let arr = list.as_array().cloned().unwrap_or_default();
+                if let Some(r) = arr.iter().find(|r| r["user"]["login"].as_str() == Some(me.as_str())) {
+                    if let Some(rid) = r["id"].as_u64() { self.ok(token, reqwest::Method::DELETE, &format!("{base}/reactions/{rid}"), None).await?; }
+                    break;
+                }
+                if arr.len() < 100 { break; }
+            }
+        }
+        let v = self.ok(token, reqwest::Method::GET, &base, None).await?;
+        Ok(v["reactions"]["+1"].as_u64().unwrap_or(0))
+    }
     pub async fn my_prs(&self, token: &str) -> Result<Vec<PrInfo>> {
         let me = self.login(token).await?;
         let q = format!("repo:{UPSTREAM_OWNER}/{UPSTREAM_REPO} is:pr author:{me}");

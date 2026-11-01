@@ -1,12 +1,15 @@
 // 在线故事库：目录读 Release story-index 的 index.json（读不到就列出 stories/ 现场生成），故事文件读本仓库 main 的 stories/
-import { filesFromZip, validateFiles, type StoryFiles } from "@my-oasis/schema";
+import { filesFromZip, validateFiles, metaLanguages, type StoryFiles } from "@my-oasis/schema";
 import { bridge } from "./bridge";
 const dec = new TextDecoder();
 import { h, toast } from "./dom";
 import { loadSettings, saveSettings, tr, trList } from "./settings";
 import type { LocalText } from "@my-oasis/schema";
+import { briefCard, openDetail } from "./story-info";
+import { playableHere, platformText, currentPlatform, PLATFORM_LABEL } from "./platform";
+import { fetchLikes, isFavorite, toggleFavorite, likedLocally, setLike, type LikeInfo } from "./social";
 
-export interface OnlineStory { id: string; title: LocalText; summary?: LocalText; author?: string; version?: string; rating?: string; language?: string; tags?: LocalText[]; ai?: boolean; cover?: string; files: { path: string; size?: number }[]; updated?: string }
+export interface OnlineStory { id: string; title: LocalText; summary?: LocalText; author?: string; version?: string; rating?: string; language?: string; languages?: string[]; description?: LocalText; est_minutes?: number; est_tokens_per_min?: number; ai_role?: LocalText; content_warnings?: LocalText[]; tags?: LocalText[]; platforms?: ("desktop" | "mobile")[]; ai?: boolean; cover?: string; files: { path: string; size?: number }[]; updated?: string }
 export interface OnlineIndex { format: string; updated?: string; stories: OnlineStory[] }
 
 export const REPO = "muoushikoma/my-oasis";
@@ -67,7 +70,7 @@ export async function indexFromListing(files: { path: string; size?: number }[],
     if (cover.startsWith("asset:")) { const a = data?.assets?.[cover.slice(6)]; cover = typeof a === "string" ? a : a?.path ?? a?.src ?? ""; }
     cover = cover && !cover.includes("..") && list.some((f) => f.path === `stories/${id}/${cover}`) ? `stories/${id}/${cover}` : "";
     stories.push({ id, title: m.title ?? id, summary: m.summary ?? "", author: Array.isArray(m.authors) ? m.authors.join("、") : (m.author ?? ""), version: m.version ?? "",
-      rating: m.rating ?? "", language: m.language ?? "", tags: Array.isArray(m.tags) ? m.tags : [], ai: !!(data?.ai && Object.keys(data.ai).length) || /"content":"ai"/.test(JSON.stringify(data ?? {})),
+      rating: m.rating ?? "", language: m.language ?? "", languages: metaLanguages(m), est_minutes: m.est_minutes, est_tokens_per_min: m.est_tokens_per_min, ai_role: m.ai_role, description: m.description, content_warnings: Array.isArray(m.content_warnings) ? m.content_warnings : [], tags: Array.isArray(m.tags) ? m.tags : [], platforms: Array.isArray(m.platforms) ? m.platforms : [], ai: !!(data?.ai && Object.keys(data.ai).length) || /"content":"ai"/.test(JSON.stringify(data ?? {})),
       cover, files: [...list].sort((a, b) => a.path.localeCompare(b.path)) });
   }
   return { format: "oasis-index/1", stories };
@@ -115,10 +118,14 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
   const list = h("div", {});
   const q = h("input", { placeholder: "搜索标题、简介、标签", oninput: () => draw() }) as HTMLInputElement;
   let idx: OnlineIndex | null = null;
+  let likes = new Map<string, LikeInfo>(), likesErr = false;
+  const favOnly = h("input", { type: "checkbox", onchange: () => draw() }) as HTMLInputElement;
   const draw = () => {
     if (!idx) return;
     const k = q.value.trim();
-    const items = idx.stories.filter((x) => !k || [x.title, x.summary, ...(x.tags ?? [])].flatMap((v) => (v && typeof v === "object" ? Object.values(v) : [v ?? ""])).join(" ").includes(k));
+    const here = idx.stories.filter((x) => playableHere(x));
+    const hidden = idx.stories.length - here.length;
+    const items = here.filter((x) => !favOnly.checked || isFavorite(x.id)).filter((x) => !k || [x.title, x.summary, ...(x.tags ?? [])].flatMap((v) => (v && typeof v === "object" ? Object.values(v) : [v ?? ""])).join(" ").includes(k));
     list.replaceChildren(items.length ? h("div", { class: "cards" }, ...items.map((st) => {
       const btn = h("button", { class: "primary" }, "下载并加入故事库") as HTMLButtonElement;
       btn.onclick = async () => {
@@ -127,25 +134,37 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
         catch (e: any) { toast(`下载失败：${e.message}。可以在上方换一个线路再试`, "err"); }
         btn.disabled = false; btn.textContent = "下载并加入故事库";
       };
+      const fav = h("button", { title: "收藏只保存在这台设备上" }, isFavorite(st.id) ? "★ 已收藏" : "☆ 收藏") as HTMLButtonElement;
+      fav.onclick = () => { const on = toggleFavorite(st.id); fav.textContent = on ? "★ 已收藏" : "☆ 收藏"; if (favOnly.checked) draw(); };
+      const li = likes.get(st.id);
+      const like = h("button", { title: li ? "用 GitHub 账号点赞（所有玩家共享计数）" : likesErr ? "点赞数读取失败" : "这个故事的点赞帖还没建好" }) as HTMLButtonElement;
+      let liked = likedLocally(st.id);
+      const showLike = (n?: number) => (like.textContent = `${liked ? "👍 已赞" : "👍 点赞"}${n != null ? ` ${n}` : ""}`);
+      showLike(li?.count); like.disabled = !li;
+      like.onclick = async () => {
+        if (!li) return; like.disabled = true;
+        try { const n = await setLike(st.id, li.issue, !liked); liked = !liked; li.count = n; showLike(n); }
+        catch (e: any) { toast(e?.message ?? String(e), "err"); }
+        like.disabled = false;
+      };
       const size = st.files.reduce((a, f) => a + (f.size ?? 0), 0);
       const ph = h("div", { class: "cover ph" }, (tr(st.title).replace(/^[\s(（【\[]*(?:[^)）】\]]*[)）】\]])?\s*/, "") || tr(st.title)).slice(0, 1));
       const cover = st.cover && /^stories\/[a-z0-9-]+\/[^?#]+$/.test(st.cover) && !st.cover.includes("..") ? (() => { const img = h("img", { class: "cover", alt: "" }) as HTMLImageElement; bridge.netGet(source().file(st.cover!)).then((b) => { img.src = URL.createObjectURL(new Blob([b as BlobPart])); }).catch(() => img.replaceWith(ph)); return img; })() : ph;
-      return h("div", { class: "story-card" }, cover,
-        h("div", { class: "info" },
-          h("h3", {}, tr(st.title), st.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
-          h("p", { class: "muted" }, tr(st.summary)),
-          h("p", { class: "small muted" }, `作者 ${st.author ?? "未署名"} · 版本 ${st.version ?? "?"}${size ? ` · ${size < 1048576 ? Math.max(1, Math.round(size / 1024)) + " KB" : (size / 1048576).toFixed(1) + " MB"}` : ""}${st.tags?.length ? ` · ${trList(st.tags).join("、")}` : ""}`),
-          h("div", { class: "row" }, btn)));
-    })) : h("p", { class: "muted" }, idx.stories.length ? "没有找到匹配的故事。" : "在线故事库里还没有故事。欢迎到“创作 → 投稿”成为第一个投稿的作者！"));
+      return briefCard(cover, tr(st.title), st, () => openDetail({ title: tr(st.title), cover: cover.cloneNode(true) as HTMLElement, meta: st, storyId: st.id,
+        lines: [`作者 ${st.author || "未署名"} · 版本 ${st.version ?? "?"}${size ? ` · ${size < 1048576 ? Math.max(1, Math.round(size / 1024)) + " KB" : (size / 1048576).toFixed(1) + " MB"}` : ""}`],
+        buttons: [btn, fav, like] }));
+    })) : h("p", { class: "muted" }, idx.stories.length ? (favOnly.checked ? "没有符合条件的收藏。" : "没有找到这台设备能玩的匹配故事。") : "在线故事库里还没有故事。欢迎到“创作 → 投稿”成为第一个投稿的作者！"));
+    if (hidden) list.append(h("p", { class: "small muted" }, `另有 ${hidden} 个故事不支持${PLATFORM_LABEL[currentPlatform()]}，已隐藏。`));
   };
   const load = async () => {
     custom.style.display = (loadSettings() as any).storeMirror === "custom" ? "" : "none";
     list.replaceChildren(h("p", { class: "muted" }, "正在读取在线故事库…"));
+    fetchLikes().then((m) => { likes = m; likesErr = false; draw(); }).catch(() => { likesErr = true; });
     try { idx = await fetchIndex(); draw(); if ((idx as any).fallback) list.prepend(h("p", { class: "small muted" }, "（没读到现成的故事目录，已直接列出仓库里的故事）")); }
     catch (e: any) { idx = null; list.replaceChildren(h("div", { class: "notice" }, `读取失败：${e.message}。国内访问 GitHub 可能较慢，可以在上方换成“jsDelivr 加速”或自定义代理再试。`), h("div", { class: "row" }, h("button", { onclick: load }, "重试"))); }
   };
   root.append(h("div", { class: "row" }, h("span", {}, "线路："), mirrorSel, custom, h("button", { onclick: load }, "刷新")), h("p", { class: "small muted" }, `故事来自公开仓库 github.com/${REPO}，不用登录就能浏览和下载；投稿经维护者审核合并后才会出现在这里。下载的故事和本地导入的一样会先检查格式。`),
-    h("div", { class: "row" }, q), list);
+    h("div", { class: "row" }, q, h("label", {}, favOnly, " 只看收藏")), list);
   load();
   return root;
 }

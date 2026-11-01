@@ -38,7 +38,7 @@ my-story.oasis
 | `endings` | | `{ list?: [结局…], check_on?, script? }`，可以没有，见第 4 节 |
 | `assets` | | 素材登记，见第 5 节 |
 | `actions` | | 动作，见第 6 节 |
-| `ai` | | AI 接入点，见第 7 节。不写就是纯规则、不用 AI 的故事 |
+| `ai` | 是 | AI 接入点，见第 7 节。**必填**：每个故事都必须至少有一个 AI 接入点（`ai.entry_points`），平台不再收纯规则故事 |
 | `ui` | | 界面，见第 8 节。不写就用默认模板 |
 | `scripts` | | `{ limits: { time_ms: 1–200, memory_mb: 4–64 } }` |
 | `start` | | `{ intro: 文字, do: 步骤 }` |
@@ -57,15 +57,18 @@ id 的通用格式：状态、动作、素材、接入点、组件这些的 id �
 | `id` | ✅ | `^[a-z][a-z0-9-]{2,63}$`，例如 `rainy-bookshop`。投稿时必须和文件夹名一样 |
 | `title` | ✅ | 故事名称。字符串，或中英双语 `{ zh: 雨夜书店, en: Rainy Bookshop }`（**投稿故事库必须中英都写**） |
 | `version` | ✅ | `x.y.z` 格式 |
-| `summary` | ✅ | 简介。字符串或 `{ zh: …, en: … }`（**投稿故事库必须中英都写**） |
-| `language` | ✅ | 主要语言，例如 `zh-CN`、`en` |
-| `languages` | | 故事支持的语言，例如 `[zh, en]`（见第 11 节） |
+| `summary` | ✅ | 一句话简介（列表卡片只显示名称、标签和简介，点开才是详情）。字符串或 `{ zh: …, en: … }`（**投稿故事库必须中英都写**） |
+| `languages` | ✅ | 故事（和 AI 回复）支持的语言列表，例如 `[zh, en]`、`[zh, en, ja]`。**旧写法** `language: zh-CN`（一个字符串）仍然可以用，相当于 `languages: [zh]`；两个都不写会报错 `meta_languages`。客户端界面目前能切换中文/英文 |
+| `ai_role` | 投稿必填 | AI 在故事里做什么，一两句话（≤ 120 字），如 `{ zh: AI 扮演守灯老人并叙述剧情, en: The AI plays the old keeper and narrates }`。**投稿故事库必须中英都写** |
+| `est_minutes` | 投稿必填 | 玩一遍大概多少分钟（整数 1–600） |
+| `est_tokens_per_min` | 投稿必填 | **每分钟**大约用多少 AI token（输入 + 输出，整数），例如 `2000`。显示为“约 2000 token/分钟”，客户端还会显示玩家自己的实测平均值 |
+| `description` | | 详情页里的长介绍（字符串或 `{ zh, en }`，≤ 4000 字）。纯文本：空行分段，`# ` 开头当小标题，`- ` 开头当列表；不支持 HTML |
+| `platforms` | | 支持的平台：`desktop`（电脑）、`mobile`（手机），可写一个或两个，例如 `[desktop, mobile]`；不写 = 两端都支持。客户端只列出、只加载当前设备能玩的故事，发布页会显示支持平台 |
 | `rating` | ✅ | `all-ages`、`teen` 或 `mature`（`mature` 时 `content_warnings` 必填）。**公开故事库只收 `all-ages`（全年龄）**，其他分级只能本地导入 |
 | `tags` | | 标签数组，每项是字符串或 `{ zh, en }`。**投稿故事库必须正好 3 个，每个中英都写** |
 | `authors` / `content_warnings` | | 字符串数组（`content_warnings` 每项也可写 `{ zh, en }`） |
 | `cover` | | 包内图片的路径 |
 | `setting` | | 包内文件的路径，内容是世界观设定文本 |
-| `est_minutes` | | 整数 |
 | `min_engine` | | `x.y.z` 格式 |
 | `license` | | 字符串 |
 
@@ -165,7 +168,8 @@ ai:
   - `two-column`：`main`、`input`、`side`
   - `stage`：`top`、`main`、`input`、`side`
 - `components` 的写法是 `组件id: { type, region, content?, … }`：
-  - `type` 可选 `text-log`、`text-input`、`button`、`choice-buttons`、`stat-list`、`stat-bar`、`item-list`、`chat-box`、`text-block`、`image`、`dice-log`、`canvas`（0.4，见第 10 节）。
+  - `type` 可选 `text-log`、`text-input`、`button`、`choice-buttons`、`stat-list`、`stat-bar`、`item-list`、`chat-box`、`text-block`、`image`、`dice-log`、`canvas`（0.4，见第 10 节）、`custom`（作者自带的 HTML/JS 组件，见下面）。
+  - `custom`：`{ type: custom, region, src: ui/map.html, actions: [动作id], emits: [事件名], config: {...}, height, fallback }`。组件在沙箱 iframe 里运行，不能联网，只能用 `window.oasis` 读玩家可见的状态（`oasis.state`、`oasis.onState(cb)`）、调用 `actions` 里的动作（`await oasis.action('move', { to: '海滩' })`）、发 `emits` 里的事件（`oasis.emit('opened', 数据)`，AI 用 `trigger: "ui:map.opened"` 接）。玩家可在设置里关掉自定义组件，此时显示 `fallback`。完整接口见 ruleset-spec §13.3，示例 `tests/fixtures/custom-ui-mini/`。
   - `content` 可选 `fixed`（默认）或 `ai`。**AI 输出的目标组件必须写 `content: ai`**。
   - `text-input` 和 `chat-box` 可选 `input: { actions: [动作id…], reject: 超出范围时的回应文字, words?, max_length? }`。不写时，玩家文字不能触发任何动作（仍可交给 AI 接入点）。
   - 其他字段：`label`、`placeholder`、`writes`、`action`、`emit`、`choices`、`from_ai`、`bind`、`title`、`portrait`、`text`、`src`、`images`、`fit`、`generated`、`hidden_by_default`、`player_can_hide`。
@@ -200,13 +204,15 @@ meta:
   title: { zh: 示例故事, en: Sample Story }
   version: 1.0.0
   summary: { zh: 一句话简介。, en: A one-line summary. }
-  language: zh-CN
   languages: [zh, en]
+  est_minutes: 15
+  est_tokens_per_min: 1500
+  ai_role: { zh: AI 负责叙述剧情，并在你打开箱子时描写结果。, en: The AI narrates the story and describes what you find in each box. }
   rating: all-ages
   tags:
     - { zh: 悬疑, en: Mystery }
     - { zh: 短篇, en: Short }
-    - { zh: 纯规则, en: Rules only }
+    - { zh: 冒险, en: Adventure }
   cover: assets/cover.png
 assets:
   cover:
@@ -311,7 +317,7 @@ realtime:
 ```yaml
 input:
   keys: { ArrowLeft: left, KeyA: left, Space: jump }   # 键盘按键（KeyboardEvent.code）→ 作者自己起的名字
-  joystick: true                                      # 屏幕虚拟摇杆；或 { side: left | right }
+  joystick: true                                      # 屏幕虚拟摇杆（默认只在手机上显示，电脑上不显示；玩家可在设置里改）；或 { side: left | right }
   buttons: [ { id: jump, label: 跳 } ]                 # 屏幕按钮，最多 8 个；id 和 keys 的名字可以相同
   pointer: true                                       # 在画布上点击/触摸
 ```

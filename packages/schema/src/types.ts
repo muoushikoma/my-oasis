@@ -47,7 +47,7 @@ export interface UiDef {
 }
 export interface Story {
   spec: "oasis/0.3" | "oasis/0.4";
-  meta: { id: string; title: import("./i18n.js").LocalText; version: string; summary: import("./i18n.js").LocalText; language: string; languages?: ("zh" | "en")[]; tags?: import("./i18n.js").LocalText[]; rating: string; [k: string]: any };
+  meta: { id: string; title: import("./i18n.js").LocalText; version: string; summary: import("./i18n.js").LocalText; language: string; languages?: string[]; /** 每分钟大约多少 token */ est_tokens_per_min?: number; /** AI 在故事里做什么（一两句） */ ai_role?: import("./i18n.js").LocalText; est_minutes?: number; /** 支持的平台；不写 = 电脑和手机都支持 */ platforms?: ("desktop" | "mobile")[]; tags?: import("./i18n.js").LocalText[]; rating: string; [k: string]: any };
   uses?: string[]; random?: { seed?: "auto" | number }; start?: { intro?: string; do?: Step[] };
   state: Record<string, StateDef>; actions?: Record<string, ActionDef>; events?: EventDef[];
   endings: { check_on?: "state_change" | "turn_end" | "manual"; list: EndingDef[]; script?: string };

@@ -1,9 +1,17 @@
-// 校验所有故事（PR 时自动运行）。用法：node tools/stories/validate.mjs [故事id ...]
+// 校验所有故事（PR 时自动运行）。用法：pnpm exec tsx tools/stories/validate.mjs [故事id ...]
+// 除了投稿规则，还跑一遍客户端导入时用的完整校验器（packages/schema 的 validateFiles：必须接 AI、动作/结局、自定义组件……），有错误就不通过。
 import fs from "node:fs";
 import path from "node:path";
 import Ajv2020Mod from "ajv/dist/2020.js";
 import { ROOT, STORIES, LIMITS, IMAGE_EXT, AUDIO_EXT, TEXT_EXT, SCRIPT_EXT, FONT_EXT, VIDEO_EXT, ID_RE, storyDirs, listFiles, readStory } from "./common.mjs";
 
+let engine;
+try {
+  engine = { ...(await import("../../packages/schema/src/index.ts")), ...(await import("../../packages/schema/src/node.ts")) };
+} catch (e) {
+  console.log(`❌ 载入完整校验器失败（需要先 pnpm install，并用 tsx 运行：pnpm exec tsx tools/stories/validate.mjs）：${e.message}`);
+  process.exit(1);
+}
 const Ajv2020 = Ajv2020Mod.default ?? Ajv2020Mod;
 const schema = JSON.parse(fs.readFileSync(path.join(ROOT, "docs/schema/story.schema.json"), "utf8"));
 const check = new Ajv2020({ allErrors: true, strict: false }).compile(schema);
@@ -13,7 +21,7 @@ const ids = only.length ? only : storyDirs();
 let bad = 0;
 const files_ok = (dir) => listFiles(dir).length;
 const isLT = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0 && Object.keys(v).every((k) => (k === "zh" || k === "en") && typeof v[k] === "string");
-const both = (v) => isLT(v) && !!v.zh?.trim() && !!v.en?.trim();
+
 /** 粗略找出只有一种语言的玩家可见文字（只提醒） */
 function singleLangTexts(d) {
   const out = [], KEYS = new Set(["label", "desc", "text", "title", "intro", "placeholder", "reject", "require_message", "opening", "fallback", "alt"]);
@@ -47,12 +55,16 @@ for (const id of ids) {
   if (!check(st.data)) for (const e of check.errors.slice(0, 20)) fail(id, `格式不对：${e.instancePath || "(根)"} ${e.message}`);
   const meta = st.data?.meta ?? {};
   if (meta.id !== id) fail(id, `meta.id 必须和文件夹名一样（现在是 "${meta.id}"）`);
-  if (meta.rating !== "all-ages") fail(id, `故事库只收全年龄的故事，rating 必须是 all-ages（现在是 "${meta.rating ?? ""}"）`);
-  // 中英双语：名称、简介、3 个标签都必须同时有中文和英文
-  if (!both(meta.title)) fail(id, "故事名称 meta.title 要同时写中文和英文，例如 title: { zh: 雨夜书店, en: Rainy Bookshop }");
-  if (!both(meta.summary)) fail(id, "简介 meta.summary 要同时写中文和英文：summary: { zh: …, en: … }");
-  if (!Array.isArray(meta.tags) || meta.tags.length !== 3) fail(id, `标签 meta.tags 必须正好 3 个（现在 ${Array.isArray(meta.tags) ? meta.tags.length : 0} 个）`);
-  else meta.tags.forEach((t, i) => { if (!both(t)) fail(id, `第 ${i + 1} 个标签要同时写中文和英文，例如 { zh: 悬疑, en: Mystery }`); });
+  // 故事库要求（与客户端投稿检查同一份）：中英双语的名称/简介/3 个标签、AI 角色、语言、时长、每分钟 token、全年龄
+  for (const p of engine.libraryProblems(st.data)) fail(id, p);
+  // 完整校验（和客户端导入时一样）
+  try {
+    const r = engine.validateFiles(engine.loadFromPath(dir));
+    const errs = r.issues.filter((i) => i.level === "error");
+    if (errs.length) fail(id, `完整校验没通过：\n${engine.formatIssues({ ...r, issues: errs })}`);
+    const warns = r.issues.filter((i) => i.level === "warning").length;
+    if (warns) console.log(`⚠️  [${id}] 完整校验有 ${warns} 个警告（不影响通过）`);
+  } catch (e) { fail(id, `完整校验出错：${e.message}`); }
   const oneLang = singleLangTexts(st.data);
   if (oneLang.length) console.log(`⚠️  [${id}] 提醒：有 ${oneLang.length} 处玩家可见文字只有一种语言（不影响通过），例如 ${oneLang.slice(0, 5).join("、")}`);
   let total = 0;
@@ -67,7 +79,7 @@ for (const id of ids) {
     else if (AUDIO_EXT.includes(ext)) { if (f.size > LIMITS.audio) fail(id, `音频太大（超过 30 MB）：${f.rel}`); }
     else if (FONT_EXT.includes(ext) || VIDEO_EXT.includes(ext)) { /* 只受整包 300 MB 和单文件 100 MB 限制 */ }
     else if (TEXT_EXT.includes(ext) || SCRIPT_EXT.includes(ext)) { if (f.size > LIMITS.text) fail(id, `文本文件太大（超过 2 MB）：${f.rel}`); }
-    else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/yml/json/md/txt、js/ts/lua/py、webp/png/jpg/jpeg/gif/avif、ogg/mp3/m4a/wav/flac/opus、woff2/woff/ttf/otf、webm/mp4）`);
+    else fail(id, `不支持的文件类型：${f.rel}（只收 yaml/yml/json/md/txt、js/ts/lua/py、html/htm/css（自定义组件）、webp/png/jpg/jpeg/gif/avif、ogg/mp3/m4a/wav/flac/opus、woff2/woff/ttf/otf、webm/mp4）`);
   }
   if (total > LIMITS.total) fail(id, `整个故事包超过 300 MB（现在 ${(total / 1048576).toFixed(1)} MB）`);
   if (bad === before) console.log(`✅ [${id}] 通过`);

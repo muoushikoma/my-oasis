@@ -94,7 +94,7 @@ defs={
   "cache":{"oneOf":[{"enum":["once","none"]},obj({"by_state":{"type":"array","items":ID,"minItems":1}},["by_state"])]},
   "fallback":{"oneOf":[REF,{"const":"none"}]},"alt":{"type":"string"}},["trigger","prompt"]),
 "component":{"type":"object","required":["type","region"],"properties":{
-  "type":{"enum":["text-log","text-input","button","choice-buttons","stat-list","stat-bar","item-list","chat-box","text-block","image","dice-log"]},
+  "type":{"enum":["text-log","text-input","button","choice-buttons","stat-list","stat-bar","item-list","chat-box","text-block","image","dice-log","canvas","custom"]},
   "region":ID,"label":{"type":"string"},"hidden_by_default":{"type":"boolean"},"player_can_hide":{"type":"boolean"},
   "placeholder":{"type":"string"},"writes":ID,"action":ID,"emit":ID,"params":{"type":"object"},
   "choices":{"type":"array","items":obj({"label":{"type":"string"},"action":ID,"params":{"type":"object"}},["label","action"])},
@@ -103,7 +103,7 @@ defs={
   "images":{"type":"object","additionalProperties":REF},"fit":{"enum":["cover","contain"]},"generated":ID,
   "content":{"enum":["fixed","ai"],"description":"固定（作者写死）或 AI 处理；不写 = fixed"},
   "input":obj({"actions":{"type":"array","items":ID,"description":"玩家这段文字最多能导致的已声明动作"},
-     "words":{"type":"object","propertyNames":ID,"additionalProperties":STRL,"description":"不经 AI 时：关键词 → 动作"},
+     "words":{"type":"object","propertyNames":ID,"additionalProperties":STRL,"description":"关键词直达：关键词 → 动作（不等 AI；AI 出错时也能用）"},
      "reject":{"type":"string","minLength":1,"description":"无法映射或超界时的固定回应"},
      "max_length":{"type":"integer","minimum":1,"maximum":2000}},["actions","reject"])},"additionalProperties":False},
 }
@@ -119,7 +119,7 @@ root={"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://my
   "language":{"type":"string","pattern":"^[a-z]{2}(-[A-Z]{2})?$"},"rating":{"enum":["all-ages","teen","mature"]},
   "authors":STRL,"tags":{"type":"array","items":{"type":"string","maxLength":12},"maxItems":10},
   "content_warnings":STRL,"cover":PATH,"setting":PATH,"est_minutes":{"type":"integer","minimum":1,"maximum":600},
-  "min_engine":{"type":"string","pattern":"^\\d+\\.\\d+\\.\\d+$"},"license":{"type":"string"}},["id","title","version","summary","language","rating"]),
+  "min_engine":{"type":"string","pattern":"^\\d+\\.\\d+\\.\\d+$"},"license":{"type":"string"},"platforms":{"type":"array","items":{"enum":["desktop","mobile"]},"uniqueItems":True,"minItems":1}},["id","title","version","summary","language","rating"]),
   "if":{"properties":{"rating":{"const":"mature"}}},"then":{"required":["content_warnings"]}},
 "assets":{"type":"object","propertyNames":ID,"additionalProperties":{"$ref":"#/$defs/asset"}},
 "uses":{"type":"array","items":{"type":"string","pattern":"^oasis/[a-z][a-z0-9_-]*@\\d+$"},"uniqueItems":True},

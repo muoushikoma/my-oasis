@@ -2,7 +2,9 @@ import "./style.css";
 import { validateFiles, filesToZip, filesFromZip, type StoryFiles, type ValidationResult } from "@my-oasis/schema";
 import { h, toast } from "./dom";
 import { bridge, isTauri, filesFromSingle, b64ToBytes } from "./bridge";
-import { loadSettings, saveSettings, tr, trList } from "./settings";
+import { loadSettings, saveSettings, tr, trList, isLocalUrl } from "./settings";
+/** 玩家是否已接好 AI：本地模型地址，或系统钥匙串里有 Key */
+async function aiReady() { const s = loadSettings(); return isLocalUrl(s.base_url) || (await bridge.keyHas(s.provider).catch(() => false)); }
 import { PlaySession } from "./play";
 import { issuesView } from "./issues";
 import { providerSetup, showWizard } from "./setup";
@@ -10,6 +12,9 @@ import { showCreate } from "./create";
 import { onlineView } from "./online";
 import { endSession } from "./usage";
 import { usageCard } from "./usage-card";
+import { briefCard, openDetail } from "./story-info";
+import { playableHere, platformText, currentPlatform, PLATFORM_LABEL } from "./platform";
+import { isFavorite, toggleFavorite } from "./social";
 
 const app = document.getElementById("app")!;
 interface Entry { id: string; files: StoryFiles; res: ValidationResult }
@@ -22,7 +27,7 @@ function nav(active: string) {
     h("span", { class: "spacer" }), !isTauri ? h("span", { class: "muted small" }, "浏览器开发模式") : null,
     h("button", { class: active === "set" ? "on" : "", onclick: () => showSettings() }, "⚙️ 设置"));
 }
-const createCtx = { play: (id: string, _t: string, files: StoryFiles) => play(id, files, () => openCreate()), importFiles: (n: string, f: StoryFiles) => importFiles(n, f) };
+const createCtx = { play: (id: string, _t: string, files: StoryFiles) => play(id, files, () => openCreate(), undefined, true), importFiles: (n: string, f: StoryFiles) => importFiles(n, f) };
 function openCreate(tab?: string) { endSession(); section = "create"; showCreate(app, nav("create"), createCtx, tab); }
 
 async function loadEntries(): Promise<Entry[]> {
@@ -44,21 +49,25 @@ async function showLibrary(tab = playTab) {
     app.replaceChildren(nav("play"), h("main", { class: "page" }, h("h2", {}, "游玩"), tabs, onlineView(async (st, files) => { await importFiles(tr(st.title), files); })));
     return;
   }
-  const entries = await loadEntries();
+  const all = await loadEntries();
+  const entries = all.filter((e) => !e.res.story || playableHere(e.res.story.meta)).sort((a, b) => Number(isFavorite(b.id)) - Number(isFavorite(a.id)));
+  const hidden = all.length - entries.length;
   const card = (e: Entry) => {
     const m = e.res.story?.meta;
     const cover = (() => { const ref: any = m?.cover; if (!ref) return; const p = ref.startsWith("asset:") ? (e.res.story as any).assets?.[ref.slice(6)]?.path : ref; const d = p && e.files.get(p); return d ? URL.createObjectURL(new Blob([d as BlobPart])) : undefined; })();
-    return h("div", { class: "story-card" },
-      cover ? h("img", { src: cover, class: "cover" }) : h("div", { class: "cover ph" }, (tr(m?.title) || "?").slice(0, 1)),
-      h("div", { class: "info" },
-        h("h3", {}, tr(m?.title) || e.id, e.res.story?.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
-        h("p", { class: "muted" }, tr(m?.summary)), trList(m?.tags).length ? h("p", { class: "small muted" }, trList(m?.tags).join(" · ")) : null,
-        h("p", { class: "small muted" }, `版本 ${m?.version ?? "?"}${m?.author ? ` · 作者 ${m.author}` : ""}`),
-        e.res.ok ? null : h("p", { class: "err small" }, "这个故事有错误，不能游玩"),
-        h("div", { class: "row" },
-          h("button", { class: "primary", disabled: !e.res.ok, onclick: () => play(e.id, e.files) }, "开始"),
-          h("button", { disabled: !e.res.ok, onclick: () => resume(e) }, "继续"),
-          h("button", { onclick: async () => { if (confirm(`删除故事「${tr(m?.title)}」？存档不会删除。`)) { await bridge.libraryDelete(e.id); showLibrary(); } } }, "删除"))));
+    const coverEl = () => (cover ? h("img", { src: cover, class: "cover" }) : h("div", { class: "cover ph" }, (tr(m?.title) || "?").slice(0, 1)));
+    const title = tr(m?.title) || e.id;
+    const badge = e.res.story?.ai ? h("span", { class: "tag ai" }, "AI 故事") : h("span", { class: "tag" }, "旧格式（没接 AI）");
+    let close = () => {};
+    const open = () => { close = openDetail({ title, cover: coverEl(), meta: m ?? {}, storyId: e.id,
+      lines: [`版本 ${m?.version ?? "?"}${Array.isArray(m?.authors) && m.authors.length ? ` · 作者 ${m.authors.join("、")}` : m?.author ? ` · 作者 ${m.author}` : ""}`],
+      notice: e.res.ok ? null : h("p", { class: "err small" }, "这个故事有错误，不能游玩"),
+      buttons: [
+        h("button", { class: "primary", disabled: !e.res.ok, onclick: () => { close(); play(e.id, e.files); } }, "开始"),
+        h("button", { disabled: !e.res.ok, onclick: () => { close(); resume(e); } }, "继续"),
+        h("button", { title: "收藏只保存在这台设备上", onclick: (ev: any) => { const on = toggleFavorite(e.id); ev.target.textContent = on ? "★ 已收藏" : "☆ 收藏"; } }, isFavorite(e.id) ? "★ 已收藏" : "☆ 收藏"),
+        h("button", { onclick: async () => { if (confirm(`删除故事「${tr(m?.title)}」？存档不会删除。`)) { close(); await bridge.libraryDelete(e.id); showLibrary(); } } }, "删除")] }); };
+    return briefCard(coverEl(), title, m ?? {}, open, e.res.ok ? badge : h("span", { class: "tag err" }, "有错误"));
   };
   const drop = h("div", { class: "drop" }, h("p", {}, "把 .oasis 文件、story.yaml 或故事文件夹拖到这里"),
     h("div", { class: "row" }, h("button", { class: "primary", onclick: () => importPicked(false) }, "导入故事文件"), isTauri ? h("button", { onclick: () => importPicked(true) }, "导入文件夹") : null),
@@ -75,7 +84,8 @@ async function showLibrary(tab = playTab) {
       h("li", {}, "故事用到 AI 的话，先到“设置”里接好 AI。"),
       h("li", {}, "也可以到上方“在线故事库”下载其他作者投稿的故事。")),
     h("div", { class: "row" }, h("button", { class: "primary", onclick: () => openCreate("write") }, "去创作"), h("button", { onclick: () => openCreate("docs") }, "看创作指南")));
-  app.replaceChildren(nav("play"), h("main", { class: "page" }, h("h2", {}, "游玩"), tabs, drop, entries.length ? h("div", { class: "cards" }, ...entries.map(card)) : empty));
+  app.replaceChildren(nav("play"), h("main", { class: "page" }, h("h2", {}, "游玩"), tabs, drop, entries.length ? h("div", { class: "cards" }, ...entries.map(card)) : empty,
+    hidden ? h("p", { class: "small muted" }, `另有 ${hidden} 个故事不支持${PLATFORM_LABEL[currentPlatform()]}，已隐藏（换到支持的设备上就能玩）。`) : null));
 }
 
 async function importPicked(folder: boolean) {
@@ -100,9 +110,17 @@ function showIssues(name: string, res: ValidationResult, imported = false) {
 }
 
 // ---------- 游玩 ----------
-async function play(id: string, files: StoryFiles, back: () => void = () => showLibrary(), save?: any) {
+async function play(id: string, files: StoryFiles, back: () => void = () => showLibrary(), save?: any, authorTest = false) {
   const res = validateFiles(files);
   if (!res.ok || !res.story) return showIssues(id, res);
+  // 只加载本机能玩的故事；作者在“创作”里试玩时不拦（方便在电脑上调手机故事）
+  if (!authorTest && !(await aiReady())) {
+    const m = h("div", { class: "modal" }, h("div", { class: "card" }, h("h3", {}, "先接好 AI 再开始"),
+      h("p", {}, "我的绿洲的故事都要由 AI 讲述。你还没有接入 AI（没填 API Key，也没设置本地模型），请先到“设置”里接好。"),
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: () => { m.remove(); showSettings(); } }, "去设置 AI"), h("button", { onclick: () => m.remove() }, "取消"))));
+    document.body.append(m); return;
+  }
+  if (!authorTest && !playableHere(res.story.meta)) return toast(`这个故事只支持${platformText(res.story.meta)}，这台设备（${PLATFORM_LABEL[currentPlatform()]}）不能玩`, "err");
   const s = new PlaySession(res.story, files, id, back);
   app.replaceChildren(s.root);
   try { await s.init(save); } catch (err: any) { toast(err.message, "err"); back(); }
@@ -126,6 +144,9 @@ function showSettings() {
       chk("merge", "同一次操作的多个 AI 环节尽量合并成一次请求（更快、更省）"),
       chk("imageGen", "允许故事使用 AI 生图（尚未开放；关闭时显示故事自带的替代图）"),
       chk("muted", "静音"),
+      h("label", { class: "check" }, h("input", { type: "checkbox", checked: (s as any).customUi !== false, onchange: (ev: any) => saveSettings({ ...loadSettings(), customUi: ev.target.checked } as any) }), "允许故事自带的自定义组件（在隔离的沙箱里运行，不能联网，也拿不到你的 Key 和文件；关闭后显示作者写的替代文字）"),
+      h("label", {}, "屏幕虚拟摇杆和按钮 ", h("select", { onchange: (ev: any) => saveSettings({ ...loadSettings(), virtualControls: ev.target.value } as any) },
+        ...([["auto", "自动（只在手机上显示）"], ["on", "总是显示"], ["off", "不显示"]] as const).map(([v, t]) => h("option", { value: v, selected: ((s as any).virtualControls ?? "auto") === v }, t)))),
       h("label", {}, "故事语言 / Story language ", h("select", { onchange: (ev: any) => { saveSettings({ ...loadSettings(), lang: ev.target.value }); showSettings(); } },
         h("option", { value: "zh", selected: s.lang === "zh" }, "中文"), h("option", { value: "en", selected: s.lang === "en" }, "English"))),
       h("p", { class: "small muted" }, "故事里的文字和 AI 回复都会用这种语言；作者没写这种语言时显示另一种。"),

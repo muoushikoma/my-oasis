@@ -6,13 +6,14 @@ import { AssetBox } from "./assets";
 import { RealtimeDriver } from "./realtime";
 import { bridge } from "./bridge";
 import { makeLlm } from "./llm";
-import { beginSession, sessionUsage, loadUsage, onUsage, fmtNum, fmtCost, zero } from "./usage";
+import { addPlaytime, beginSession, sessionUsage, loadUsage, onUsage, fmtNum, fmtCost, zero } from "./usage";
 import { explainError } from "./providers";
 import { storyStorage } from "./story-storage";
 import { loadSettings, saveSettings, isLocalUrl, type Settings } from "./settings";
 import { enterTakeover, setFullscreen, isFullscreen } from "./takeover";
 import { providerSetup } from "./setup";
 import { usageCard } from "./usage-card";
+import { CustomFrame, moveInto } from "./custom-ui";
 
 interface Feed { id: number; to: string; text: string; kind: "ai" | "rule" | "event" | "ending" | "player" | "reject" | "error" | "dice"; who?: string; streaming?: boolean }
 
@@ -96,7 +97,7 @@ export class PlaySession {
   get takeover() { return !!(this.story.ui as any)?.takeover; }
   private tk?: { corner: HTMLElement; exit: () => void };
   private menu?: HTMLElement;
-  leave() { this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.offUsage?.(); this.tk?.exit(); this.tk = undefined; this.menu?.remove(); this.menu = undefined; this.onExit(); }
+  leave() { if (this.playTimer) clearInterval(this.playTimer); this.playTimer = undefined; this.disposeFrames(); this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.offUsage?.(); this.tk?.exit(); this.tk = undefined; this.menu?.remove(); this.menu = undefined; this.onExit(); }
   /** 暂停菜单：接管模式下玩家的出口（故事无法关闭）。继续 / 存档 / 声音 / 外观 / 设置（AI 与用量）/ 全屏 / 回故事库 */
   pauseMenu() {
     if (this.menu) return;
@@ -135,6 +136,12 @@ export class PlaySession {
   }
   async init(save?: any) {
     beginSession(this.storyId, String(this.story.meta.title));
+    if (this.playTimer) clearInterval(this.playTimer);
+    let lastTok = 0;
+    this.playTimer = window.setInterval(() => {
+      const se = sessionUsage(), tok = se.input + se.output, d = tok - lastTok; lastTok = tok;
+      if (document.visibilityState === "visible" && !this.game?.ending) addPlaytime(this.storyId, 15000, d);
+    }, 15000);
     this.offUsage?.(); this.offUsage = onUsage(() => { const el = document.getElementById("usage-line"); const n = this.usageEl(); if (el && n) el.replaceWith(n); });
     try { this.scripts = await createQuickJsRunner(); } catch { /* 没用脚本的故事不需要 */ }
     const s = this.settings;
@@ -363,6 +370,10 @@ export class PlaySession {
       end ? h("div", { class: `ending ${end.kind ?? ""}` }, h("h2", {}, `🏁 ${end.label}`), end.text ? h("p", {}, end.text) : null,
         h("div", { class: "row" }, h("button", { onclick: () => this.restart() }, "再玩一次"), h("button", { onclick: () => this.leave() }, "回故事库"))) : null);
     const modals = [...this.root.querySelectorAll(":scope > .modal")]; // 打开着的对话框不要被每帧刷新冲掉
+    if (this.frames.size && document.body) {
+      if (!this.parking) { this.parking = h("div", { class: "custom-parking", "aria-hidden": "true" }); document.body.append(this.parking); }
+      for (const f of this.frames.values()) if (f.el.isConnected && f.el.parentElement !== this.parking) moveInto(this.parking, f.el);
+    }
     if (this.takeover) {
       // 接管：没有顶栏和调试栏，页面整个交给故事；只留出口按钮和暂停菜单（在最上层）
       this.tk ??= enterTakeover({ openMenu: () => this.pauseMenu(), menuOpen: () => !!this.menu });
@@ -372,6 +383,7 @@ export class PlaySession {
       const body = h("div", { class: "play-body" }, page, this.debug ? this.debugPanel() : null);
       this.root.replaceChildren(bar, body, ...modals);
     }
+    this.root.querySelectorAll<HTMLElement>("[data-custom-slot]").forEach((slot) => { const f = this.frames.get(slot.dataset.customSlot!); if (f) { moveInto(slot, f.el); f.update(); } });
     for (const [k, v] of Object.entries(this.themeVars())) this.root.style.setProperty(k, v);
     this.updateMusic();
 
@@ -381,7 +393,37 @@ export class PlaySession {
     if (focusId) this.root.querySelector<HTMLElement>(`input[data-cid="${focusId}"]`)?.focus();
   }
   lastSent = new Set<string>();
-  async restart() { this.rt?.stop(); this.sound.stop(); this.feed = []; this.shown = 0; this.aiChoices = {}; await this.init(); }
+  // ---------- 自定义组件（§13.3）：iframe 跨渲染保留，渲染时先停到 parking 再挂回新位置 ----------
+  playTimer?: number;
+  frames = new Map<string, CustomFrame>();
+  parking?: HTMLElement; frameTimer?: number;
+  customFrame(cid: string, c: any): CustomFrame {
+    let f = this.frames.get(cid);
+    if (f) return f;
+    f = new CustomFrame(cid, c, this.files, {
+      state: () => this.game.visibleState("player"), lang: () => this.settings.lang, ended: () => !!this.game.ending, busy: () => this.busy,
+      action: (id, params) => this.customAction(id, params),
+      emit: (ev, payload) => { void this.op(async () => { await this.runAi(entriesFor(this.game, `ui:${cid}.${ev}`), payload == null ? "" : JSON.stringify(payload)); }); },
+      load: (iframe, html) => bridge.loadCustomFrame(iframe, html),
+      log: (t) => { if (this.debug) console.info(t); },
+    });
+    this.frames.set(cid, f);
+    this.frameTimer ??= window.setInterval(() => this.frames.forEach((x) => x.update()), 250);
+    return f;
+  }
+  async customAction(id: string, params: Record<string, any>): Promise<{ ok: boolean; error?: string }> {
+    if (this.game.ending) return { ok: false, error: "故事已经结束" };
+    if (this.busy) return { ok: false, error: "正在处理上一个操作" };
+    let res: { ok: boolean; error?: string } = { ok: true };
+    await this.op(async () => {
+      const r = this.game.doAction(id, params, "player");
+      if (!r.ok) { res = { ok: false, error: r.error ?? "做不到" }; this.push("log", r.error ?? "做不到", "reject"); return false; }
+      await this.afterAction(id);
+    });
+    return res;
+  }
+  disposeFrames() { this.frames.forEach((f) => f.destroy()); this.frames.clear(); this.parking?.remove(); this.parking = undefined; if (this.frameTimer) clearInterval(this.frameTimer); this.frameTimer = undefined; }
+  async restart() { this.disposeFrames(); this.rt?.stop(); this.sound.stop(); this.feed = []; this.shown = 0; this.aiChoices = {}; await this.init(); }
 
   feedFor(cid: string, c: any): Feed[] {
     const firstLog = Object.entries<any>(this.ui.components).find(([, x]) => x.type === "text-log")?.[0];
@@ -439,6 +481,11 @@ export class PlaySession {
         return box(h("img", { src: u, alt: this.assets.meta(ref)?.alt ?? c.label ?? "", style: { objectFit: c.fit ?? "cover" } }));
       }
       case "dice-log": return box(h("div", { class: "log small", "data-scroll": cid }, ...this.game.log.filter((l) => l.kind === "dice" || l.kind === "random").slice(-20).map((l) => h("div", {}, l.text))));
+      case "custom": {
+        if (this.settings.customUi === false || !this.files.has(c.src)) return box(h("p", { class: "muted small" }, c.fallback ?? "（这里是作者自定义的组件，已在设置里关闭）"));
+        this.customFrame(cid, c);
+        return box(h("div", { class: "custom-slot", "data-custom-slot": cid }));
+      }
       case "canvas": return this.rt ? box(this.rt.canvas(cid, c)) : box(h("p", { class: "muted" }, "（画布需要 realtime 循环）"));
       default: return null;
     }

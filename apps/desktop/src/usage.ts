@@ -59,6 +59,17 @@ export function loadUsage(kv = ls()): UsageStore {
   try { const j = JSON.parse(kv?.getItem(KEY) ?? ""); if (j?.total) return { stories: {}, since: new Date().toISOString(), ...j, total: { ...zero(), ...j.total } }; } catch { /* 新建 */ }
   return { total: zero(), stories: {}, since: new Date().toISOString() };
 }
+// 每个故事的游玩时长和这段时间里用的 token（只统计窗口在前台、没结局时），用来算“你实测每分钟多少 token”
+const TKEY = "oasis.playtime";
+export function loadPlaytime(kv = ls()): Record<string, { ms: number; tokens: number }> { try { return JSON.parse(kv?.getItem(TKEY) ?? "{}") ?? {}; } catch { return {}; } }
+export function addPlaytime(storyId: string, ms: number, tokens: number, kv = ls()) {
+  const p = loadPlaytime(kv); const c = p[storyId] ?? { ms: 0, tokens: 0 };
+  c.ms += Math.max(0, ms); c.tokens += Math.max(0, tokens); p[storyId] = c; kv?.setItem(TKEY, JSON.stringify(p));
+}
+/** 实测每分钟 token（至少玩够 2 分钟、用过 AI 才有） */
+export function measuredPerMin(storyId: string, kv = ls()): number | undefined {
+  const c = loadPlaytime(kv)[storyId]; return c && c.ms >= 120000 && c.tokens > 0 ? Math.round(c.tokens / (c.ms / 60000)) : undefined;
+}
 export function saveUsage(u: UsageStore, kv = ls()) { kv?.setItem(KEY, JSON.stringify(u)); }
 export function loadPrices(kv = ls()): PriceTable { try { return JSON.parse(kv?.getItem(PKEY) ?? "{}") ?? {}; } catch { return {}; } }
 export function savePrices(p: PriceTable, kv = ls()) { kv?.setItem(PKEY, JSON.stringify(p)); }
