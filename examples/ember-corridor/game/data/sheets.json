@@ -1,0 +1,14 @@
+{
+  "hero": { "image": "game/art/hero.png", "frameWidth": 32, "frameHeight": 24, "animations": {
+    "idle": { "frames": [0, 1], "fps": 3 }, "run": { "frames": [2, 3, 4, 5], "fps": 10 },
+    "jump": { "frames": [6], "fps": 1 }, "fall": { "frames": [7], "fps": 1 },
+    "attack": { "frames": [8, 9, 10, 11], "fps": 16, "loop": false },
+    "hurt": { "frames": [12], "fps": 3, "loop": false }, "dead": { "frames": [13], "fps": 1, "loop": false } } },
+  "slime": { "image": "game/art/slime.png", "frameWidth": 16, "frameHeight": 16, "animations": {
+    "idle": { "frames": [0, 1], "fps": 4 }, "hop": { "frames": [2, 3], "fps": 8 }, "hurt": { "frames": [4, 4], "fps": 10, "loop": false }, "die": { "frames": [5, 6], "fps": 8, "loop": false } } },
+  "bat": { "image": "game/art/bat.png", "frameWidth": 16, "frameHeight": 16, "animations": {
+    "fly": { "frames": [0, 1, 2, 3], "fps": 12 }, "hurt": { "frames": [4], "fps": 1 } } },
+  "tiles": { "image": "game/art/tiles.png", "frameWidth": 16, "frameHeight": 16 },
+  "torch": { "image": "game/art/torch.png", "frameWidth": 16, "frameHeight": 16, "animations": { "burn": { "frames": [0, 1], "fps": 6 } } },
+  "hearts": { "image": "game/art/hearts.png", "frameWidth": 9, "frameHeight": 8 }
+}

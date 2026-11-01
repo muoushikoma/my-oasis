@@ -223,6 +223,8 @@ const STEP_OPS = ["set", "inc", "add", "remove", "put", "let", "if", "call", "em
 
 /** 自定义组件 HTML 连同内联的文件最多多大 */
 export const CUSTOM_MAX_BYTES = 8 * 1024 * 1024;
+/** runtime: game 的组件（带精灵图、音效）放宽到 24 MB（不含客户端自带的运行时） */
+export const GAME_MAX_BYTES = 24 * 1024 * 1024;
 /** 包内相对路径规范化（处理 ./ 和 ../，越出包外返回空） */
 export function normPath(p: string): string {
   const out: string[] = [];
@@ -272,7 +274,17 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
       if (!d) report("error", "missing_file", [...p, "src"], `自定义组件「${id}」的 HTML 引用了「${ref}」，但故事包里没有这个文件。`, "把文件放进故事包，路径相对于 HTML 文件所在的文件夹。", "§13.3");
       else total += d.length;
     }
-    if (total > CUSTOM_MAX_BYTES) report("error", "custom_too_big", p, `自定义组件「${id}」连同它引用的文件一共 ${(total / 1048576).toFixed(1)} MB，超过 ${CUSTOM_MAX_BYTES / 1048576} MB。`, "压缩图片，或把大素材改成用 asset 组件显示。", "§13.3");
+    // files：交给组件的包内文件（游戏素材），以 / 结尾表示整个文件夹（§13.6）
+    if (Array.isArray(c.files)) c.files.forEach((f: unknown, i: number) => {
+      if (typeof f !== "string") return;
+      const dirMode = f.endsWith("/"), full = normPath(f);
+      const hit = !full ? [] : dirMode ? [...files.keys()].filter((k) => k.startsWith(full + "/")) : files.has(full) ? [full] : [];
+      if (!hit.length) report("error", "missing_file", [...p, "files", i], dirMode ? `自定义组件「${id}」的 files 里的文件夹「${f}」在故事包里不存在或是空的。` : `自定义组件「${id}」的 files 引用了「${f}」，但故事包里没有这个文件。`, "路径相对于故事包根目录；文件夹要以 / 结尾。", "§13.6");
+      for (const k of hit) total += files.get(k)!.length;
+    });
+    if (c.runtime === "game" && c.size !== "fill") report("info", "game_not_fill", p, `游戏组件「${id}」没写 size: fill，画面只有 height 那么高。`, "一般写 size: fill，再配合 ui.takeover: true 铺满整个窗口。", "§13.6", "size");
+    const cap = c.runtime === "game" ? GAME_MAX_BYTES : CUSTOM_MAX_BYTES;
+    if (total > cap) report("error", "custom_too_big", p, `自定义组件「${id}」连同它引用的文件一共 ${(total / 1048576).toFixed(1)} MB，超过 ${cap / 1048576} MB。`, "压缩图片，或把大素材改成用 asset 组件显示。", "§13.3");
     if (c.fallback === undefined) report("info", "custom_no_fallback", p, `自定义组件「${id}」没写 fallback：玩家关闭自定义组件时会显示一句默认提示。`, "写一句 fallback 文字，说明这里本来是什么。", "§13.3");
   };
 
@@ -598,7 +610,8 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
       for (const sid of Array.isArray(ep.context?.state) ? ep.context.state : []) if (!(sid in state)) report("error", "unknown_state", [...p, "context"], `context 里的状态「${sid}」不存在。`, undefined, "§10.4", "state");
       if (ep.optional && !ep.fallback) report("warning", "optional_no_fallback", p, "这个 AI 接入点玩家可以关闭，但没写 fallback（关闭后显示什么）。", "加一句 fallback 文字。", "§10.4");
     }
-    const narr = Object.values<any>(entries).some((e) => e?.kind === "narrate");
+    // 叙述写进状态（output.to: state:…）的接入点由组件自己显示，不需要 text-log
+    const narr = Object.values<any>(entries).some((e) => e?.kind === "narrate" && !String(e?.card?.output?.to ?? "").startsWith("state:"));
     if (narr && s.ui?.components && !Object.values<any>(comps).some((c) => c?.type === "text-log")) report("warning", "no_text_log", ["ui", "components"], "有 AI 叙述，但界面里没有叙述区（text-log），叙述可能看不到。", "加一个 { type: text-log, region: main }。", "§13");
   }
 

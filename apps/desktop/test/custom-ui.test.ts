@@ -29,3 +29,19 @@ describe("自定义组件：拼装沙箱文档", () => {
     expect(buildFrameHtml(pkg({ "m.html": "<p>hi</p>" }), "m.html")).toMatch(/^<!doctype html><html><head><meta charset/);
   });
 });
+
+describe("自定义组件：游戏运行时与包内文件（§13.6）", () => {
+  it("files 列表展开文件夹，注入 window.oasis.files，运行时脚本放在桥接脚本之后", async () => {
+    const { componentFiles } = await import("../src/custom-ui.js");
+    const files = pkg({ "g/main.html": `<html><body><script src="main.js"></script></body></html>`, "g/main.js": "1", "g/art/a.png": "PNG", "g/art/b.png": "PNG", "g/art/.hidden": "x", "other.txt": "t" });
+    const list = componentFiles(files, ["g/art/", "other.txt", "missing.png"]);
+    expect(list).toEqual(["g/art/a.png", "g/art/b.png", "other.txt"]);
+    const html = buildFrameHtml(files, "g/main.html", { runtime: "window.RT=1", files: list });
+    expect(html).toContain("window.oasis.files=");
+    expect(html).toContain('"g/art/a.png":"data:image/png;base64,');
+    const bridge = html.indexOf("window.oasis=api"), files_ = html.indexOf("window.oasis.files="), rt = html.indexOf("window.RT=1"), main = html.lastIndexOf("<script");
+    expect(bridge).toBeLessThan(files_); expect(files_).toBeLessThan(rt); expect(rt).toBeLessThan(main);
+    expect(FRAME_CSP).toContain("'wasm-unsafe-eval'");
+    expect(FRAME_CSP).not.toMatch(/'unsafe-eval'/);
+  });
+});

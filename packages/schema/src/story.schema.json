@@ -2210,7 +2210,7 @@
             "fixed",
             "fill"
           ],
-          "description": "canvas：fixed=用 width/height；fill=铺满所在区域，像素尺寸跟着窗口/旋转变化"
+          "description": "canvas / custom：fixed=用 width/height（custom 用 height）；fill=铺满所在区域，像素尺寸跟着窗口/旋转变化"
         },
         "hidpi": {
           "type": "boolean",
@@ -2243,6 +2243,22 @@
         "fallback": {
           "$ref": "#/$defs/text",
           "description": "custom：玩家关闭自定义组件或加载失败时显示的文字"
+        },
+        "runtime": {
+          "enum": [
+            "game"
+          ],
+          "description": "custom：注入内置游戏运行时（window.oasis.game：PixiJS 渲染、Rapier 2D 物理、动画状态机、统一输入、固定步长循环），见规范 §13.6"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\:]+$"
+          },
+          "uniqueItems": true,
+          "maxItems": 2000,
+          "description": "custom：交给组件的包内文件（以 / 结尾表示整个文件夹），组件里用 window.oasis.files[路径] 取 data: 地址；游戏运行时的 assets 只能加载这里列出的文件"
         }
       },
       "additionalProperties": false
