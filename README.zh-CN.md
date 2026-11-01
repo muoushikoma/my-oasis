@@ -75,3 +75,6 @@ API Key、GitHub token 只存在系统安全存储里（Windows 凭据管理器 
 | [里程碑](docs/mvp.md) | 已完成和计划中的功能 |
 | [服务器 API（暂缓）](docs/server-api.md) | 以后做服务器时的接口草案，目前不做服务器 |
 | [故事版权与授权](stories/LICENSE.md) | 投稿故事的版权归属和授权范围 |
+| [贡献说明](CONTRIBUTING.md) | 怎么贡献代码和故事：环境、命令、PR 要求和硬性规则 |
+| [行为准则](CODE_OF_CONDUCT.md) | 社区里怎么友善相处 |
+| [安全策略](SECURITY.md) | 怎么私密报告安全漏洞 |
