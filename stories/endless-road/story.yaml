@@ -110,7 +110,7 @@ state:
   best:      { type: number, init: 0, min: 0, integer: true, label: { zh: 最远纪录, en: Best record } }
   kills:     { type: number, init: 0, min: 0, integer: true, label: { zh: 击败敌人, en: Foes defeated } }
   # 资源
-  rations:   { type: number, init: 5, min: 0, integer: true, visible: both, desc: 口粮，每里吃 1 份 }
+  rations:   { type: number, init: 6, min: 0, integer: true, visible: both, desc: 口粮，每里吃 1 份 }
   potions:   { type: number, init: 2, min: 0, integer: true, visible: both, desc: 治疗药水 }
   gold:      { type: number, init: 15, min: 0, integer: true, visible: both, desc: 金币 }
   iron:      { type: number, init: 0, min: 0, integer: true, visible: both, desc: 铁料（强化材料） }
