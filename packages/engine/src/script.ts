@@ -22,6 +22,8 @@ const api = {
   log: (msg) => __c("log", [String(msg)]),
   // ---- oasis/0.4 实时 ----
   sound: { play: (id, o) => __c("sound.play", [String(id), o || {}]), stop: (id, o) => __c("sound.stop", [id == null ? null : String(id), o || {}]) },
+  textinput: { open: (o) => __c("textinput.open", [o || {}]), close: () => __c("textinput.close", []) },
+  video: { play: (id, o) => __c("video.play", [String(id), o || {}]), stop: () => __c("video.stop", []) },
   ai: { request: (id, input, data) => __c("ai.request", [String(id), input == null ? "" : String(input), data || {}]) },
   draw: {
     clear: (color) => __d(["clear", color || null]),

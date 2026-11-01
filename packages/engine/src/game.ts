@@ -41,7 +41,13 @@ const clone = <T>(x: T): T => (x === undefined ? x : JSON.parse(JSON.stringify(x
 interface Ctx { params: Record<string, any>; locals: Record<string, any>; out?: any; event?: any; depth: number; caller: Caller; changed: Set<string>; render?: boolean }
 /** 实时模式产生的副作用：声音、异步 AI 请求（客户端取走后执行，不阻塞循环） */
 export interface SoundEffect { op: "play" | "stop"; id: string | null; volume?: number; loop?: boolean; channel?: string; fade_ms?: number; rate?: number; pan?: number }
-export interface Effects { sounds: SoundEffect[]; ai: { req: number; entry: string; input: string; data: any }[] }
+/** 客户端原生界面请求：文字输入框（支持中文输入法/安卓软键盘）、全屏视频 */
+export type UiEffect =
+  | { op: "text.open"; req: number; id: string; title?: any; placeholder?: any; value?: string; multiline?: boolean; max_length: number; ok?: any; cancel?: any }
+  | { op: "text.close" }
+  | { op: "video.play"; req: number; id: string; loop?: boolean; muted?: boolean; skippable?: boolean; fit?: "contain" | "cover" }
+  | { op: "video.stop" };
+export interface Effects { sounds: SoundEffect[]; ai: { req: number; entry: string; input: string; data: any }[]; ui: UiEffect[] }
 export type DrawCmd = any[];
 
 export class Game {
@@ -353,6 +359,28 @@ export class Game {
             if (this.effects.sounds.length < 32) this.effects.sounds.push(m === "sound.play" ? { op: "play", id, ...pick } : { op: "stop", id, ...(pick.fade_ms !== undefined ? { fade_ms: pick.fade_ms } : {}) });
             return null;
           }
+          case "textinput.open": {
+            if (ctx.render) throw new Error("render 函数里不能打开输入框");
+            const o = a[0] && typeof a[0] === "object" ? a[0] : {};
+            const txt = (v: any) => (typeof v === "string" ? v.slice(0, 200) : v && typeof v === "object" ? { zh: String(v.zh ?? "").slice(0, 200), en: String(v.en ?? "").slice(0, 200) } : undefined);
+            const max = Math.max(1, Math.min(2000, Math.floor(Number(o.max_length) || 200)));
+            const req = ++this.uiSeq;
+            this.effects.ui = this.effects.ui.filter((u) => u.op !== "text.open"); // 同一时刻只有一个输入框
+            this.effects.ui.push({ op: "text.open", req, id: String(o.id ?? "text").slice(0, 40), title: txt(o.title), placeholder: txt(o.placeholder), value: typeof o.value === "string" ? o.value.slice(0, max) : "", multiline: !!o.multiline, max_length: max, ok: txt(o.ok), cancel: txt(o.cancel) });
+            return req;
+          }
+          case "textinput.close": if (ctx.render) throw new Error("render 函数里不能关闭输入框"); this.effects.ui.push({ op: "text.close" }); return null;
+          case "video.play": {
+            if (ctx.render) throw new Error("render 函数里不能播放视频");
+            const id = String(a[0]); const as: any = this.story.assets?.[id];
+            if (!as) throw new Error(`素材「${id}」没有登记`);
+            if (!/\.(webm|mp4)$/i.test(String(as.path ?? ""))) throw new Error(`素材「${id}」不是视频（webm/mp4）`);
+            const o = a[1] && typeof a[1] === "object" ? a[1] : {};
+            const req = ++this.uiSeq;
+            this.effects.ui.push({ op: "video.play", req, id, loop: !!o.loop, muted: !!o.muted, skippable: o.skippable !== false, fit: o.fit === "cover" ? "cover" : "contain" });
+            return req;
+          }
+          case "video.stop": if (ctx.render) throw new Error("render 函数里不能停止视频"); this.effects.ui.push({ op: "video.stop" }); return null;
           case "ai.request": {
             if (ctx.render) throw new Error("render 函数里不能请求 AI");
             const ep = this.story.ai?.entry_points?.[a[0]];
@@ -372,7 +400,8 @@ export class Game {
 
   // ---------- 实时（oasis/0.4） ----------
   input: InputState = { held: {}, pressed: {}, joystick: { x: 0, y: 0 }, pointer: { x: 0, y: 0, down: false } };
-  effects: Effects = { sounds: [], ai: [] };
+  effects: Effects = { sounds: [], ai: [], ui: [] };
+  private uiSeq = 0;
   private rtDt = 0; private rtAlpha = 0; private drawBuf: DrawCmd[] = []; private aiSeq = 0; private aiInFlight = 0; private lastRtError = "";
   /** 客户端可用区域（CSS 像素）与设备像素比；接管模式下就是整个窗口/屏幕 */
   screen: ScreenInfo = { width: 0, height: 0, dpr: 1, takeover: false };
@@ -446,7 +475,19 @@ export class Game {
     this.restore(s);
     return this.drawBuf;
   }
-  takeEffects(): Effects { const e = this.effects; this.effects = { sounds: [], ai: [] }; return e; }
+  takeEffects(): Effects { const e = this.effects; this.effects = { sounds: [], ai: [], ui: [] }; return e; }
+  /**
+   * 原生界面的结果回来后调用：交给 realtime.on_ui。
+   * 输入框：{ type: "text", request, id, text, cancelled }；视频：{ type: "video", request, id, ended, skipped }
+   */
+  deliverUi(res: Record<string, any> & { type: "text" | "video"; request: number; id: string }) {
+    const on = (this.story.realtime as any)?.on_ui; if (!on || this.ending) return;
+    if (res.type === "text" && typeof res.text === "string") res = { ...res, text: res.text.slice(0, 2000) };
+    const s = this.snap(); const ctx: Ctx = { params: {}, locals: {}, depth: 0, caller: "rules", changed: new Set() };
+    try { this.runScript(on, res, ctx, this.rtLimits()); }
+    catch (e: any) { this.restore(s); this.rtError("on_ui", e); return; }
+    this.dispatch(ctx.changed); this.checkEndings();
+  }
   /** 异步 AI 结果回来后调用：交给 realtime.on_ai（params: request, entry, data, text, error） */
   deliverAi(res: { req: number; entry: string; data?: any; text?: string; error?: string }) {
     this.aiInFlight = Math.max(0, this.aiInFlight - 1);

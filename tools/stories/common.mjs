@@ -7,12 +7,13 @@ export const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname)
 export const STORIES = path.join(ROOT, "stories");
 // 与 packages/schema/src/files.ts 的 LIMITS 保持一致。单个文件必须小于 100 MB（GitHub 硬性限制）。
 export const LIMITS = { total: 300 * 1024 * 1024, image: 10 * 1024 * 1024, audio: 30 * 1024 * 1024, text: 2 * 1024 * 1024, files: 2000, file: 100 * 1024 * 1024 - 1 };
-export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg"];
-export const AUDIO_EXT = [".ogg", ".mp3", ".m4a"];
+export const IMAGE_EXT = [".webp", ".png", ".jpg", ".jpeg", ".gif", ".avif"];
+export const AUDIO_EXT = [".ogg", ".mp3", ".m4a", ".wav", ".flac", ".opus"];
 export const TEXT_EXT = [".yaml", ".yml", ".json", ".md", ".txt"];
 /** 与客户端一致：脚本和字体也可以放进故事包 */
 export const SCRIPT_EXT = [".js", ".ts", ".lua", ".py"];
-export const FONT_EXT = [".woff2"];
+export const FONT_EXT = [".woff2", ".woff", ".ttf", ".otf"];
+export const VIDEO_EXT = [".webm", ".mp4"];
 export const ID_RE = /^[a-z][a-z0-9-]{2,63}$/;
 
 export function storyDirs() {
