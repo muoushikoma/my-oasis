@@ -39,15 +39,20 @@ pub async fn chat_stream(cfg: &ProviderConfig, api_key: Option<&str>, mut body: 
     let mut acc = Accumulator::default();
     let mut stream = resp.bytes_stream();
     let mut first = true;
+    let mut utf8 = Utf8Stream::default();
     loop {
         let next = if first { tokio_timeout(first_token_timeout, stream.next()).await? } else { tokio_timeout(Duration::from_secs(60), stream.next()).await? };
         first = false;
         let Some(chunk) = next else { break };
         let chunk = chunk?;
-        for d in acc.feed(&String::from_utf8_lossy(&chunk)) {
+        for d in acc.feed(&utf8.push(&chunk)) {
             match d { Delta::Text(t) => on_text(&t), Delta::Done => {} }
         }
         if acc.done { break; }
+    }
+    let rest = utf8.finish();
+    if !rest.is_empty() && !acc.done {
+        for d in acc.feed(&rest) { if let Delta::Text(t) = d { on_text(&t) } }
     }
     let content = if acc.content.is_empty() { None } else { Some(acc.content.clone()) };
     let usage = acc.usage;
@@ -57,6 +62,26 @@ pub async fn chat_stream(cfg: &ProviderConfig, api_key: Option<&str>, mut body: 
     Ok(ChatResult { content, tool_calls, usage })
 }
 
+/// 流式 UTF-8 解码：网络分块可能把一个汉字（3 字节）拆成两半，只解码到最后一个完整字符，剩下的留到下一块；
+/// 真正的坏字节照旧有损替换成 U+FFFD。
+#[derive(Default)]
+pub(crate) struct Utf8Stream { pending: Vec<u8> }
+impl Utf8Stream {
+    pub(crate) fn push(&mut self, chunk: &[u8]) -> String {
+        self.pending.extend_from_slice(chunk);
+        let cut = match std::str::from_utf8(&self.pending) {
+            Ok(_) => self.pending.len(),
+            Err(e) if e.error_len().is_none() => e.valid_up_to(), // 结尾是半个字符，留到下一块
+            Err(_) => self.pending.len(),                          // 真正的坏字节，照旧有损解码
+        };
+        let text = String::from_utf8_lossy(&self.pending[..cut]).into_owned();
+        self.pending.drain(..cut);
+        text
+    }
+    /// 流结束：剩下的不完整字节有损解码
+    pub(crate) fn finish(&mut self) -> String { let t = String::from_utf8_lossy(&self.pending).into_owned(); self.pending.clear(); t }
+}
+
 async fn tokio_timeout<F: std::future::Future>(d: Duration, f: F) -> Result<F::Output> {
     tokio::time::timeout(d, f).await.map_err(|_| crate::Error::Msg("模型响应超时".into()))
 }
@@ -64,6 +89,30 @@ async fn tokio_timeout<F: std::future::Future>(d: Duration, f: F) -> Result<F::O
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn utf8_split_across_chunks() {
+        let b = "旧日的剑".as_bytes();
+        for cut in 1..b.len() {
+            let mut u = Utf8Stream::default();
+            let mut out = u.push(&b[..cut]);
+            out += &u.push(&b[cut..]);
+            out += &u.finish();
+            assert_eq!(out, "旧日的剑", "cut at {cut}");
+            assert!(!out.contains('\u{FFFD}'));
+        }
+        // 一个字节一个字节地喂
+        let mut u = Utf8Stream::default();
+        let mut out = String::new();
+        for x in b { out += &u.push(std::slice::from_ref(x)); }
+        assert_eq!(out + &u.finish(), "旧日的剑");
+        // 真正的坏字节仍然被替换，不会卡住
+        let mut u = Utf8Stream::default();
+        assert_eq!(u.push(b"a\xffb"), "a\u{FFFD}b");
+        // 结尾残缺的字符在流结束时有损输出
+        let mut u = Utf8Stream::default();
+        assert_eq!(u.push(&b[..2]), "");
+        assert_eq!(u.finish(), "\u{FFFD}");
+    }
     #[test]
     fn base_url_rules() {
         assert!(validate_base_url("https://api.openai.com/v1").is_ok());
