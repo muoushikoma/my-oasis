@@ -2,7 +2,9 @@ import "./style.css";
 import { validateFiles, filesToZip, filesFromZip, type StoryFiles, type ValidationResult } from "@my-oasis/schema";
 import { h, toast } from "./dom";
 import { bridge, isTauri, filesFromSingle, b64ToBytes } from "./bridge";
-import { loadSettings, saveSettings, tr, trList } from "./settings";
+import { loadSettings, saveSettings, tr, trList, isLocalUrl } from "./settings";
+/** 玩家是否已接好 AI：本地模型地址，或系统钥匙串里有 Key */
+async function aiReady() { const s = loadSettings(); return isLocalUrl(s.base_url) || (await bridge.keyHas(s.provider).catch(() => false)); }
 import { PlaySession } from "./play";
 import { issuesView } from "./issues";
 import { providerSetup, showWizard } from "./setup";
@@ -55,7 +57,7 @@ async function showLibrary(tab = playTab) {
     return h("div", { class: "story-card" },
       cover ? h("img", { src: cover, class: "cover" }) : h("div", { class: "cover ph" }, (tr(m?.title) || "?").slice(0, 1)),
       h("div", { class: "info" },
-        h("h3", {}, tr(m?.title) || e.id, e.res.story?.ai ? h("span", { class: "tag ai" }, "需要 AI") : h("span", { class: "tag" }, "纯规则")),
+        h("h3", {}, tr(m?.title) || e.id, e.res.story?.ai ? h("span", { class: "tag ai" }, "AI 故事") : h("span", { class: "tag" }, "旧格式（没接 AI）")),
         h("p", { class: "muted" }, tr(m?.summary)), trList(m?.tags).length ? h("p", { class: "small muted" }, trList(m?.tags).join(" · ")) : null,
         h("p", { class: "small muted" }, `版本 ${m?.version ?? "?"}${m?.author ? ` · 作者 ${m.author}` : ""} · 支持平台：${platformText(m)}`),
         e.res.ok ? null : h("p", { class: "err small" }, "这个故事有错误，不能游玩"),
@@ -110,6 +112,12 @@ async function play(id: string, files: StoryFiles, back: () => void = () => show
   const res = validateFiles(files);
   if (!res.ok || !res.story) return showIssues(id, res);
   // 只加载本机能玩的故事；作者在“创作”里试玩时不拦（方便在电脑上调手机故事）
+  if (!authorTest && !(await aiReady())) {
+    const m = h("div", { class: "modal" }, h("div", { class: "card" }, h("h3", {}, "先接好 AI 再开始"),
+      h("p", {}, "我的绿洲的故事都要由 AI 讲述。你还没有接入 AI（没填 API Key，也没设置本地模型），请先到“设置”里接好。"),
+      h("div", { class: "row" }, h("button", { class: "primary", onclick: () => { m.remove(); showSettings(); } }, "去设置 AI"), h("button", { onclick: () => m.remove() }, "取消"))));
+    document.body.append(m); return;
+  }
   if (!authorTest && !playableHere(res.story.meta)) return toast(`这个故事只支持${platformText(res.story.meta)}，这台设备（${PLATFORM_LABEL[currentPlatform()]}）不能玩`, "err");
   const s = new PlaySession(res.story, files, id, back);
   app.replaceChildren(s.root);

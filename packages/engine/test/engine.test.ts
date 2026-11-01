@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { withAi } from "../../schema/test/with-ai.js";
 import { readFileSync } from "node:fs";
 import { validateFiles, filesFromText, type Story } from "@my-oasis/schema";
 import { Game, runEntry, runEntries, parseChoices, createQuickJsRunner, type LLM, type ScriptRunner } from "../src/index.js";
 
 const root = new URL("../../../", import.meta.url).pathname;
 const load = (y: string, extra: Record<string, string> = {}) => {
-  const files = filesFromText(y, extra);
+  const files = filesFromText(withAi(y), extra);
   const r = validateFiles(files);
   if (!r.ok) throw new Error(r.issues.filter((i) => i.level === "error").map((i) => `${i.line}: ${i.message}`).join("\n"));
   return { story: r.story as Story, files };

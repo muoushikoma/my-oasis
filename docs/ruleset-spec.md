@@ -32,7 +32,7 @@ ui:
       region: input
       input:
         actions: [move, search, tend_light]      # 玩家打的字最多只能变成这三个动作
-        words: { tend_light: [点灯, 添油] }        # 不经 AI 时按关键词对应
+        words: { tend_light: [点灯, 添油] }        # 关键词直达：命中就直接执行，不用等 AI（AI 出错/超时也能用）
         reject: 这件事在这座岛上做不到。你可以移动、搜索或照看灯塔。
         max_length: 300
     keeper_chat:
@@ -113,7 +113,7 @@ my-story.oasis
 | `events` | 列表 | 可选 | 事件，§7 |
 | `endings` | 对象 | 可选 | 结局，§8；可以没有（故事不会自动结束） |
 | `tools` | 对象 | 可选 | 向 AI 暴露的工具，§9 |
-| `ai` | 对象 | 可选 | AI 全局规则与接入点，§10；**省略 = 无 AI 的纯规则故事** |
+| `ai` | 对象 | **必填** | AI 全局规则与接入点，§10；**必须至少有一个 AI 接入点**（`entry_points`），否则校验报错 `ai_required`。平台不收纯规则故事 |
 | `ui` | 对象 | 可选 | 界面，§13；省略 = 默认简约模板 |
 | `scripts` | 对象 | 可选 | 脚本设置，§12 |
 | `start` | 对象 | 可选 | 开局设置，§3.1 |
@@ -618,7 +618,7 @@ ui:
       placeholder: 你要做什么？
       input:
         actions: [move, search, tend_light]     # 玩家打的字最多只能变成这三个动作
-        words: { tend_light: [点灯, 添油, 守灯] }  # 没配 Key 时按关键词映射
+        words: { tend_light: [点灯, 添油, 守灯] }  # 关键词直达，AI 出错/超时时也能用
         reject: 这件事在这座岛上做不到。你可以移动、搜索或照看灯塔。
         max_length: 300
     stats: { type: stat-list, region: side, bind: [oil, day, location, clues] }

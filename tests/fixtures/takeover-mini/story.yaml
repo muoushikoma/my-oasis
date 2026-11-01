@@ -21,3 +21,15 @@ ui:
   layout: { template: custom, grid: ["screen"] }
   components:
     screen: { type: canvas, region: screen, size: fill, hidpi: true, render: scripts/game.js#draw }
+
+ai:
+  entry_points:
+    narrator:
+      kind: narrate
+      trigger: game_end
+      prompt: 用一两句话为结局写一句收尾。
+      fallback: { zh: 故事结束了。, en: The story ends. }
+      card:
+        task: 简短为结局写一句收尾
+        authority: 0
+        output: { format: text, max_chars: 120 }

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { withAi } from "./with-ai.js";
 import { readFileSync } from "node:fs";
 import { validateFiles, filesFromText, filesToZip, filesFromZip, aiFixRequest, formatIssues, parseExpr, evaluate, builtinFuncs } from "../src/index.js";
 import { loadFromPath } from "../src/node.js";
@@ -6,7 +7,7 @@ import { zipSync, strToU8 } from "fflate";
 
 const root = new URL("../../../", import.meta.url).pathname;
 const lighthouse = readFileSync(root + "examples/lighthouse-mini/story.yaml", "utf8");
-const v = (y: string, extra: Record<string, string> = {}) => validateFiles(filesFromText(y, extra));
+const v = (y: string, extra: Record<string, string> = {}) => validateFiles(filesFromText(withAi(y), extra));
 const codes = (r: ReturnType<typeof v>) => r.issues.filter((i) => i.level === "error").map((i) => i.code);
 
 describe("示例故事", () => {
@@ -151,14 +152,14 @@ ui:
     expect(codes(v(base.replace("path: audio/bgm.ogg", "path: art/hall.webp"), bin))).toContain("asset_format");
   });
   it("图片超过 10 MB 报错，10 MB 以内可以", () => {
-    const files = filesFromText(base, bin);
+    const files = filesFromText(withAi(base), bin);
     files.set("art/hall.webp", new Uint8Array(5 * 1024 * 1024));
     expect(validateFiles(files).issues.map((i) => i.code)).not.toContain("image_too_big");
     files.set("art/hall.webp", new Uint8Array(10 * 1024 * 1024 + 1));
     expect(validateFiles(files).issues.map((i) => i.code)).toContain("image_too_big");
   });
   it("文件数上限 2000", () => {
-    const files = filesFromText(base, bin);
+    const files = filesFromText(withAi(base), bin);
     for (let i = 0; i < 2001; i++) files.set(`notes/n${i}.txt`, new Uint8Array(1));
     expect(validateFiles(files).issues.map((i) => i.code)).toContain("too_many_files");
   });
@@ -213,4 +214,19 @@ ui:
     expect(v(y(", platforms: [console]")).ok).toBe(false);
     expect(v(y(", platforms: []")).ok).toBe(false);
   });
+});
+
+describe("必须接 AI", () => {
+  const noAi = `
+spec: oasis/0.3
+meta: { id: no-ai-test, title: 无AI, version: 0.1.0, summary: 测试, language: zh-CN, rating: all-ages }
+actions:
+  go: { steps: [] }
+ui:
+  layout: { template: simple }
+`;
+  const raw = (y: string) => validateFiles(filesFromText(y));
+  it("没写 ai 报错", () => { const r = raw(noAi); expect(r.ok).toBe(false); expect(codes(r)).toContain("ai_required"); });
+  it("ai 里没有接入点也报错", () => { expect(codes(raw(noAi + "ai: { system: 设定 }\n"))).toContain("ai_required"); });
+  it("有接入点就通过", () => { expect(raw(withAi(noAi)).ok).toBe(true); });
 });

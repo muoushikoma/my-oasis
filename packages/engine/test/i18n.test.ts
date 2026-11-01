@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { withAi } from "../../schema/test/with-ai.js";
 import { readFileSync } from "node:fs";
 import { validateFiles, filesFromText, libraryProblems, libraryWarnings, localizeStory, pickText, type Story } from "@my-oasis/schema";
 import { Game, buildMessages, createQuickJsRunner } from "../src/index.js";
@@ -7,7 +8,7 @@ const root = new URL("../../../", import.meta.url).pathname;
 const guide = readFileSync(root + "docs/ai-authoring-guide.md", "utf8");
 const boxY = guide.match(/```yaml\n(spec: oasis\/0\.3\nmeta:\n  id: guess-the-box[\s\S]*?)```/)![1];
 const load = (y: string, extra: Record<string, string> = {}) => {
-  const files = filesFromText(y, extra); const r = validateFiles(files);
+  const files = filesFromText(withAi(y), extra); const r = validateFiles(files);
   if (!r.ok) throw new Error(r.issues.filter((i) => i.level === "error").map((i) => i.message).join("\n"));
   return { story: r.story as Story, files };
 };

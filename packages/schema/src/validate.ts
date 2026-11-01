@@ -481,6 +481,8 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
   }
 
   // ai
+  // 平台规定：每个故事都必须接 AI（不再收纯规则故事）
+  if (!Object.keys(entries).length) report("error", "ai_required", ["ai"], s.ai ? "ai 里没有任何 AI 接入点（entry_points）。每个故事都必须至少有一个 AI 接入点。" : "缺少 ai。每个故事都必须接 AI，至少写一个 AI 接入点（ai.entry_points）。", "例如加一个开场叙述：ai: { entry_points: { narrate: { kind: narrate, trigger: game_start, prompt: 描写开场, fallback: 故事开始了。, card: { task: 叙述, authority: 0 } } } }。", "§10");
   if (s.ai) {
     const maxA = s.ai.rules?.max_authority ?? DEFAULT_MAX_AUTHORITY;
     checkFile(["ai", "system"], typeof s.ai.system === "string" && /\.md$/.test(s.ai.system) ? s.ai.system : undefined, "全局设定");
@@ -559,7 +561,6 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
       for (const sid of Array.isArray(ep.context?.state) ? ep.context.state : []) if (!(sid in state)) report("error", "unknown_state", [...p, "context"], `context 里的状态「${sid}」不存在。`, undefined, "§10.4", "state");
       if (ep.optional && !ep.fallback) report("warning", "optional_no_fallback", p, "这个 AI 接入点玩家可以关闭，但没写 fallback（关闭后显示什么）。", "加一句 fallback 文字。", "§10.4");
     }
-    // 写了 ai 但没有接入点：允许（等同于不用 AI）
     const narr = Object.values<any>(entries).some((e) => e?.kind === "narrate");
     if (narr && s.ui?.components && !Object.values<any>(comps).some((c) => c?.type === "text-log")) report("warning", "no_text_log", ["ui", "components"], "有 AI 叙述，但界面里没有叙述区（text-log），叙述可能看不到。", "加一个 { type: text-log, region: main }。", "§13");
   }
@@ -659,9 +660,6 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
   for (const t of Object.values<any>((s as any).realtime?.timers ?? {})) if (typeof t?.action === "string") usedActions.add(t.action);
   for (const id of actionIds) if (!usedActions.has(id) && !(Array.isArray(actions[id]?.callable_by) && actions[id].callable_by.includes("player") && !s.ui?.components))
     if (!usedActions.has(id)) report("info", "unused_action", ["actions", id], `动作「${id}」没有被任何工具、组件或步骤用到，玩家和 AI 都触发不了它。`, "如果是要给 AI 用，在 tools 里注册；给玩家用，就放一个按钮。", "§6.2");
-  // 无 AI 且无组件
-  if (!Object.keys(entries).length && !(s as any).realtime && !Object.values<any>(comps).some((c) => ["button", "choice-buttons"].includes(c?.type)))
-    report("warning", "no_way_to_play", [], "这是一个没有 AI 的故事，但界面里没有按钮或选项，玩家没办法操作。", "加 button 或 choice-buttons 组件，或者加一个 AI 接入点。", "§13");
 }
 
 /** 生成可以直接贴给 AI 的修改请求 */

@@ -38,7 +38,7 @@ my-story.oasis
 | `endings` | | `{ list?: [结局…], check_on?, script? }`，可以没有，见第 4 节 |
 | `assets` | | 素材登记，见第 5 节 |
 | `actions` | | 动作，见第 6 节 |
-| `ai` | | AI 接入点，见第 7 节。不写就是纯规则、不用 AI 的故事 |
+| `ai` | 是 | AI 接入点，见第 7 节。**必填**：每个故事都必须至少有一个 AI 接入点（`ai.entry_points`），平台不再收纯规则故事 |
 | `ui` | | 界面，见第 8 节。不写就用默认模板 |
 | `scripts` | | `{ limits: { time_ms: 1–200, memory_mb: 4–64 } }` |
 | `start` | | `{ intro: 文字, do: 步骤 }` |
@@ -207,7 +207,7 @@ meta:
   tags:
     - { zh: 悬疑, en: Mystery }
     - { zh: 短篇, en: Short }
-    - { zh: 纯规则, en: Rules only }
+    - { zh: 冒险, en: Adventure }
   cover: assets/cover.png
 assets:
   cover:
