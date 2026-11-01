@@ -26,7 +26,6 @@ export function tick(api) {
   if (s.scroll < s.target) { s.scroll = Math.min(s.target, s.scroll + (SPEED * dt) / 1000); busy = true; }
   for (const k of ["atk", "fhurt", "hhurt", "fmiss"]) if (s[k] > 0) { s[k] = Math.max(0, s[k] - dt); busy = true; }
   if (s.dying) { s.dying.t -= dt; if (s.dying.t <= 0) s.dying = null; else busy = true; }
-  if (s.cur && s.cur.pending) { s.cur.wait = (s.cur.wait || 0) + dt; if (s.cur.wait > 4000) s.cur.pending = false; else busy = true; }
   if (s.fx && s.fx.length) { s.fx = s.fx.filter((f) => (f.life -= dt) > 0); busy = busy || s.fx.length > 0; }
   if (s.prev && s.prev.wx - s.scroll < -80) s.prev = null;
   s.busy = busy;
@@ -65,7 +64,7 @@ export function draw(api) {
   // 上一个主体（被走过去，从左边离开）
   if (s.prev) drawSprite(d, s.prev.sprite, s.prev.wx - scroll, GROUND, { scale: s.prev.scale, tint: TINT[s.prev.tint], frame: 0, t });
   // 当前主体
-  const kind = st.get("event_kind");
+  const battle = st.get("phase") === "battle";
   const foe = st.get("foe") || {};
   let box = null;
   if (s.cur) {
@@ -102,7 +101,7 @@ export function draw(api) {
     for (let i = 0; i < 6; i++) { const ang = -1.2 + a * 2 + i * 0.12; d.rect(Math.round(hx + 14 + Math.cos(ang) * 14), Math.round(GROUND - 12 + Math.sin(ang) * 14), 2, 2, "#ffffff", { alpha: 0.9 - i * 0.12 }); }
   }
   // 敌人血条
-  if (kind === "combat" && s.cur && !s.cur.pending && box && foe.max_hp) {
+  if (battle && s.cur && !s.cur.pending && box && foe.max_hp) {
     const bw = 30, bx = Math.round(box.x + box.w / 2 - bw / 2), by = Math.round(box.y - 6);
     d.rect(bx - 1, by - 1, bw + 2, 4, "#1a1420");
     d.rect(bx, by, Math.max(0, Math.round(bw * foe.hp / foe.max_hp)), 2, foe.boss ? "#ff7a3a" : "#e2422c");

@@ -67,54 +67,79 @@ assets:
   thorns: { type: image, path: assets/sprites/thorns.png, use: other }
 
 state:
-  hp:        { type: number, init: 10, min: 0, integer: true, label: { zh: 生命, en: HP } }
-  max_hp:    { type: number, init: 10, min: 1, integer: true, label: { zh: 最大生命, en: Max HP } }
+  hp:        { type: number, init: 14, min: 0, integer: true, label: { zh: 生命, en: HP } }
+  max_hp:    { type: number, init: 14, min: 1, integer: true, label: { zh: 最大生命, en: Max HP } }
   level:     { type: number, init: 1, min: 1, integer: true, label: { zh: 等级, en: Level } }
   xp:        { type: number, init: 0, min: 0, integer: true, label: { zh: 经验, en: XP } }
   xp_next:   { type: number, init: 60, integer: true, label: { zh: 升级所需, en: XP to level } }
   ac:        { type: number, init: 12, integer: true, label: { zh: 护甲等级, en: Armor Class } }
-  weapon_bonus: { type: number, init: 0, min: 0, integer: true, label: { zh: 武器加值, en: Weapon bonus } }
-  armor_bonus:  { type: number, init: 0, min: 0, integer: true, label: { zh: 护甲加值, en: Armor bonus } }
   distance:  { type: number, init: 0, min: 0, integer: true, label: { zh: 已走里程, en: Miles walked } }
   best:      { type: number, init: 0, min: 0, integer: true, label: { zh: 最远纪录, en: Best record } }
-  rations:   { type: number, init: 8, min: 0, integer: true, label: { zh: 口粮, en: Rations } }
-  potions:   { type: number, init: 2, min: 0, integer: true, label: { zh: 治疗药水, en: Potions } }
-  gold:      { type: number, init: 15, min: 0, integer: true, label: { zh: 金币, en: Gold } }
   kills:     { type: number, init: 0, min: 0, integer: true, label: { zh: 击败敌人, en: Foes defeated } }
+  # 资源
+  rations:   { type: number, init: 8, min: 0, integer: true, visible: ai, desc: 口粮，每里吃 1 份 }
+  potions:   { type: number, init: 2, min: 0, integer: true, visible: ai, desc: 治疗药水 }
+  gold:      { type: number, init: 15, min: 0, integer: true, visible: ai, desc: 金币 }
+  iron:      { type: number, init: 0, min: 0, integer: true, visible: ai, desc: 铁料（强化材料） }
+  essence:   { type: number, init: 0, min: 0, integer: true, visible: ai, desc: 魔晶（稀有强化材料） }
+  gear:      { type: json, init: { weapon: 0, armor: 0, pack: 0, kit: 0 }, visible: ai, desc: 强化等级：武器、护甲、背包、营具 }
+  relics:    { type: json, init: [], visible: ai, desc: 携带的遗物（最多 3 件） }
+  status:    { type: json, init: {}, visible: ai, desc: 状态效果及剩余里程 }
+  quest:     { type: json, init: {}, visible: ai, desc: 进行中的委托（title 名字，due 回访的里程） }
+  # 冒险者
   abil:      { type: json, init: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, visible: ai, desc: 冒险者的六项属性值 }
   abilities: { type: string, init: "", visible: player, label: { zh: 属性, en: Abilities } }
+  # 世界
   biome:
     type: enum
     values: [plains, forest, hills, swamp, mountains, ashlands]
     init: plains
     visible: ai
     desc: 当前地区：plains 风语平原，forest 幽暗森林，hills 古冢丘陵，swamp 腐沼泽地，mountains 霜脊山道，ashlands 余烬荒原
-  scene_fx:  { type: json, init: { scroll: 0, target: 0, prev: null, cur: null, fx: [], busy: false }, visible: none, desc: 画面动画状态（卷动、主体、飘字） }
   art:       { type: json, init: { time: day, weather: clear }, visible: ai, desc: 画面的时间与天气 }
-  event_kind:
+  scene_fx:  { type: json, init: { scroll: 0, target: 0, prev: null, cur: null, fx: [], busy: false }, visible: none, desc: 画面动画状态 }
+  # 事件
+  phase:
     type: enum
-    values: [none, combat, hazard, treasure, social, merchant, shrine, rest]
+    values: [none, card, battle, shop]
     init: none
     visible: ai
-    desc: 当前遭遇类型（由引擎掷骰决定）
+    desc: 当前阶段：none 赶路，card 事件卡，battle 战斗，shop 交易
+  event_kind:
+    type: enum
+    values: [none, combat, encounter, discovery, hazard, mystic, dilemma, trade, rest, quest]
+    init: none
+    visible: ai
+    desc: 当前事件类别（由引擎掷骰决定）
   event_tier:
     type: enum
     values: [weak, normal, tough, elite, boss]
     init: normal
     visible: ai
-    desc: 遭遇强度（由引擎掷骰决定）
-  event_title: { type: string, init: "", max_length: 60, visible: ai, desc: 当前遭遇的名字 }
+    desc: 事件强度（由引擎掷骰决定）
+  event_title: { type: string, init: "", max_length: 60, visible: ai, desc: 当前事件的名字 }
   threat:    { type: number, init: 1, integer: true, visible: ai, desc: 威胁等级，越大越危险 }
+  card:      { type: json, init: {}, visible: none }
   foe:       { type: json, init: {}, visible: none }
-  check:     { type: json, init: {}, visible: none }
+  next_kind: { type: string, init: "", visible: none }
+  ai_mode:   { type: string, init: unknown, visible: none }
   camped:    { type: bool, init: false, visible: none }
-  situation: { type: string, init: "", visible: player, label: { zh: 眼前, en: Right now } }
+  # 面板文字（规则生成）
+  situation:   { type: string, init: "", visible: player, label: { zh: 眼前, en: Right now } }
+  pack_text:   { type: string, init: "", visible: player, label: { zh: 行囊, en: Pack } }
+  gear_text:   { type: string, init: "", visible: player, label: { zh: 强化, en: Upgrades } }
+  relic_text:  { type: string, init: "", visible: player, label: { zh: 遗物, en: Relics } }
+  status_text: { type: string, init: "", visible: player, label: { zh: 状态, en: Status } }
 
 realtime:
   tick_hz: 20
   tick_ms: 16
   interpolate: true
   on_tick: scripts/scene.js#tick
+  on_ui: scripts/road.js#on_ui
+  on_resize: scripts/road.js#resize
+  timers:
+    card_watch: { every_ms: 500, script: scripts/road.js#watch }
 
 start:
   intro:
@@ -130,12 +155,12 @@ actions:
   walk:
     label: { zh: 继续前进, en: Walk on }
     desc: { zh: 向前走一里，吃掉 1 份口粮，并遇到新的事件, en: "Walk one mile, eat 1 ration, and meet a new event" }
-    require: "state.event_kind == 'none' || state.event_kind == 'merchant' || state.event_kind == 'rest'"
-    require_message: { zh: 眼前的事还没解决：攻击、应对，或者离开。, en: "Deal with what's in front of you first: attack, resolve, or leave." }
+    require: "state.phase == 'none'"
+    require_message: { zh: 先处理眼前的事件。, en: Deal with the current event first. }
     callable_by: [player]
     steps:
       - call: walk_rules
-      - if: "state.event_kind != 'none'"
+      - if: "state.phase == 'card'"
         then: [ { emit: encounter } ]
       - if: "state.distance % 10 == 0"
         then: [ { emit: milestone } ]
@@ -144,22 +169,16 @@ actions:
     script: scripts/road.js#walk_rules
   attack:
     label: { zh: 攻击, en: Attack }
-    require: "state.event_kind == 'combat'"
-    require_message: { zh: 这里没有敌人。, en: There is no enemy here. }
+    require: "state.phase == 'battle'"
+    require_message: { zh: 现在没有在战斗。, en: You are not in a fight. }
     callable_by: [player]
     script: scripts/road.js#attack
-  resolve:
-    label: { zh: 应对（检定）, en: Resolve (check) }
-    require: "state.event_kind == 'hazard' || state.event_kind == 'treasure' || state.event_kind == 'social' || state.event_kind == 'shrine'"
-    require_message: { zh: 现在没有需要检定的事。, en: There is nothing to roll for right now. }
+  flee:
+    label: { zh: 逃跑, en: Flee }
+    require: "state.phase == 'battle'"
+    require_message: { zh: 现在没有在战斗。, en: You are not in a fight. }
     callable_by: [player]
-    script: scripts/road.js#resolve
-  leave:
-    label: { zh: 离开 / 逃跑, en: Leave / Flee }
-    require: "state.event_kind != 'none'"
-    require_message: { zh: 路上什么也没有，直接前进吧。, en: Nothing here — just walk on. }
-    callable_by: [player]
-    script: scripts/road.js#leave
+    script: scripts/road.js#flee
   potion:
     label: { zh: 喝药水, en: Drink potion }
     require: "state.potions > 0 && state.hp < state.max_hp"
@@ -168,38 +187,42 @@ actions:
     script: scripts/road.js#potion
   camp:
     label: { zh: 扎营休息, en: Make camp }
-    require: "(state.event_kind == 'rest') || (state.event_kind == 'none' && !state.camped && state.rations > 0)"
-    require_message: { zh: 现在不能扎营（每里只能扎营一次，需要 1 份口粮，且附近不能有麻烦）。, en: "You can't camp now (once per mile, costs 1 ration, and no trouble nearby)." }
+    require: "state.phase == 'none' && !state.camped && state.rations > 0"
+    require_message: { zh: 现在不能扎营（每里只能扎营一次，需要 1 份口粮，且附近不能有事件）。, en: "You can't camp now (once per mile, costs 1 ration, and nothing else going on)." }
     callable_by: [player]
-    steps:
-      - call: camp_rules
-      - if: "state.event_kind == 'combat'"
-        then: [ { emit: encounter } ]
-  camp_rules:
-    callable_by: [rules]
     script: scripts/road.js#camp_rules
-  buy:
-    label: { zh: 购买, en: Buy }
-    params:
-      item: { type: enum, values: [ration, potion, gear] }
-    require: "state.event_kind == 'merchant'"
-    require_message: { zh: 附近没有商人。, en: There is no merchant here. }
-    callable_by: [player]
-    script: scripts/road.js#buy
   apply_ai:
     callable_by: [rules]
     params:
-      title:    { type: string, required: false }
-      text:     { type: string, required: false }
-      foe:      { type: string, required: false }
-      ability:  { type: enum, values: [str, dex, con, int, wis, cha], required: false }
-      approach: { type: string, required: false }
-      reward:   { type: enum, values: [gold, rations, potion, heal], required: false }
-      hostile:  { type: bool, required: false }
-      sprite:   { type: string, required: false }
-      tint:     { type: string, required: false }
-      time:     { type: string, required: false }
-      weather:  { type: string, required: false }
+      title:   { type: string, required: false }
+      text:    { type: string, required: false }
+      foe:     { type: string, required: false }
+      relic:   { type: string, required: false }
+      sprite:  { type: string, required: false }
+      tint:    { type: string, required: false }
+      time:    { type: string, required: false }
+      weather: { type: string, required: false }
+      o1_label: { type: string, required: false }
+      o1_verb: { type: string, required: false }
+      o1_ability: { type: string, required: false }
+      o1_diff: { type: string, required: false }
+      o1_reward: { type: string, required: false }
+      o1_risk: { type: string, required: false }
+      o1_cost: { type: string, required: false }
+      o2_label: { type: string, required: false }
+      o2_verb: { type: string, required: false }
+      o2_ability: { type: string, required: false }
+      o2_diff: { type: string, required: false }
+      o2_reward: { type: string, required: false }
+      o2_risk: { type: string, required: false }
+      o2_cost: { type: string, required: false }
+      o3_label: { type: string, required: false }
+      o3_verb: { type: string, required: false }
+      o3_ability: { type: string, required: false }
+      o3_diff: { type: string, required: false }
+      o3_reward: { type: string, required: false }
+      o3_risk: { type: string, required: false }
+      o3_cost: { type: string, required: false }
     script: scripts/road.js#apply_ai
 
 endings:
@@ -212,20 +235,21 @@ endings:
         zh: 你倒在了路边。风吹过，路依旧向前延伸。看看你走了多远——下一次，也许能走得更远。
         en: You collapse by the roadside. The wind blows on, and the road still runs ahead. See how far you came — next time, perhaps further.
 
+
 ai:
-  model_hint: { tier: light, note: 每走一步生成一个小事件，快速便宜的模型就够用 }
+  model_hint: { tier: standard, note: 每走一里写一张事件卡（JSON），中等模型效果最好 }
   system: |
-    这是一个低魔奇幻世界（类似 D&D 的经典奇幻）。一位冒险者沿着一条没有尽头的路向东走，路上会遇到怪物、陷阱、宝藏、路人、行商、奇遇和安全的营地。
+    这是一个低魔奇幻世界（类似 D&D 的经典奇幻）。一位冒险者沿着一条没有尽头的路向东走。
     风格：简洁、有画面感、偶尔带一点幽默。适合所有年龄：可以有战斗和危险，但不写血腥细节。
-    每次冒险都应该是全新的：多用意想不到的生物、人物和地点，不要重复之前出现过的东西。
+    每次冒险都应该是全新的：多用意想不到的生物、人物、地点和两难选择，不要重复之前出现过的东西。
   rules:
     max_authority: 0
     must:
-      - 遭遇的类型和强度已经由引擎掷骰决定，你只负责把它写得具体、生动
-      - 名字和描述要符合当前地区（biome）和强度（event_tier）
+      - 事件的类别和强度已经由引擎掷骰决定，你负责把它写成一张具体、生动的事件卡
+      - 选项的收获和风险只能从给定的菜单里挑，具体数值由规则计算
     forbid:
-      - 写出具体的数值、伤害或骰子结果（数值由规则计算）
-      - 替玩家做决定或写出遭遇的结果
+      - 写出具体的数值、伤害或骰子结果
+      - 替玩家做决定或写出事件的结果
       - 血腥、恐怖猎奇或不适合全年龄的内容
   entry_points:
     road_event:
@@ -233,39 +257,65 @@ ai:
       trigger: event:encounter
       prompt: |
         冒险者走到了第 {{state.distance}} 里，地区：{{state.biome}}。
-        引擎掷出的遭遇类型：{{state.event_kind}}，强度：{{state.event_tier}}，威胁等级：{{state.threat}}。
-        冒险者现在 {{state.hp}}/{{state.max_hp}} 生命，{{state.level}} 级，口粮 {{state.rations}}，药水 {{state.potions}}，金币 {{state.gold}}。
+        引擎掷出的事件类别：{{state.event_kind}}，强度：{{state.event_tier}}，威胁等级：{{state.threat}}。
+        冒险者：{{state.level}} 级，生命 {{state.hp}}/{{state.max_hp}}，属性 {{state.abil}}；口粮 {{state.rations}}，药水 {{state.potions}}，金币 {{state.gold}}，铁料 {{state.iron}}，魔晶 {{state.essence}}；遗物 {{state.relics}}；状态 {{state.status}}；委托 {{state.quest}}。
 
-        请为这个遭遇写内容：
-        - title：遭遇的名字（不超过 12 个字）。
-        - text：2~3 句描述，玩家看到的就是这段，写出现场的样子和气氛，结尾停在需要玩家做决定的地方。
-        - foe：combat 时是敌人的名字（守关者 boss 要写出一个有气势的名号）；social 时是这个人的称呼；其他类型留空。
-        - ability：hazard/treasure/social/shrine 时，最适合用来应对的属性（str 力量、dex 敏捷、con 体质、int 智力、wis 感知、cha 魅力）；其他类型随便填一个。
-        - approach：hazard/treasure/social/shrine 时，玩家“应对”要做的事（不超过 12 个字，如“攀过断桥”“说服守卫”）；其他类型留空。
-        - reward：treasure/social/shrine 成功时最合理的收获类型（gold 金币、rations 口粮、potion 药水、heal 恢复体力）。
-        - hostile：social 时，如果谈判失败对方会不会动手；其他类型填 false。
-        merchant 就写一位有特点的行商；rest 就写一处安全的歇脚地。
+        请把这个事件写成一张事件卡：
+        - title：事件名（不超过 12 个字）。text：2~3 句描述，停在需要做决定的地方。
+        - foe：combat 时是敌人的名字（守关者要有气势的名号）；其他类别里如果有可能打起来的对象，写它的名字，否则留空。
+        - 写 2~3 个选项（o1_ / o2_ / o3_），每个选项：
+          - label：玩家要做的事（不超过 10 个字，如“攀过断桥”“说服守卫”“献上金币”）。
+          - verb：check 属性检定 / pay 付出代价换确定收获 / gamble 赌运气 / fight 动手 / quest 接受委托（几里后回访，奖励丰厚）；不用的选项填 none。
+          - ability（check 用）：str 力量、dex 敏捷、con 体质、int 智力、wis 感知、cha 魅力。diff（check 用）：easy / normal / hard，越难收获越大。
+          - reward：成功时的收获 gold 金币 / rations 口粮 / potion 药水 / heal 恢复 / iron 铁料 / essence 魔晶 / xp 经验 / blessing 祝福 / relic 遗物（只有 hard 检定和委托回访才给）/ map 侦察 / none。
+          - risk（check、gamble 用）：失败时 hurt 受伤 / lose_gold / lose_rations / curse 诅咒 / poison 中毒 / ambush 被袭击（转入战斗）/ lost 迷路 / exhaust 疲惫 / none。
+          - cost（pay 用）：gold / rations / potion / hp / iron / essence。
+        - 各类别的写法：
+          - combat：遭遇一个敌人，至少一个 fight 选项，另外可以有偷偷绕过（check）、贿赂（pay）等。
+          - encounter：遇到会说话的人或生物，可以交易、帮忙、接委托，也可能翻脸。
+          - discovery：废墟、遗物、尸骸、宝箱。hazard：环境险阻（桥、风暴、流沙、落石）。
+          - mystic：祭坛、精灵、诅咒之物、许愿泉。dilemma：两难的道德选择，让每个选项都有代价。
+          - quest：委托（{{state.quest}}）的结局，要呼应委托的名字，奖励可以给 relic。
+          - trade：写一位有特点的行商（选项留空，规则会打开商店）。rest：写一处安全的歇脚地（选项留空）。
+        - 选项要有不同的取舍：比如一个稳妥但收获小，一个冒险但收获大，一个花资源换确定结果。结合冒险者当前缺什么来设计。
+        - relic（可选）：如果有选项给 relic，挑一件：lucky_charm 幸运符、vampiric_blade 吸血之刃、traveler_boots 旅人靴、guardian_amulet 守护护符、hunter_horn 猎人号角、alchemist_flask 炼金瓶、star_chart 星图、undying_ember 不灭余烬。
 
         画面由模块拼成，请挑最贴切的组合：
-        - sprite：combat 从 wolf 狼/野兽、spider 蜘蛛/虫、bandit 人形敌人、skeleton 亡灵、troll 大块头、drake 飞龙/蜥蜴、ooze 软泥、wisp 元素/幽魂 里选（守关者还可以选 warden 骑士）；hazard 从 chasm 断崖、rocks 落石、thorns 荆棘 里选；social 选 stranger 旅人 或 bandit 可疑的人；其他类型随便填。
-        - tint：给精灵染色，none / red / green / blue / gold / shadow / pale / purple（例如火焰怪 red、冰怪 blue、幽灵 pale）。
-        - time：day / dusk / night，可以顺着上一个事件的时间往后推。
-        - weather：clear / rain / snow / fog / embers / fireflies / leaves，要符合地区。
+        - sprite：combat 从 wolf 野兽、spider 虫、bandit 人形、skeleton 亡灵、troll 大块头、drake 飞龙、ooze 软泥、wisp 元素/幽魂 里选（守关者还可选 warden）；encounter/dilemma/quest 选 stranger、bandit、skeleton、wisp；discovery 选 chest、rocks、shrine；hazard 选 chasm、rocks、thorns；mystic 选 shrine、wisp；trade 选 cart；rest 选 campfire。
+        - tint：none / red / green / blue / gold / shadow / pale / purple。time：day / dusk / night。weather：clear / rain / snow / fog / embers / fireflies / leaves，要符合地区。
       card:
-        task: 为引擎刚刚掷出的路上遭遇写出具体的名字、描述和应对方式。
+        task: 把引擎刚刚掷出的路上事件写成一张事件卡：名字、描述、2~3 个有取舍的选项，以及画面模块。
         authority: 0
         output:
           format: json
           to: none
-          max_chars: 800
+          max_chars: 1600
           schema:
             title: string
             text: string
             foe: string
-            ability: "enum:[str,dex,con,int,wis,cha]"
-            approach: string
-            reward: "enum:[gold,rations,potion,heal]"
-            hostile: bool
+            relic: "enum:[none,lucky_charm,vampiric_blade,traveler_boots,guardian_amulet,hunter_horn,alchemist_flask,star_chart,undying_ember]"
+            o1_label: string
+            o1_verb: "enum:[none,check,pay,gamble,fight,quest]"
+            o1_ability: "enum:[wis,str,dex,con,int,cha]"
+            o1_diff: "enum:[normal,easy,hard]"
+            o1_reward: "enum:[none,gold,rations,potion,heal,iron,essence,xp,blessing,relic,map]"
+            o1_risk: "enum:[hurt,lose_gold,lose_rations,curse,poison,ambush,lost,exhaust,none]"
+            o1_cost: "enum:[gold,rations,potion,hp,iron,essence]"
+            o2_label: string
+            o2_verb: "enum:[none,check,pay,gamble,fight,quest]"
+            o2_ability: "enum:[wis,str,dex,con,int,cha]"
+            o2_diff: "enum:[normal,easy,hard]"
+            o2_reward: "enum:[none,gold,rations,potion,heal,iron,essence,xp,blessing,relic,map]"
+            o2_risk: "enum:[hurt,lose_gold,lose_rations,curse,poison,ambush,lost,exhaust,none]"
+            o2_cost: "enum:[gold,rations,potion,hp,iron,essence]"
+            o3_label: string
+            o3_verb: "enum:[none,check,pay,gamble,fight,quest]"
+            o3_ability: "enum:[wis,str,dex,con,int,cha]"
+            o3_diff: "enum:[normal,easy,hard]"
+            o3_reward: "enum:[none,gold,rations,potion,heal,iron,essence,xp,blessing,relic,map]"
+            o3_risk: "enum:[hurt,lose_gold,lose_rations,curse,poison,ambush,lost,exhaust,none]"
+            o3_cost: "enum:[gold,rations,potion,hp,iron,essence]"
             sprite: "enum:[wolf,spider,bandit,skeleton,troll,drake,ooze,wisp,warden,chasm,rocks,thorns,stranger,chest,cart,shrine,campfire]"
             tint: "enum:[none,red,green,blue,gold,shadow,pale,purple]"
             time: "enum:[day,dusk,night]"
@@ -276,27 +326,45 @@ ai:
                 title: out.title
                 text: out.text
                 foe: out.foe
-                ability: out.ability
-                approach: out.approach
-                reward: out.reward
-                hostile: out.hostile
+                relic: out.relic
                 sprite: out.sprite
                 tint: out.tint
                 time: out.time
                 weather: out.weather
+                o1_label: out.o1_label
+                o1_verb: out.o1_verb
+                o1_ability: out.o1_ability
+                o1_diff: out.o1_diff
+                o1_reward: out.o1_reward
+                o1_risk: out.o1_risk
+                o1_cost: out.o1_cost
+                o2_label: out.o2_label
+                o2_verb: out.o2_verb
+                o2_ability: out.o2_ability
+                o2_diff: out.o2_diff
+                o2_reward: out.o2_reward
+                o2_risk: out.o2_risk
+                o2_cost: out.o2_cost
+                o3_label: out.o3_label
+                o3_verb: out.o3_verb
+                o3_ability: out.o3_ability
+                o3_diff: out.o3_diff
+                o3_reward: out.o3_reward
+                o3_risk: out.o3_risk
+                o3_cost: out.o3_cost
       context:
-        state: [distance, biome, event_kind, event_tier, event_title, threat, level, hp, max_hp, rations, potions, gold, art]
+        state: [distance, biome, event_kind, event_tier, threat, level, hp, max_hp, abil, rations, potions, gold, iron, essence, gear, relics, status, quest, art]
         history_turns: 10
         setting: false
       temperature: 1.0
-      fallback: { zh: （AI 没有连上：本次遭遇使用内置描述。）, en: (AI unavailable — using the built-in description for this encounter.) }
+      fallback: { zh: （AI 没有连上：本次事件使用内置模板。）, en: (AI unavailable — using a built-in event.) }
     epitaph:
       kind: narrate
       trigger: game_end
       after_end: true
       optional: true
       prompt: |
-        冒险者倒下了。他/她一共走了 {{state.distance}} 里，到达 {{state.level}} 级，击败了 {{state.kills}} 个敌人，最后倒在了 {{state.biome}}。
+        冒险者倒下了。一共走了 {{state.distance}} 里，到达 {{state.level}} 级，击败了 {{state.kills}} 个敌人，带着遗物 {{state.relics}}，最后倒在了 {{state.biome}}。
         请写一段简短的墓志铭式的结语（2~3 句），回顾这段旅程，语气庄重但带一点温暖。
       card:
         task: 为倒下的冒险者写一段简短的旅程结语。
@@ -306,7 +374,7 @@ ai:
           to: component:log
           max_chars: 300
       context:
-        state: [distance, level, kills, biome]
+        state: [distance, level, kills, biome, relics]
         history_turns: 0
         setting: false
       fallback: { zh: 路还在，传说也还在。, en: "The road remains, and so does the legend." }
@@ -348,12 +416,32 @@ ui:
       type: stat-list
       region: side
       label: { zh: 冒险者, en: Adventurer }
-      bind: [hp, max_hp, level, xp, xp_next, ac, weapon_bonus]
+      bind: [hp, max_hp, level, xp, xp_next, ac]
     pack:
-      type: stat-list
+      type: text-block
       region: side
       label: { zh: 行囊, en: Pack }
-      bind: [distance, best, rations, potions, gold, kills]
+      bind: pack_text
+    upgrades:
+      type: text-block
+      region: side
+      label: { zh: 强化, en: Upgrades }
+      bind: gear_text
+    relic_block:
+      type: text-block
+      region: side
+      label: { zh: 遗物, en: Relics }
+      bind: relic_text
+    status_block:
+      type: text-block
+      region: side
+      label: { zh: 状态, en: Status }
+      bind: status_text
+    record:
+      type: stat-list
+      region: side
+      label: { zh: 旅程, en: Journey }
+      bind: [distance, best, kills]
     abil_block:
       type: text-block
       region: side
@@ -371,16 +459,7 @@ ui:
       region: input
       choices:
         - { label: { zh: 继续前进, en: Walk on }, action: walk }
-        - { label: { zh: 攻击, en: Attack }, action: attack }
-        - { label: { zh: 应对（检定）, en: Resolve }, action: resolve }
-        - { label: { zh: 离开 / 逃跑, en: Leave / Flee }, action: leave }
-        - { label: { zh: 喝药水, en: Potion }, action: potion }
         - { label: { zh: 扎营休息, en: Camp }, action: camp }
-    shop:
-      type: choice-buttons
-      region: input
-      label: { zh: 行商, en: Merchant }
-      choices:
-        - { label: { zh: 买口粮 2g, en: Ration 2g }, action: buy, params: { item: ration } }
-        - { label: { zh: 买药水 15g, en: Potion 15g }, action: buy, params: { item: potion } }
-        - { label: { zh: 升级装备, en: Upgrade gear }, action: buy, params: { item: gear } }
+        - { label: { zh: 喝药水, en: Potion }, action: potion }
+        - { label: { zh: 攻击, en: Attack }, action: attack }
+        - { label: { zh: 逃跑, en: Flee }, action: flee }
