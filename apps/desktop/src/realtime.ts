@@ -10,6 +10,8 @@ import { Canvas2DRenderer } from "./render/canvas2d";
 import { AudioEngine } from "./render/audio";
 import { NativeUi } from "./native-ui";
 import { pollGamepad } from "./gamepad";
+import { loadSettings } from "./settings";
+import { currentPlatform, showVirtualControls } from "./platform";
 
 export interface RtHost {
   game: Game; story: Story; assets: AssetBox; llm?: LLM;
@@ -115,9 +117,10 @@ export class RealtimeDriver {
   forceCanvas2d = typeof location !== "undefined" && /[?&]canvas2d\b/.test(location.search);
   get rendererKind() { for (const v of this.views.values()) if (v.r) return v.r.kind; return undefined; }
 
-  /** 屏幕上的虚拟摇杆和按钮（触摸设备；桌面上也可以用鼠标点） */
+  /** 屏幕上的虚拟摇杆和按钮：默认只在手机上显示；电脑上默认不显示（设置里可改成“总是显示”） */
   controlsEl(): HTMLElement | null {
     const inp: any = this.s.story.input; if (!inp || (!inp.joystick && !inp.buttons?.length)) return null;
+    if (!showVirtualControls((loadSettings() as any).virtualControls, currentPlatform())) return null;
     if (this.controls) return this.controls;
     const wrap = h("div", { class: "rt-controls" });
     if (inp.joystick) {

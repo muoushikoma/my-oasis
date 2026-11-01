@@ -152,6 +152,28 @@ impl Gh {
             state: p["state"].as_str().unwrap_or_default().into(), merged: p["merged"].as_bool().unwrap_or(false), checks, updated_at: p["updated_at"].as_str().unwrap_or_default().into() })
     }
     /// 我提交到主仓库的投稿（最近 20 个）
+    /// 点赞：给故事对应的点赞 Issue（标签 story-likes）加/去掉 👍。返回操作后的 👍 总数。
+    pub async fn like(&self, token: &str, issue: u64, on: bool) -> Result<u64> {
+        let base = format!("/repos/{UPSTREAM_OWNER}/{UPSTREAM_REPO}/issues/{issue}");
+        let v = self.ok(token, reqwest::Method::GET, &base, None).await?;
+        if !v["labels"].as_array().into_iter().flatten().any(|l| l["name"] == "story-likes") { return msg("这个 Issue 不是故事点赞帖"); }
+        if on {
+            self.ok(token, reqwest::Method::POST, &format!("{base}/reactions"), Some(json!({ "content": "+1" }))).await?;
+        } else {
+            let me = self.login(token).await?;
+            for page in 1..=10 {
+                let list = self.ok(token, reqwest::Method::GET, &format!("{base}/reactions?content=%2B1&per_page=100&page={page}"), None).await?;
+                let arr = list.as_array().cloned().unwrap_or_default();
+                if let Some(r) = arr.iter().find(|r| r["user"]["login"].as_str() == Some(me.as_str())) {
+                    if let Some(rid) = r["id"].as_u64() { self.ok(token, reqwest::Method::DELETE, &format!("{base}/reactions/{rid}"), None).await?; }
+                    break;
+                }
+                if arr.len() < 100 { break; }
+            }
+        }
+        let v = self.ok(token, reqwest::Method::GET, &base, None).await?;
+        Ok(v["reactions"]["+1"].as_u64().unwrap_or(0))
+    }
     pub async fn my_prs(&self, token: &str) -> Result<Vec<PrInfo>> {
         let me = self.login(token).await?;
         let q = format!("repo:{UPSTREAM_OWNER}/{UPSTREAM_REPO} is:pr author:{me}");

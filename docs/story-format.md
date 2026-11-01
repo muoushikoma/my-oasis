@@ -60,6 +60,7 @@ id 的通用格式：状态、动作、素材、接入点、组件这些的 id �
 | `summary` | ✅ | 简介。字符串或 `{ zh: …, en: … }`（**投稿故事库必须中英都写**） |
 | `language` | ✅ | 主要语言，例如 `zh-CN`、`en` |
 | `languages` | | 故事支持的语言，例如 `[zh, en]`（见第 11 节） |
+| `platforms` | | 支持的平台：`desktop`（电脑）、`mobile`（手机），可写一个或两个，例如 `[desktop, mobile]`；不写 = 两端都支持。客户端只列出、只加载当前设备能玩的故事，发布页会显示支持平台 |
 | `rating` | ✅ | `all-ages`、`teen` 或 `mature`（`mature` 时 `content_warnings` 必填）。**公开故事库只收 `all-ages`（全年龄）**，其他分级只能本地导入 |
 | `tags` | | 标签数组，每项是字符串或 `{ zh, en }`。**投稿故事库必须正好 3 个，每个中英都写** |
 | `authors` / `content_warnings` | | 字符串数组（`content_warnings` 每项也可写 `{ zh, en }`） |
@@ -311,7 +312,7 @@ realtime:
 ```yaml
 input:
   keys: { ArrowLeft: left, KeyA: left, Space: jump }   # 键盘按键（KeyboardEvent.code）→ 作者自己起的名字
-  joystick: true                                      # 屏幕虚拟摇杆；或 { side: left | right }
+  joystick: true                                      # 屏幕虚拟摇杆（默认只在手机上显示，电脑上不显示；玩家可在设置里改）；或 { side: left | right }
   buttons: [ { id: jump, label: 跳 } ]                 # 屏幕按钮，最多 8 个；id 和 keys 的名字可以相同
   pointer: true                                       # 在画布上点击/触摸
 ```

@@ -189,3 +189,28 @@ describe("AI 选项按钮", () => {
     expect(v(y).issues.map((i) => i.code)).toContain("choices_no_source");
   });
 });
+
+describe("支持平台 meta.platforms", () => {
+  const y = (p: string) => `
+spec: oasis/0.3
+meta: { id: plat-test, title: 平台, version: 0.1.0, summary: 测试, language: zh-CN, rating: all-ages${p} }
+state:
+  n: { type: number, init: 0 }
+endings:
+  list:
+    - { id: done, label: 完, kind: good, when: "state.n > 0" }
+actions:
+  add: { steps: [ { set: { n: "state.n + 1" } } ] }
+ui:
+  layout: { template: simple }
+`;
+  it("可以不写、写一个或两个", () => {
+    expect(v(y("")).ok).toBe(true);
+    expect(v(y(", platforms: [mobile]")).ok).toBe(true);
+    expect(v(y(", platforms: [desktop, mobile]")).ok).toBe(true);
+  });
+  it("拒绝未知平台和空列表", () => {
+    expect(v(y(", platforms: [console]")).ok).toBe(false);
+    expect(v(y(", platforms: []")).ok).toBe(false);
+  });
+});
