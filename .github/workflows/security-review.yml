@@ -16,9 +16,9 @@ jobs:
     name: 安全审核 / security review
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      OUT_DIR: ${{ runner.temp }}/security-review
     steps:
+      - name: 结果目录 / output dir
+        run: echo "OUT_DIR=$RUNNER_TEMP/security-review" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
