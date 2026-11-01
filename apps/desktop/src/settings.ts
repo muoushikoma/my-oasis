@@ -13,5 +13,7 @@ export function loadSettings(): Settings { try { return { ...DEF, ...JSON.parse(
 export function saveSettings(s: Settings) { localStorage.setItem("oasis.settings", JSON.stringify(s)); }
 /** 按玩家选的语言取故事文字 */
 export const tr = (v: unknown) => pickText(v, loadSettings().lang);
+/** 客户端自己的界面文字：按玩家选的语言取中文或英文 */
+export const t2 = (zh: string, en: string) => (loadSettings().lang === "en" ? en : zh);
 export const trList = (v: unknown) => (Array.isArray(v) ? v.map(tr) : []);
 export const isLocalUrl = (u: string) => /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(u);

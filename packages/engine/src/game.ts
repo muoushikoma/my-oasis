@@ -1,4 +1,4 @@
-import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit, localizeStory, type Lang } from "@my-oasis/schema";
+import { parseExpr, evaluate, builtinFuncs, deepEq, DEFAULT_MAX_AUTHORITY, type Node, type Story, type StateDef, type StoryFiles, textFile, normalizeStory, type InputState, type EntryPointDef, type WriteLimit, localizeStory, pickText, type Lang } from "@my-oasis/schema";
 import { Rng, rollDice } from "./rng.js";
 import { FAIL_MARK, ScriptError, type ScriptRunner } from "./script.js";
 
@@ -256,7 +256,7 @@ export class Game {
     const e = this.story.endings.list.find((x) => x.id === id);
     if (!e) throw new StepFail(`结局「${id}」不存在`);
     this.ending = id;
-    this.log.push({ turn: this.turn, kind: "ending", text: `【结局】${e.label}`, data: { id } });
+    this.log.push({ turn: this.turn, kind: "ending", text: `${this.lang === "en" ? "[Ending] " : "【结局】"}${pickText(e.label, this.lang)}`, data: { id } });
   }
 
   checkEndings(when: "state_change" | "turn_end" | "manual" = "state_change") {
