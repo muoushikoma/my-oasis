@@ -34,6 +34,10 @@
 - 只上传自己创作或有权使用的文字、图片和音乐；绝对不要放 API Key 或密码。
 - 维护者有权拒绝或下架任何故事。
 
+## 代码签名政策（Code signing policy）
+
+免费代码签名由 SignPath.io 提供，证书由 SignPath Foundation 颁发（申请审核中；批准前 Windows 安装包暂无签名）。详见[代码签名政策](docs/code-signing.md)（团队分工、签什么）和[隐私政策](docs/privacy.md)。
+
 ## 许可证与版权
 
 - **代码**：[MIT 许可证](LICENSE)。
@@ -73,6 +77,7 @@ API Key、GitHub token 只存在系统安全存储里（Windows 凭据管理器 
 | [项目说明](docs/overview.md) | 项目是什么、给谁用、整体思路 |
 | [架构](docs/architecture.md) | 客户端、引擎、AI 接入和安全设计，以及 AI 用量（token）本机记录 |
 | [里程碑](docs/mvp.md) | 已完成和计划中的功能 |
+| [代码签名政策](docs/code-signing.md) / [隐私政策](docs/privacy.md) | Windows 签名（SignPath 基金会）、团队分工、不收集数据 |
 | [服务器 API（暂缓）](docs/server-api.md) | 以后做服务器时的接口草案，目前不做服务器 |
 | [故事版权与授权](stories/LICENSE.md) | 投稿故事的版权归属和授权范围 |
 | [贡献说明](CONTRIBUTING.md) | 怎么贡献代码和故事：环境、命令、PR 要求和硬性规则 |

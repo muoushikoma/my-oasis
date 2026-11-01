@@ -1,6 +1,7 @@
 # 安卓 APK 构建（手动触发、打 v* 标签，或改了代码的 PR；只改故事的 PR 不触发）。不提交任何签名密钥：
 # - 默认每次用临时生成的自签名证书签名（能安装；但换证书后需先卸载旧版才能装新版）
-# - 以后想要固定签名：在仓库 Secrets 里放 ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD（keystore 别名 my-oasis）
+# - 仓库 Secrets 里有正式证书（ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_PASSWORD / ANDROID_KEY_ALIAS）时用正式证书签名，
+#   以后更新可直接覆盖安装；fork 来的 PR 拿不到 Secrets，自动退回临时证书。
 name: android-build
 on:
   workflow_dispatch:
@@ -90,21 +91,31 @@ jobs:
         env:
           OASIS_GITHUB_CLIENT_ID: ${{ vars.OASIS_GITHUB_CLIENT_ID }}
         run: pnpm tauri android build --ci --apk --target aarch64 --target armv7 --target x86_64
-      - name: 签名（不提交密钥）
+      - name: 签名（有正式证书用正式证书，否则用临时证书；不打印密码）
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           set -e
           IN=$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name "*release-unsigned.apk" | head -1)
           if [ -z "$IN" ]; then echo "找不到 APK，产物如下："; find apps/desktop/src-tauri/gen/android/app/build/outputs -name "*.apk"; exit 1; fi
           echo "APK: $IN"
-          if [ -n "$KS_B64" ]; then echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/ks.jks"; PASS="$KS_PASS";
-          else PASS=$(openssl rand -hex 16); keytool -genkeypair -keystore "$RUNNER_TEMP/ks.jks" -storetype PKCS12 -storepass "$PASS" -keypass "$PASS" -alias my-oasis -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=My Oasis Test"; fi
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ]; then
+            echo "使用正式证书（release keystore）签名"
+            printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/ks.jks"
+            PASS="$KS_PASS"; KPASS="${KEY_PASS:-$KS_PASS}"; ALIAS="${KEY_ALIAS:-my-oasis}"
+          else
+            echo "::warning::没有正式证书（例如 fork 的 PR），使用临时自签名证书"
+            PASS=$(openssl rand -hex 16); KPASS="$PASS"; ALIAS=my-oasis; echo "::add-mask::$PASS"
+            keytool -genkeypair -keystore "$RUNNER_TEMP/ks.jks" -storetype PKCS12 -storepass "$PASS" -keypass "$PASS" -alias my-oasis -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=My Oasis Test" > /dev/null
+          fi
+          export PASS KPASS
           "$BUILD_TOOLS/zipalign" -f -p 4 "$IN" "$RUNNER_TEMP/aligned.apk"
-          "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/ks.jks" --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --ks-key-alias my-oasis --out my-oasis-android.apk "$RUNNER_TEMP/aligned.apk"
-          "$BUILD_TOOLS/apksigner" verify my-oasis-android.apk
+          "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/ks.jks" --ks-pass env:PASS --key-pass env:KPASS --ks-key-alias "$ALIAS" --out my-oasis-android.apk "$RUNNER_TEMP/aligned.apk"
           rm -f "$RUNNER_TEMP/ks.jks"
+          "$BUILD_TOOLS/apksigner" verify --print-certs my-oasis-android.apk | grep -i 'SHA-256' || true
       - uses: actions/upload-artifact@v4
         with:
           name: my-oasis-android

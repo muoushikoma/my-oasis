@@ -22,6 +22,10 @@ PRs from forks may **only change `stories/`**. After the maintainer reviews and 
 
 Content rules: all-ages stories only (`rating: all-ages`); title, summary and exactly 3 tags must be given in both Chinese and English; no sexual content, no gore, hate, illegal content or private data; only material you own or may use; never include API keys.
 
+## Code signing policy
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation (application pending; Windows builds are unsigned until approved). See the [code signing policy](docs/code-signing.md) (team roles, what is signed) and the [privacy policy](docs/privacy.md).
+
 ## License & copyright
 - **Code:** [MIT](LICENSE).
 - **Stories:** each story in `stories/` remains the **copyright of its author** and is *not* MIT-licensed. By submitting, you grant this project a free, non-exclusive, worldwide, revocable (by takedown) license to store, display and distribute your story in this repo, the story site and the app. See [stories/LICENSE.md](stories/LICENSE.md).
@@ -45,6 +49,7 @@ API keys and GitHub tokens live only in the OS secure store (Windows Credential 
 | [Overview](docs/overview.md) | What the project is, who it is for, the overall idea |
 | [Architecture](docs/architecture.md) | Client, engine, AI integration and security design, plus local AI token-usage tracking |
 | [Milestones](docs/mvp.md) | Done and planned features |
+| [Code signing policy](docs/code-signing.md) / [Privacy policy](docs/privacy.md) | Windows signing via SignPath Foundation, team roles, no telemetry |
 | [Server API (on hold)](docs/server-api.md) | Draft API for a future server; no server for now |
 | [Story copyright & license](stories/LICENSE.md) | Copyright and license terms for submitted stories |
 | [Contributing](CONTRIBUTING.md) | How to contribute code and stories: setup, commands, PR requirements, and hard rules |
