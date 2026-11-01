@@ -510,7 +510,7 @@ function offerPerks(api) {
   const pool = Object.keys(PERKS).filter((k) => (!PERKS[k].c || PERKS[k].c === id) && taken.indexOf(k) < 0);
   const pick = [];
   while (pool.length && pick.length < 3) pick.push(pool.splice(api.random.int(0, pool.length - 1), 1)[0]);
-  if (get(api, "pool") && (get(api, "pool").perks || []).length) pick[pick.length >= 3 ? 2 : pick.length] = "ai";
+  if (get(api, "pool") && (get(api, "pool").perks || []).length && heldItems(api).filter((x) => x.kind === "insight").length < 3) pick[pick.length >= 3 ? 2 : pick.length] = "ai";
   set(api, "perk_offer", pick);
   if (get(api, "phase") === "none") settle(api);
 }
@@ -643,7 +643,7 @@ const RARITY = { common: ["普通", "Common", 1], rare: ["稀有", "Rare", 1.6],
 const RARITY_UP = { common: "rare", rare: "legendary", legendary: "legendary" };
 const TRIG_NAME = { passive: ["常驻", "Always"], battle_start: ["战斗开始时", "At battle start"], on_hit: ["命中时", "On hit"], on_hurt: ["受伤时", "When hurt"], on_kill: ["击败敌人时", "On kill"], on_mile: ["每走一里", "Each mile"], on_camp: ["扎营时", "When camping"], use: ["使用", "Use"] };
 const CURSE_NAME = { frail: ["虚弱：最大生命 -20%", "Frail: -20% max HP"], clumsy: ["笨拙：AC -1", "Clumsy: AC -1"], weary: ["沉重：每里 50% 额外 +1 疲劳", "Weary: 50% chance of +1 extra fatigue per mile"], hungry: ["饥饿：每里 25% 多吃 1 份口粮", "Hungry: 25% chance to eat an extra ration per mile"] };
-const FREQ = { passive: 1, battle_start: 1, on_hit: 0.45, on_hurt: 0.5, on_kill: 1, on_mile: 0.35, on_camp: 1.5, use: 2.5 };
+const FREQ = { passive: 1, battle_start: 0.7, on_hit: 0.45, on_hurt: 0.5, on_kill: 1, on_mile: 0.35, on_camp: 1.5, use: 2.5 };
 const SIG_KINDS = ["breath", "drain", "venom", "hex", "rob", "frenzy", "harden", "roar"];
 const MAX_TRINKETS = 4, MAX_BAG = 4;
 
