@@ -43,6 +43,7 @@ export interface UiDef {
   theme?: any;
   layout?: { template: "simple" | "two-column" | "stage" | "custom"; grid?: string[]; columns?: string[]; rows?: string[] };
   components?: Record<string, ComponentDef>;
+  /** oasis/0.4：故事接管整个客户端页面 */ takeover?: boolean;
 }
 export interface Story {
   spec: "oasis/0.3" | "oasis/0.4";
@@ -55,7 +56,7 @@ export interface Story {
 }
 /** oasis/0.4：实时循环 */
 export interface TimerDef { every_ms?: number; after_ms?: number; action?: string; params?: Record<string, any>; emit?: string; script?: string }
-export interface RealtimeDef { tick_hz?: number; tick_ms?: number; on_tick?: string; on_ai?: string; timers?: Record<string, TimerDef> }
+export interface RealtimeDef { tick_hz?: number; tick_ms?: number; on_tick?: string; on_ai?: string; on_resize?: string; timers?: Record<string, TimerDef> }
 /** oasis/0.4：输入映射。keys：按键（KeyboardEvent.code）→ 输入名 */
 export interface InputDef { keys?: Record<string, string>; joystick?: boolean | { side?: "left" | "right" }; buttons?: { id: string; label?: string }[]; pointer?: boolean }
 export interface InputState { held: Record<string, boolean>; pressed: Record<string, boolean>; joystick: { x: number; y: number }; pointer: { x: number; y: number; down: boolean; target?: string } }

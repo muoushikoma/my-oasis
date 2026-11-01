@@ -586,6 +586,10 @@
             }
           },
           "additionalProperties": false
+        },
+        "takeover": {
+          "type": "boolean",
+          "description": "oasis/0.4：故事接管整个客户端页面（不显示顶栏/侧栏；安卓沉浸全屏）。玩家始终可以长按 Esc、返回键或角落按钮打开暂停菜单，故事无法关闭这个出口。"
         }
       },
       "additionalProperties": false
@@ -682,6 +686,10 @@
               }
             ]
           }
+        },
+        "on_resize": {
+          "type": "string",
+          "pattern": "^[^#]+\\.(js|ts|lua|py)#[A-Za-z_][A-Za-z0-9_]*$"
         }
       }
     },
@@ -2123,6 +2131,17 @@
         },
         "pixelated": {
           "type": "boolean"
+        },
+        "size": {
+          "enum": [
+            "fixed",
+            "fill"
+          ],
+          "description": "canvas：fixed=用 width/height；fill=铺满所在区域，像素尺寸跟着窗口/旋转变化"
+        },
+        "hidpi": {
+          "type": "boolean",
+          "description": "canvas 铺满时按设备像素比放大像素（更清晰，render 拿到的宽高也更大）"
         }
       },
       "additionalProperties": false

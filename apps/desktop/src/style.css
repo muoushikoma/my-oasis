@@ -96,8 +96,8 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
   .draft-row, .save-row { grid-template-columns: 1fr auto; } .pr-row { grid-template-columns: 1fr auto; }
   .play { height: 100dvh; padding-top: env(safe-area-inset-top); } .topbar { flex-wrap: wrap; }
   .play-body { flex-direction: column; } .debug { width: auto; max-height: 40vh; }
-  .grid { grid-template-columns: 1fr !important; grid-template-rows: none !important; grid-template-areas: none !important; overflow-y: auto; }
-  .grid > .region { grid-area: auto !important; }
+  .play:not(.takeover) .grid { grid-template-columns: 1fr !important; grid-template-rows: none !important; grid-template-areas: none !important; overflow-y: auto; }
+  .play:not(.takeover) .grid > .region { grid-area: auto !important; }
   .md { padding: 6px 14px 14px; overflow-x: auto; } .modal .card { width: 96vw; }
   .toast { bottom: 80px; max-width: 92vw; }
 }
@@ -116,3 +116,18 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .usage-row b { min-width: 6em; }
 .usage-row input, .card label input[type=number] { width: 7em; }
 @media (max-width: 640px) { .usage { max-width: 100%; white-space: normal; flex-basis: 100%; order: 10; } }
+
+/* ---------- ui.takeover：故事接管整个页面 ---------- */
+.play.takeover { position: fixed; inset: 0; height: 100vh; height: 100dvh; padding: 0 !important; overflow: hidden; }
+.play.takeover .stage { width: 100%; height: 100%; }
+.play.takeover .grid { gap: 0; padding: 0; height: 100%; }
+.play.takeover .region { gap: 0; }
+.play.takeover .comp-canvas { flex: 1; min-height: 0; display: flex; }
+.rt-canvas.rt-fill { width: 100%; height: 100%; display: block; flex: 1; min-height: 0; touch-action: none; }
+.comp-canvas:has(.rt-fill) { flex: 1; min-height: 0; display: flex; }
+.takeover-exit { position: fixed; top: calc(6px + env(safe-area-inset-top)); right: calc(6px + env(safe-area-inset-right)); z-index: 2147483000;
+  width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid #fff4; background: #0007; color: #fff; font-size: 18px; line-height: 1;
+  opacity: .12; transition: opacity .3s; }
+.takeover-exit.show, .takeover-exit:focus-visible { opacity: .9; }
+.modal.pause { z-index: 2147483100; } .play.takeover .modal { z-index: 2147483200; } .play.takeover .modal.pause { z-index: 2147483100; }
+.pause-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; } .pause-list button { padding: 10px; }

@@ -38,6 +38,7 @@ const api = {
 const __draw = [];
 function __d(c) { if (__draw.length >= 5000) throw new Error("一帧最多 5000 条绘制指令"); __draw.push(c); }
 Object.defineProperty(api, "input", { get: () => __c("input", []) });
+Object.defineProperty(api, "screen", { get: () => __c("screen", []) });
 Object.defineProperty(api, "lang", { get: () => __c("lang", []) });
 Object.defineProperty(api, "dt", { get: () => __c("time", [])[0] });
 Object.defineProperty(api, "time", { get: () => __c("time", [])[1] });

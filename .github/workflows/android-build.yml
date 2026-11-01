@@ -70,6 +70,13 @@ jobs:
       - name: 生成安卓工程
         working-directory: apps/desktop
         run: pnpm tauri android init --ci
+      # 换上我们的 MainActivity：沉浸全屏 + 返回键打开暂停菜单（故事接管页面时用）
+      - name: 安装安卓壳 MainActivity
+        working-directory: apps/desktop
+        run: |
+          F=$(find src-tauri/gen/android/app/src/main -name MainActivity.kt | head -1)
+          if [ -z "$F" ]; then echo "找不到生成的 MainActivity.kt"; exit 1; fi
+          cp android/MainActivity.kt "$F"
       - name: 构建 APK（release，未签名）
         working-directory: apps/desktop
         env:
