@@ -227,13 +227,37 @@ function card(s) {
       h("div", { class: "hint" }, T("根据它的下一步决定：趁它防御时蓄资源，它蓄力时防御或打断。", "Read its next move: build resources while it guards, block or interrupt when it charges.")));
   }
   const ui = s.ui_card || { mode: "none" };
-  if (ui.mode === "none") return null;
+  if (ui.mode === "none") return s.last_result && s.phase === "none" && s.hp > 0 ? h("div", { class: "paper card", key: "result" }, h("span", { class: "kind" }, T("结果", "Outcome")), resultBox(s.last_result), h("small", { style: { color: "#7a6040" } }, T("按空格继续上路", "Press Space to walk on"))) : null;
   return h("div", { class: "paper card" + (ui.mode === "shop" ? " shop" : "") },
     h("span", { class: "kind" }, ui.kind || ""), ui.ai ? h("span", { class: "aimark", title: T("这张卡（描述、选项、结果旁白）由 AI 现场写成", "This card — scene, options and outcome narration — was written live by the AI") }, T("✦ AI 写成", "✦ AI-written")) : null,
     h("h2", { class: "serif" }, ui.title || ""),
     h("p", { class: "text" + (ui.mode === "loading" ? " loading" : "") }, ui.text || ""),
-    h("div", { class: "opts" }, (ui.items || []).map((it, i) => h("button", { class: "btn pape opt", disabled: !!it.disabled || busy(), onclick: () => run(ui.action, { id: it.id }) },
+    s.last_result && s.phase === "card" ? resultBox(s.last_result) : null,
+    ui.input ? actBox(ui.input) : null,
+    h("div", { class: "opts" + (ui.input ? " small" : "") }, (ui.items || []).map((it, i) => h("button", { class: "btn pape opt", disabled: !!it.disabled || busy(), onclick: () => run(ui.action, { id: it.id }) },
       icon(it.icon || "dice", true), h("span", { class: "label" }, ui.mode === "card" && i < 9 ? `${i + 1}. ${it.text}` : it.text), it.tags && it.tags.length ? tags(it.tags) : h("span", { class: "sub" }, it.sub || "")))));
+}
+// 自由行动：输入框 + 灵感
+let draft = "", draftFocus = false;
+function actBox(inp) {
+  const send = () => { const t = draft.trim(); if (!t || inp.busy) return; draft = ""; run(inp.act, { text: t }); };
+  const ta = h("textarea", { class: "actin", id: "actin", rows: 2, maxlength: 120, placeholder: inp.hint, disabled: inp.busy || busy(),
+    oninput: (e) => { draft = e.target.value; }, onfocus: () => { draftFocus = true; }, onblur: () => { draftFocus = false; },
+    onkeydown: (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } } });
+  ta.value = inp.busy ? inp.last : draft;
+  return h("div", { class: "actbox" },
+    h("div", { class: "actrow" }, ta, h("button", { class: "btn gold act send", disabled: inp.busy || busy(), onclick: send }, inp.busy ? T("裁定中…", "Ruling…") : T("行动", "Act"), h("span", { class: "key" }, T(`第 ${inp.step}/${inp.max} 步 · 回车`, `step ${inp.step}/${inp.max} · Enter`)))),
+    inp.busy ? h("div", { class: "judging loading" }, T("✦ AI 裁判正在判定你的行动", "✦ The AI judge is ruling on your action")) : null,
+    inp.stale ? h("div", { class: "judging bad" }, T("AI 没有回应。可以再试一次，或者换个说法。", "The AI didn't answer. Try again, or rephrase.")) : null,
+    inp.ideas && inp.ideas.length && !inp.busy ? h("div", { class: "ideas" }, h("small", {}, T("灵感：", "Ideas: ")), inp.ideas.map((t) => h("button", { class: "idea", onclick: () => { draft = t; render(); setTimeout(() => { const el = document.getElementById("actin"); if (el) { el.focus(); el.setSelectionRange(t.length, t.length); } }, 0); } }, t))) : null);
+}
+function resultBox(r) {
+  return h("div", { class: "result " + (r.good === true ? "good" : r.good === false ? "bad" : "info") },
+    h("div", { class: "you" }, `➤ ${r.text}`),
+    r.ruling ? h("div", { class: "ruling" }, `✦ ${r.ruling}`) : null,
+    r.roll ? h("div", { class: "roll" }, r.roll) : null,
+    r.narr ? h("div", { class: "narr" }, r.narr) : null,
+    r.out ? h("div", { class: "outc" }, (r.good ? "✔ " : r.good === false ? "✘ " : "") + r.out) : null);
 }
 function actions(s) {
   const ph = s.phase || "none", dead = s.hp <= 0, b = busy();
@@ -338,7 +362,7 @@ function toastEl(s) {
 function render() {
   const s = S;
   const ui = $("ui");
-  const cardKey = s.phase === "battle" ? "battle" : JSON.stringify([(s.ui_card || {}).mode, (s.ui_card || {}).title]);
+  const cardKey = s.phase === "battle" ? "battle" : JSON.stringify([(s.ui_card || {}).mode, (s.ui_card || {}).title, s.phase === "none" && !!s.last_result]);
   const kids = [hud(s), banner(s), journal(s), actions(s), menu(s), h("div", { class: "msg out" }, msg)];
   const ib = itemBar(s); if (ib) kids.push(ib);
   const sp = sysPanel(s); if (sp) kids.push(sp);
@@ -349,11 +373,13 @@ function render() {
   if (s.hp <= 0 && s.phase !== "class") kids.push(ending(s));
   const m = modal(s); if (m) kids.push(m);
   ui.replaceChildren(...kids);
+  if (draftFocus) { const el = document.getElementById("actin"); if (el && !el.disabled) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
   popups();
 }
 // 键盘：空格主操作，1–9 选项，Q 药水，C 扎营，F 逃跑，Esc 关闭弹窗
 addEventListener("keydown", (e) => {
   if (e.repeat) return; const s = S;
+  if (e.target && (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT")) return;
   if (e.key === "Escape") { if (sheet) { sheet = null; render(); } return; }
   if (sheet || s.phase === "class") return;
   if (e.code === "Space") { e.preventDefault(); if (s.phase === "battle") run("attack"); else if (s.phase === "none") run("walk"); }

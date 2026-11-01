@@ -16,7 +16,7 @@ meta:
     zh: |
       2D 像素横版冒险。你从老旅店出发，一路向东。每走一里吃掉 1 份口粮，并遇到一个由 AI 现场写成的事件：怪物、断桥、行商、古老的祭坛、两难的抉择……每次冒险都不一样。
 
-      - 每个事件是一张卡，选项上写明了难度、成功的收获和失败的风险。
+      - 遇到事件时不用选选项：直接写下你想做的事，AI 当裁判判定要掷什么骰、多难、成败各会怎样。
       - 回合制战斗：敌人会预告下一步（攻击、蓄力重击、防御、下毒、偷钱……），你用攻击、防御和职业技能应对。每 25 里有一个守关者。
       - 四个职业各有一种资源和 3 个技能；升级时三选一天赋。
       - 每 5 里一个岔路口：安全的大路、富饶的荒野、或一步两里的捷径。疲劳会累积，扎营才能清除。
@@ -29,7 +29,7 @@ meta:
     en: |
       A 2D pixel side-scroller. You leave the old inn and head east. Every mile costs a ration and brings an event written live by the AI: monsters, broken bridges, peddlers, ancient shrines, hard choices… no two runs are alike.
 
-      - Every event is a card; each option shows its difficulty, reward and risk.
+      - No multiple choice: type whatever you want to do, and the AI judge rules on the roll, the difficulty and what happens.
       - Turn-based combat: foes telegraph their next move (attack, charge, guard, poison, steal…); answer with attacks, guard and class skills. A warden guards every 25 miles.
       - Four classes, each with its own resource and 3 skills; pick a talent each level.
       - A fork every 5 miles: the safe highway, the rich wilds or a two-mile shortcut. Fatigue builds until you camp.
@@ -161,6 +161,7 @@ state:
   sysval:    { type: json, init: {}, visible: both, desc: 各个系统计数器的当前值 }
   sys_ui:    { type: json, init: [], visible: player, desc: 玩法系统的显示内容 }
   genesis:   { type: json, init: {}, visible: none }
+  last_result: { type: json, init: null, visible: player, desc: 上一次自由行动的裁定结果（给界面显示） }
   # 世界
   biome:
     type: enum
@@ -293,6 +294,15 @@ actions:
     require_message: { zh: 现在不能使用道具。, en: You can't use items right now. }
     callable_by: [player]
     script: scripts/road.js#use_item
+  act:
+    label: { zh: 行动, en: Act }
+    desc: { zh: 在事件里写下你想做的事，由 AI 裁定, en: "Describe what you do in an event; the AI rules on it" }
+    params:
+      text: { type: string, max: 120 }
+    require: "state.phase == 'card'"
+    require_message: { zh: 现在没有事件。, en: There is no event right now. }
+    callable_by: [player]
+    script: scripts/road.js#act
   invoke:
     label: { zh: 发动, en: Invoke }
     params:
@@ -386,7 +396,7 @@ ai:
         请把这个事件写成一张事件卡：
         - title：事件名（不超过 12 个字）。text：2~3 句描述，停在需要做决定的地方。
         - foe：combat 时是敌人的名字（守关者要有气势的名号）；其他类别里如果有可能打起来的对象，写它的名字，否则留空。
-        - 写 2~3 个选项（o1_ / o2_ / o3_），每个选项：
+        - 冒险者会用自己的话决定怎么做（由裁判 AI 判定）；你写的 2~3 个选项会作为“灵感”提示显示给他，也是 AI 无法回应时的备用方案。写 2~3 个选项（o1_ / o2_ / o3_），每个选项：
           - label：玩家要做的事（不超过 10 个字，如“攀过断桥”“说服守卫”“献上金币”）。
           - verb：check 属性检定 / pay 付出代价换确定收获 / gamble 赌运气 / fight 动手 / quest 接受委托（几里后回访，奖励丰厚）；不用的选项填 none。
           - ability（check 用）：str 力量、dex 敏捷、con 体质、int 智力、wis 感知、cha 魅力。diff（check 用）：easy / normal / hard，越难收获越大。
@@ -476,6 +486,63 @@ ai:
         history_turns: 6
         setting: false
       temperature: 1.0
+    judge:
+      kind: generate
+      trigger: script
+      prompt: |
+        你是这场冒险的裁判（像跑团的主持人）。冒险者遇到了一件事，并用自己的话说了想怎么做。请判定该怎么结算。
+        事件：【{{event.title}}】{{event.text}}
+        类别：{{event.kind}}，威胁等级 {{event.threat}}；守关者：{{event.boss}}；对手 / 关键人物：{{event.foe}}；这里藏着的 AI 道具：{{event.item}}
+        冒险者：{{event.hero}}；行囊：{{event.pack}}；道具：{{event.items}}；遗物：{{event.relics}}
+        这段旅程的玩法系统：{{event.systems}}
+        这件事里之前做过的：{{event.hist}}（现在是第 {{event.step}} 步，最多 {{event.max}} 步）
+        冒险者说：「{{event.action}}」
+
+        ## 裁判规则
+        - mode：check 需要掷骰检定 / auto 不用掷骰（稳妥、没风险的小事，收获只能很小）/ fight 动手打起来 / refuse 做不到或没意义（ruling 里说明原因，让冒险者换个办法）。
+          冒险者说要攻击、动手、挑衅成功打起来时用 fight。守关者不能被绕过：交涉、潜行最多换来先手。
+        - ability：最贴切的属性 str 力量 / dex 敏捷 / con 体质 / int 智力 / wis 感知 / cha 魅力。
+        - diff：trivial / easy / normal / hard / extreme。越大胆、越离谱，越难；收获上限跟着难度走（easy 只能小收获，hard 才能大收获，extreme 可以巨大）。
+        - edge：-2~2。行动巧妙、合乎情理、用上了身上的道具 / 职业特长 / 玩法系统时给正值；鲁莽、不合常理时给负值。
+        - cost（可选）：不论成败都要付出的东西 gold / rations / potion / hp / iron / essence（比如“扔出金币”“割破手掌献血”），cost_size：small / medium。没有就填 none。
+        - 成功：s_reward 收获种类 gold / rations / potion / heal / iron / essence / xp / blessing / relic（只有藏着 AI 道具、且 hard 以上或委托时才给，就是那件道具）/ map / none；s_size：small / medium / large / huge；
+          s_sys / s_sys_n：成功时让哪个玩法系统（填 id）变化多少（-3~3，可以不填）；s_text：成功时发生了什么（一两句，具体、有画面，不写数字）。
+        - 失败：f_risk 风险种类 hurt / lose_gold / lose_rations / curse / poison / ambush（被发现，转入战斗）/ lost / exhaust / none；f_size；f_sys / f_sys_n；f_text：失败时发生了什么。
+        - ends：这一步之后事件是否结束。只是观察、试探、对话的一部分时可以填 false，并在 next_text 里写出局势有了什么新变化；最后一步必须结束。
+        - ruling：一句话说明你怎么判（比如“攀上湿滑的崖壁需要敏捷，绳子帮了大忙”），会先给冒险者看。
+        - 公平、尊重冒险者的创意：合理的好主意应该有好结果；收获和风险要和冒险的程度相称；遵守世界里已经发生的事。
+      card:
+        task: 当裁判：判定冒险者用自己的话描述的行动该怎么结算（检定、难度、加值、成败结果、旁白）。
+        authority: 0
+        output:
+          format: json
+          to: none
+          max_chars: 1500
+          schema:
+            mode: "enum:[check,auto,fight,refuse]"
+            ruling: string
+            ability: "enum:[wis,str,dex,con,int,cha]"
+            diff: "enum:[normal,trivial,easy,hard,extreme]"
+            edge: number
+            cost: "enum:[none,gold,rations,potion,hp,iron,essence]"
+            cost_size: "enum:[small,medium]"
+            s_reward: "enum:[none,gold,rations,potion,heal,iron,essence,xp,blessing,relic,map]"
+            s_size: "enum:[medium,small,large,huge]"
+            s_sys: string
+            s_sys_n: number
+            s_text: string
+            f_risk: "enum:[hurt,lose_gold,lose_rations,curse,poison,ambush,lost,exhaust,none]"
+            f_size: "enum:[medium,small,large]"
+            f_sys: string
+            f_sys_n: number
+            f_text: string
+            ends: bool
+            next_text: string
+      context:
+        state: [distance, hero_class, level, hp, max_hp, status, quest, thread, sysval]
+        history_turns: 4
+        setting: false
+      temperature: 0.7
     genesis:
       kind: generate
       trigger: script
@@ -624,7 +691,7 @@ ui:
       type: custom
       region: screen
       src: ui/game.html
-      actions: [pick_class, walk, camp, potion, attack, defend, skill, flee, choose, trade, pick_perk, go, use_item, drop_item, invoke]
+      actions: [pick_class, walk, camp, potion, attack, defend, skill, flee, choose, trade, pick_perk, go, use_item, drop_item, invoke, act]
       height: 720
       player_can_hide: false
       fallback: { zh: 这个故事的整个游戏画面是自定义组件，请在设置里打开“自定义组件”后游玩。, en: "This story's whole game screen is a custom component — please turn custom components on in Settings to play." }

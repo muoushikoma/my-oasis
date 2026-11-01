@@ -118,6 +118,22 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .banner .omen { margin-top: 3px; font-size: 13px; color: #ffc8a0; max-width: min(620px, 46vw); } .banner .omen b { color: #ff9a6a; }
 .toast small { color: #e8d6b0; letter-spacing: 1px; } .toast h3 { margin: 4px 0; font-size: 26px; color: #fff1c8; } .toast .eff { color: #b8f0a0; font-weight: 700; } .toast p { margin: 6px 0 0; font-style: italic; color: #e2d2b0; }
 
+/* 自由行动 */
+.actbox { margin: 4px 0 10px; }
+.actrow { display: flex; gap: 6px; align-items: stretch; }
+.actin { flex: 1; resize: none; font: inherit; font-size: 15px; padding: 8px 10px; color: #2a1a0a; background: #fff8e4; border: 0; box-shadow: inset 0 0 0 2px #8a6a3a, inset 0 3px 0 #0001; outline: none; user-select: text; }
+.actin:focus { box-shadow: inset 0 0 0 2px #c8902a, 0 0 0 2px #f2cc5466; }
+.actin:disabled { opacity: .7; }
+.act.send { min-width: 92px; }
+.judging { font-size: 13px; color: #6a3a8a; margin-top: 6px; } .judging.bad { color: #a33a2a; }
+.ideas { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; } .ideas small { color: #7a6040; }
+.idea { font-size: 12.5px; padding: 1px 8px; background: #e6d4a8; color: #4a3014; box-shadow: inset 0 0 0 1px #a88a5a; } .idea:hover { background: #fff0c8; }
+.opts.small .opt { padding: 2px 8px; } .opts.small .opt .i.x2 { width: 24px; height: 20px; background-size: 600px 20px; background-position: calc(var(--n) * -24px) 0; } .opts.small .opt .label { font-size: 14px; }
+.result { margin: 0 0 10px; padding: 8px 10px; background: #f7ecd0; box-shadow: inset 0 0 0 2px #b89a6a; font-size: 13.5px; line-height: 1.5; color: #3b2814; }
+.result.good { box-shadow: inset 0 0 0 2px #5a9a4a; } .result.bad { box-shadow: inset 0 0 0 2px #b84a3a; }
+.result .you { font-weight: 800; } .result .ruling { color: #5a3a7a; font-style: italic; } .result .roll { color: #4a3a8a; font-weight: 700; } .result .narr { color: #4a3520; font-style: italic; margin-top: 2px; }
+.result .outc { font-weight: 800; margin-top: 2px; } .result.good .outc { color: #2f6a24; } .result.bad .outc { color: #9a2a1a; }
+
 /* AI 创造的玩法系统 */
 .syspanel { position: absolute; left: 14px; top: 200px; display: flex; flex-direction: column; gap: 8px; width: 250px; }
 .sys { background: #160f0ad9; box-shadow: inset 0 0 0 2px #6a4a8a, 0 2px 0 #0008; padding: 6px 8px; }
