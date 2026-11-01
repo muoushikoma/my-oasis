@@ -229,7 +229,7 @@ export class RealtimeDriver {
       drawMs += performance.now() - t;
     }
     if (refresh) st.renderMs = renderMs;
-    st.drawMs = drawMs; st.drawn = drawn;
+    if (drawn) { st.drawMs = drawMs; st.drawn = drawn; }
   }
   image(id: string) {
     let im = this.images.get(id);
