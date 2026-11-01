@@ -11,7 +11,7 @@ meta:
     zh: AI 把引擎掷出的每个路上事件写成一张事件卡（名字、描述、2~3 个有取舍的选项），并挑选画面模块；数值由规则计算。
     en: The AI writes each road event as a card (name, scene, 2–3 options) and picks its visuals; the rules handle all numbers.
   est_tokens_per_min: 5000
-  platforms: [desktop]   # 手机端暂不支持：当前客户端在手机上会把各区域压进一屏，内容多的面板会重叠
+  platforms: [desktop, mobile]
   description:
     zh: |
       2D 像素横版冒险。你从老旅店出发，一路向东。每走一里吃掉 1 份口粮，并遇到一个由 AI 现场写成的事件：怪物、断桥、行商、古老的祭坛、两难的抉择……每次冒险都不一样。
@@ -90,7 +90,6 @@ assets:
   rocks: { type: image, path: assets/sprites/rocks.png, use: other }
   chasm: { type: image, path: assets/sprites/chasm.png, use: other }
   thorns: { type: image, path: assets/sprites/thorns.png, use: other }
-  glyphs: { type: image, path: assets/sprites/glyphs.png, use: other }
 
 state:
   hp:        { type: number, init: 14, min: 0, integer: true, label: { zh: 生命, en: HP } }
@@ -124,10 +123,10 @@ state:
     type: enum
     values: [plains, forest, hills, swamp, mountains, ashlands]
     init: plains
-    visible: ai
+    visible: both
     desc: 当前地区：plains 风语平原，forest 幽暗森林，hills 古冢丘陵，swamp 腐沼泽地，mountains 霜脊山道，ashlands 余烬荒原
   art:       { type: json, init: { time: day, weather: clear }, visible: ai, desc: 画面的时间与天气 }
-  scene_fx:  { type: json, init: { scroll: 0, target: 0, prev: null, cur: null, fx: [], busy: false }, visible: none, desc: 画面动画状态 }
+  scene_fx:  { type: json, init: { scroll: 0, target: 0, prev: null, cur: null, fx: [], busy: false }, visible: player, desc: 画面动画状态（界面组件据此画场景） }
   # 事件
   phase:
     type: enum
@@ -156,6 +155,9 @@ state:
   # 面板文字（规则生成）
   situation:   { type: string, init: "", visible: player, label: { zh: 眼前, en: Right now } }
   next_ready:  { type: bool, init: false, visible: player, desc: 下一里的事件卡是否已经由 AI 提前写好 }
+  journal:     { type: json, init: [], visible: player, desc: 最近的冒险日志（界面里画日志框） }
+  screen:      { type: json, init: { w: 0, h: 0 }, visible: player, desc: 窗口尺寸 }
+  epitaph:     { type: string, init: "", max_length: 600, visible: player, writable_by: [rules, ai], desc: 倒下时 AI 写的结语 }
   ui_card:     { type: json, init: { mode: none }, visible: player, desc: 事件卡/商店要显示的内容（给自定义组件 ui/panel.html） }
   pack_text:   { type: string, init: "", visible: player, label: { zh: 行囊, en: Pack } }
   gear_text:   { type: string, init: "", visible: player, label: { zh: 强化, en: Upgrades } }
@@ -168,6 +170,7 @@ realtime:
   interpolate: true
   on_tick: scripts/scene.js#tick
   on_ai: scripts/road.js#on_ai
+  on_resize: scripts/road.js#on_resize
   timers:
     card_watch: { every_ms: 500, script: scripts/road.js#watch }
 
@@ -347,7 +350,7 @@ ai:
         setting: false
       temperature: 1.0
     epitaph:
-      kind: narrate
+      kind: generate
       trigger: game_end
       after_end: true
       optional: true
@@ -359,7 +362,7 @@ ai:
         authority: 0
         output:
           format: text
-          to: component:log
+          to: state:epitaph
           max_chars: 300
       context:
         state: [distance, level, kills, biome, relics]
@@ -372,29 +375,17 @@ ui:
     base: dark
     colors: { accent: "#e0a84a", bg: "#16130f", text: "#efe6d6", panel: "#221d17" }
     font: { body: serif, size: 16 }
+  takeover: true
   layout:
     template: custom
-    grid: ["stage side", "log side"]
-    columns: ["minmax(0, 3fr)", "minmax(340px, 2fr)"]
-    rows: ["auto", "minmax(240px, 1fr)"]
+    grid: ["screen"]
   components:
-    stage:
-      type: canvas
-      region: stage
-      width: 256
-      height: 144
-      pixelated: true
-      render: scripts/scene.js#draw
-    # 右栏：一个自定义组件（ui/hud.html）——状态、事件卡 / 商店 / 选职业、行动按钮，以及组件内的详情弹窗
-    hud:
+    # 整个游戏画面是一个自定义组件（ui/game.html）：组件里自己画像素场景，界面叠在场景上
+    game:
       type: custom
-      region: side
-      src: ui/hud.html
+      region: screen
+      src: ui/game.html
       actions: [pick_class, walk, camp, potion, attack, flee, choose, trade]
-      height: 520
+      height: 720
       player_can_hide: false
-      fallback: { zh: 这个故事的操作面板是自定义组件，请在设置里打开“自定义组件”后游玩。, en: "This story's control panel is a custom component — please turn custom components on in Settings to play." }
-    log:
-      type: text-log
-      region: log
-      content: ai
+      fallback: { zh: 这个故事的整个游戏画面是自定义组件，请在设置里打开“自定义组件”后游玩。, en: "This story's whole game screen is a custom component — please turn custom components on in Settings to play." }

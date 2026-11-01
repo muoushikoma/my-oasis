@@ -133,7 +133,13 @@ function en(api, t) {
   if (api.lang !== "en" || typeof t !== "string") return t;
   return t.replace(/（/g, " (").replace(/）/g, ")").replace(/：/g, ": ").replace(/，/g, ", ").replace(/。/g, ".").replace(/、/g, ", ").replace(/【/g, "[").replace(/】/g, "]").replace(/「|」/g, "\"").replace(/ {2,}/g, " ").replace(/\( /g, "(");
 }
-function log(api, t) { api.log(en(api, t)); }
+// 日志：写进客户端日志，同时记进 journal 状态（界面里自己画日志框）
+function log(api, t) {
+  const line = en(api, t);
+  api.log(line);
+  const j = get(api, "journal") || []; j.push(line); if (j.length > 60) j.splice(0, j.length - 60);
+  set(api, "journal", j);
+}
 function enSpec(api, n) {
   if (Array.isArray(n)) return n.map((x) => enSpec(api, x));
   if (!n || typeof n !== "object") return n;
@@ -184,7 +190,8 @@ function saveFx(api, s) { s.busy = true; set(api, "scene_fx", s); }
 // 飘字只用像素字体里有的字符：数字、+ - !，以及图标 v(成功) x(失败/未命中) s(闪开) h(强化)
 function pop(api, text, color, onFoe) {
   const s = sfx(api); const x = onFoe && s.cur ? s.cur.wx - s.scroll : HERO_X;
-  s.fx = (s.fx || []).slice(-5); s.fx.push({ text: String(text), color, x: x + api.random.int(-4, 4), y: 84, life: 900 }); saveFx(api, s);
+  s.fxid = (s.fxid || 0) + 1;
+  s.fx = (s.fx || []).slice(-5); s.fx.push({ id: s.fxid, text: String(text), color, x: x + api.random.int(-4, 4), y: 84, life: 900, foe: !!onFoe }); saveFx(api, s);
 }
 function anim(api, key, ms) { const s = sfx(api); s[key] = ms; saveFx(api, s); }
 function reveal(api) { const s = sfx(api); if (s.cur && s.cur.pending) { s.cur.pending = false; saveFx(api, s); } }
@@ -784,6 +791,9 @@ export function choose(api) {
   refresh(api);
   return true;
 }
+// 窗口尺寸（realtime.on_resize）：界面组件据此铺满整个窗口
+export function on_resize(api) { const p = api.params; set(api, "screen", { w: Math.round(p.width || 0), h: Math.round(p.height || 0) }); }
+
 // 商店里的购买 / 强化
 export function trade(api) { shopBuy(api, String(api.params.id || "")); refresh(api); return true; }
 // 定时检查：眼前的卡太久没写好就提示重试；提前写的请求丢了（比如读档后）就重发
