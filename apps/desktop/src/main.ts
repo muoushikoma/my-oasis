@@ -12,6 +12,7 @@ import { showCreate } from "./create";
 import { onlineView } from "./online";
 import { endSession } from "./usage";
 import { usageCard } from "./usage-card";
+import { briefCard, openDetail } from "./story-info";
 import { playableHere, platformText, currentPlatform, PLATFORM_LABEL } from "./platform";
 import { isFavorite, toggleFavorite } from "./social";
 
@@ -54,18 +55,19 @@ async function showLibrary(tab = playTab) {
   const card = (e: Entry) => {
     const m = e.res.story?.meta;
     const cover = (() => { const ref: any = m?.cover; if (!ref) return; const p = ref.startsWith("asset:") ? (e.res.story as any).assets?.[ref.slice(6)]?.path : ref; const d = p && e.files.get(p); return d ? URL.createObjectURL(new Blob([d as BlobPart])) : undefined; })();
-    return h("div", { class: "story-card" },
-      cover ? h("img", { src: cover, class: "cover" }) : h("div", { class: "cover ph" }, (tr(m?.title) || "?").slice(0, 1)),
-      h("div", { class: "info" },
-        h("h3", {}, tr(m?.title) || e.id, e.res.story?.ai ? h("span", { class: "tag ai" }, "AI 故事") : h("span", { class: "tag" }, "旧格式（没接 AI）")),
-        h("p", { class: "muted" }, tr(m?.summary)), trList(m?.tags).length ? h("p", { class: "small muted" }, trList(m?.tags).join(" · ")) : null,
-        h("p", { class: "small muted" }, `版本 ${m?.version ?? "?"}${m?.author ? ` · 作者 ${m.author}` : ""} · 支持平台：${platformText(m)}`),
-        e.res.ok ? null : h("p", { class: "err small" }, "这个故事有错误，不能游玩"),
-        h("div", { class: "row" },
-          h("button", { class: "primary", disabled: !e.res.ok, onclick: () => play(e.id, e.files) }, "开始"),
-          h("button", { disabled: !e.res.ok, onclick: () => resume(e) }, "继续"),
-          h("button", { title: "收藏只保存在这台设备上", onclick: () => { toggleFavorite(e.id); showLibrary("local"); } }, isFavorite(e.id) ? "★ 已收藏" : "☆ 收藏"),
-          h("button", { onclick: async () => { if (confirm(`删除故事「${tr(m?.title)}」？存档不会删除。`)) { await bridge.libraryDelete(e.id); showLibrary(); } } }, "删除"))));
+    const coverEl = () => (cover ? h("img", { src: cover, class: "cover" }) : h("div", { class: "cover ph" }, (tr(m?.title) || "?").slice(0, 1)));
+    const title = tr(m?.title) || e.id;
+    const badge = e.res.story?.ai ? h("span", { class: "tag ai" }, "AI 故事") : h("span", { class: "tag" }, "旧格式（没接 AI）");
+    let close = () => {};
+    const open = () => { close = openDetail({ title, cover: coverEl(), meta: m ?? {}, storyId: e.id,
+      lines: [`版本 ${m?.version ?? "?"}${Array.isArray(m?.authors) && m.authors.length ? ` · 作者 ${m.authors.join("、")}` : m?.author ? ` · 作者 ${m.author}` : ""}`],
+      notice: e.res.ok ? null : h("p", { class: "err small" }, "这个故事有错误，不能游玩"),
+      buttons: [
+        h("button", { class: "primary", disabled: !e.res.ok, onclick: () => { close(); play(e.id, e.files); } }, "开始"),
+        h("button", { disabled: !e.res.ok, onclick: () => { close(); resume(e); } }, "继续"),
+        h("button", { title: "收藏只保存在这台设备上", onclick: (ev: any) => { const on = toggleFavorite(e.id); ev.target.textContent = on ? "★ 已收藏" : "☆ 收藏"; } }, isFavorite(e.id) ? "★ 已收藏" : "☆ 收藏"),
+        h("button", { onclick: async () => { if (confirm(`删除故事「${tr(m?.title)}」？存档不会删除。`)) { close(); await bridge.libraryDelete(e.id); showLibrary(); } } }, "删除")] }); };
+    return briefCard(coverEl(), title, m ?? {}, open, e.res.ok ? badge : h("span", { class: "tag err" }, "有错误"));
   };
   const drop = h("div", { class: "drop" }, h("p", {}, "把 .oasis 文件、story.yaml 或故事文件夹拖到这里"),
     h("div", { class: "row" }, h("button", { class: "primary", onclick: () => importPicked(false) }, "导入故事文件"), isTauri ? h("button", { onclick: () => importPicked(true) }, "导入文件夹") : null),

@@ -17,7 +17,10 @@ for (const id of storyDirs()) {
   const m = st.data?.meta ?? {};
   stories.push({
     id, title: m.title ?? id, summary: m.summary ?? "", author: Array.isArray(m.authors) ? m.authors.join("、") : (m.author ?? ""), version: m.version ?? "",
-    rating: m.rating ?? "", language: m.language ?? "", languages: Array.isArray(m.languages) ? m.languages : [], tags: Array.isArray(m.tags) ? m.tags : [],
+    rating: m.rating ?? "", language: m.language ?? "",
+    languages: Array.isArray(m.languages) && m.languages.length ? m.languages : (typeof m.language === "string" && m.language ? [m.language.split("-")[0]] : []),
+    ai_role: m.ai_role ?? "", description: m.description ?? "", est_minutes: m.est_minutes ?? null, est_tokens_per_min: m.est_tokens_per_min ?? null,
+    content_warnings: Array.isArray(m.content_warnings) ? m.content_warnings : [], tags: Array.isArray(m.tags) ? m.tags : [],
     platforms: Array.isArray(m.platforms) && m.platforms.length ? m.platforms : ["desktop", "mobile"],
     ai: usesAI(st.data),
     cover: coverPath(id, dir, m.cover, st.data),

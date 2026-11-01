@@ -23,7 +23,7 @@ This repo holds both the **client source code** and the **public story library**
 
 PRs from forks may **only change `stories/`**. After the maintainer reviews and merges, the index and the story site update automatically. Unmerged submissions never show up in the app.
 
-Content rules: all-ages stories only (`rating: all-ages`); title, summary and exactly 3 tags must be given in both Chinese and English; no sexual content, no gore, hate, illegal content or private data; only material you own or may use; never include API keys.
+Content rules: all-ages stories only (`rating: all-ages`); title, summary, exactly 3 tags and `ai_role` (what the AI does) must be given in both Chinese and English, plus `languages`, `est_minutes` and `est_tokens_per_min` (approx. tokens per minute of play) so players know what to expect; no sexual content, no gore, hate, illegal content or private data; only material you own or may use; never include API keys.
 
 ## License & copyright
 - **Code:** [MIT](LICENSE).
@@ -33,7 +33,7 @@ Content rules: all-ages stories only (`rating: all-ages`); title, summary and ex
 ```bash
 pnpm install && pnpm typecheck && pnpm test
 cargo test -p oasis-native
-npm ci --prefix tools/stories && node tools/stories/validate.mjs
+pnpm install && npm ci --prefix tools/stories && pnpm exec tsx tools/stories/validate.mjs
 ```
 API keys and GitHub tokens live only in the OS secure store (Windows Credential Manager / Android Keystore); requests are made from Rust. Never commit keys.
 

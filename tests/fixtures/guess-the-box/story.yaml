@@ -5,6 +5,9 @@ meta:
   version: 1.0.0
   summary: 三次机会，找出藏着钥匙的箱子。
   language: zh-CN
+  est_minutes: 10
+  est_tokens_per_min: 1200
+  ai_role: { zh: AI 负责叙述，并在你打开箱子时描写里面有什么。, en: The AI narrates and describes what you find in each box. }
   rating: all-ages
 start:
   intro: 面前有三个箱子，只有一个里面有钥匙。你有三次机会。

@@ -60,3 +60,25 @@ describe("中英双语", () => {
     expect(buildMessages(ga, ep, "hi")[0].content).toMatch(/English/);
   });
 });
+
+describe("故事关键信息（languages / ai_role / est_tokens_per_min）", () => {
+  it("旧写法 language 映射成 languages；两个都不写报错", async () => {
+    const { metaLanguages, fmtTokensPerMin, validateFiles: vf, filesFromText: ft } = await import("@my-oasis/schema");
+    expect(metaLanguages({ language: "zh-CN" })).toEqual(["zh"]);
+    expect(metaLanguages({ languages: ["zh", "en", "ja"] })).toEqual(["zh", "en", "ja"]);
+    expect(fmtTokensPerMin(2000)).toBe("约 2000 token/分钟");
+    expect(fmtTokensPerMin(25000)).toBe("约 2.5 万 token/分钟");
+    expect(fmtTokensPerMin(2500, "en")).toBe("~2.5k tokens/min");
+    const y = readFileSync(new URL("../../../tests/fixtures/guess-the-box/story.yaml", import.meta.url), "utf8");
+    const r = vf(ft(y.replace(/^  language: .*\n/m, "")));
+    expect(r.issues.map((i) => i.code)).toContain("meta_languages");
+  });
+  it("投稿必须写 languages、ai_role（中英）、est_minutes、est_tokens_per_min", () => {
+    const meta = { title: { zh: "a", en: "a" }, summary: { zh: "a", en: "a" }, tags: [1, 2, 3].map(() => ({ zh: "a", en: "a" })), rating: "all-ages", languages: ["zh"] };
+    const p = libraryProblems({ meta });
+    expect(p.some((x) => x.includes("ai_role"))).toBe(true);
+    expect(p.some((x) => x.includes("est_minutes"))).toBe(true);
+    expect(p.some((x) => x.includes("est_tokens_per_min"))).toBe(true);
+    expect(libraryProblems({ meta: { ...meta, ai_role: { zh: "AI 叙述", en: "AI narrates" }, est_minutes: 10, est_tokens_per_min: 2000 } })).toEqual([]);
+  });
+});
