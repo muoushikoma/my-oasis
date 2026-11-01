@@ -166,7 +166,8 @@ ai:
   - `two-column`：`main`、`input`、`side`
   - `stage`：`top`、`main`、`input`、`side`
 - `components` 的写法是 `组件id: { type, region, content?, … }`：
-  - `type` 可选 `text-log`、`text-input`、`button`、`choice-buttons`、`stat-list`、`stat-bar`、`item-list`、`chat-box`、`text-block`、`image`、`dice-log`、`canvas`（0.4，见第 10 节）。
+  - `type` 可选 `text-log`、`text-input`、`button`、`choice-buttons`、`stat-list`、`stat-bar`、`item-list`、`chat-box`、`text-block`、`image`、`dice-log`、`canvas`（0.4，见第 10 节）、`custom`（作者自带的 HTML/JS 组件，见下面）。
+  - `custom`：`{ type: custom, region, src: ui/map.html, actions: [动作id], emits: [事件名], config: {...}, height, fallback }`。组件在沙箱 iframe 里运行，不能联网，只能用 `window.oasis` 读玩家可见的状态（`oasis.state`、`oasis.onState(cb)`）、调用 `actions` 里的动作（`await oasis.action('move', { to: '海滩' })`）、发 `emits` 里的事件（`oasis.emit('opened', 数据)`，AI 用 `trigger: "ui:map.opened"` 接）。玩家可在设置里关掉自定义组件，此时显示 `fallback`。完整接口见 ruleset-spec §13.3，示例 `tests/fixtures/custom-ui-mini/`。
   - `content` 可选 `fixed`（默认）或 `ai`。**AI 输出的目标组件必须写 `content: ai`**。
   - `text-input` 和 `chat-box` 可选 `input: { actions: [动作id…], reject: 超出范围时的回应文字, words?, max_length? }`。不写时，玩家文字不能触发任何动作（仍可交给 AI 接入点）。
   - 其他字段：`label`、`placeholder`、`writes`、`action`、`emit`、`choices`、`from_ai`、`bind`、`title`、`portrait`、`text`、`src`、`images`、`fit`、`generated`、`hidden_by_default`、`player_can_hide`。

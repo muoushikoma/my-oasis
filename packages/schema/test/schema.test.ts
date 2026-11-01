@@ -12,7 +12,7 @@ const codes = (r: ReturnType<typeof v>) => r.issues.filter((i) => i.level === "e
 
 describe("示例故事", () => {
   it("两个规范示例都能通过校验", () => {
-    for (const p of ["examples/lighthouse-mini", "tests/fixtures/guess-the-box"]) {
+    for (const p of ["examples/lighthouse-mini", "tests/fixtures/guess-the-box", "tests/fixtures/custom-ui-mini"]) {
       const r = validateFiles(loadFromPath(root + p));
       expect(r.issues.filter((i) => i.level === "error"), formatIssues(r)).toEqual([]);
       expect(r.ok).toBe(true);
@@ -22,8 +22,8 @@ describe("示例故事", () => {
     expect(readFileSync(root + "packages/schema/src/story.schema.json", "utf8")).toBe(readFileSync(root + "docs/schema/story.schema.json", "utf8"));
   });
   it(".oasis（zip）可以读取，且允许多套一层文件夹", () => {
-    const files = filesFromText(lighthouse);
-    const nested = new Map([["my-story/story.yaml", files.get("story.yaml")!]]);
+    const files = loadFromPath(root + "examples/lighthouse-mini");
+    const nested = new Map([...files].map(([k, d]) => [`my-story/${k}`, d] as [string, Uint8Array]));
     expect(validateFiles(filesFromZip(filesToZip(files))).ok).toBe(true);
     expect(validateFiles(filesFromZip(filesToZip(nested))).ok).toBe(true);
   });
@@ -229,4 +229,61 @@ ui:
   it("没写 ai 报错", () => { const r = raw(noAi); expect(r.ok).toBe(false); expect(codes(r)).toContain("ai_required"); });
   it("ai 里没有接入点也报错", () => { expect(codes(raw(noAi + "ai: { system: 设定 }\n"))).toContain("ai_required"); });
   it("有接入点就通过", () => { expect(raw(withAi(noAi)).ok).toBe(true); });
+});
+
+describe("自定义组件 type: custom（§13.3）", () => {
+  const base = `
+spec: oasis/0.3
+meta: { id: cu-test, title: 自定义, version: 0.1.0, summary: 测试, language: zh-CN, rating: all-ages }
+state: { x: { type: number, init: 0 } }
+endings:
+  list:
+    - { id: done, label: 完, kind: good, when: "state.x > 3" }
+actions:
+  bump: { steps: [ { inc: { x: 1 } } ] }
+  secret: { steps: [], callable_by: [ai] }
+ui:
+  components:
+    log: { type: text-log, region: main, content: ai }
+    m: { type: custom, region: main, src: ui/m.html, actions: [bump], emits: [opened], fallback: 关闭了 }
+`;
+  const html = `<link rel="stylesheet" href="m.css"><script src="m.js"></script>`;
+  it("文件齐全时通过", () => {
+    expect(codes(v(base, { "ui/m.html": html, "ui/m.css": "b{}", "ui/m.js": "1" }))).toEqual([]);
+  });
+  it("缺 html / 缺引用文件 / 不是 html", () => {
+    expect(codes(v(base))).toContain("missing_file");
+    expect(codes(v(base, { "ui/m.html": html, "ui/m.css": "" }))).toContain("missing_file");
+    expect(codes(v(base.replace("ui/m.html", "ui/m.js"), { "ui/m.js": "1" }))).toContain("custom_src_type");
+    expect(codes(v(base.replace("src: ui/m.html, ", "")))).toContain("custom_no_src");
+  });
+  it("动作必须存在且玩家可调用；ui 触发器必须在 emits 里", () => {
+    const f = { "ui/m.html": "<p>hi</p>" };
+    expect(codes(v(base.replace("actions: [bump]", "actions: [nope]"), f)).length).toBeGreaterThan(0);
+    expect(codes(v(base.replace("actions: [bump]", "actions: [secret]"), f)).length).toBeGreaterThan(0);
+    const ok = base + `ai:
+  entry_points:
+    e:
+      kind: narrate
+      trigger: "ui:m.opened"
+      prompt: hi
+      fallback: 好。
+      card: { task: 回应, authority: 0, output: { format: text, max_chars: 120 } }
+`;
+    const bad = base + `ai:
+  entry_points:
+    e:
+      kind: narrate
+      trigger: "ui:m.closed"
+      prompt: hi
+      fallback: 好。
+      card: { task: 回应, authority: 0, output: { format: text, max_chars: 120 } }
+`;
+    expect(codes(v(ok, f))).not.toContain("component_event");
+    expect(codes(v(bad, f))).toContain("component_event");
+  });
+  it("引用外网资源给警告", () => {
+    const r = v(base, { "ui/m.html": `<script src="https://x.example/a.js"></script>` });
+    expect(r.issues.map((i) => i.code)).toContain("custom_network");
+  });
 });

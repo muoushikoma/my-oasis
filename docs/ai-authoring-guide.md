@@ -153,6 +153,7 @@ scripts/xxx.js 里 export function run(api)；动作里写 script: scripts/xxx.j
 【实时与接管整个页面】（oasis/0.4，可省略；完整说明见 docs/story-format.md 第 10 节）
 realtime: { tick_hz: 30, tick_ms: 16(1-50), on_tick: 文件#函数, on_ai, on_resize, on_ui, interpolate: false, timers: {...} }
 input: { keys: { ArrowLeft: left, ... }, joystick: true, buttons: [...], pointer: true }
+自定义组件：{ type: custom, region, src: ui/xxx.html, actions: [动作id], emits: [事件名], config, height, fallback }。HTML 可引用同包 .js/.css/图片（相对路径），不能联网（不要用 CDN）。组件里用 window.oasis：await oasis.ready；oasis.state（玩家可见状态）；oasis.onState((state, changed) => ...)；await oasis.action(id, params) → { ok, error }（只能调 actions 里列出的玩家动作）；oasis.emit(事件, 数据)（只能发 emits 里的，AI 接 trigger: "ui:组件id.事件"）；oasis.lang、oasis.config、oasis.resize(高度)。拿不到 Key/文件/网络。一定写 fallback，并另外给按钮或输入框，玩家关掉自定义组件也能玩。示例：tests/fixtures/custom-ui-mini/
 画布组件：{ type: canvas, region, render: 文件#函数, width/height（固定）或 size: fill（铺满，跟着窗口/转屏变化）, hidpi: true, pixelated }
 ui.takeover: true → 客户端不显示顶栏，整个窗口/手机屏幕交给故事（安卓沉浸全屏）。脚本读 api.screen { width, height, dpr, takeover }；render 的 api.params.width/height 是画布当前尺寸；坐标最好按比例存。
 玩家始终可以打开暂停菜单（按住 Esc 1 秒 / 安卓返回键 / 右上角 ⋯），故事关不掉；不要把右上角那一小块当成必须点的位置，也不要依赖“长按 Esc”。

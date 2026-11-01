@@ -156,3 +156,6 @@ textarea.code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13
 .nui-item { text-align: left; padding: 8px 10px; border-radius: 6px; border: 1px solid #8884; background: rgba(0,0,0,.25); color: inherit; font: inherit; } .nui-item:disabled { opacity: .5; } .nui-sub { opacity: .65; font-size: .85em; }
 .nui-rich, .nui-otext { white-space: pre-wrap; } .nui-img { max-width: 100%; }
 .nui-fade { position: fixed; inset: 0; z-index: 2147482500; pointer-events: none; }
+/* 自定义组件（沙箱 iframe） */
+.custom-frame { width: 100%; border: 0; display: block; background: transparent; }
+.custom-parking { position: fixed; left: -10000px; top: 0; width: 1px; height: 1px; overflow: hidden; }

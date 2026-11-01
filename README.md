@@ -41,7 +41,7 @@ API keys and GitHub tokens live only in the OS secure store (Windows Credential 
 
 | Document | Purpose |
 |---|---|
-| ⭐ [Story delivery format](docs/story-format.md) | **The only document you need to write a story; you can hand it straight to an AI.** Defines the `.oasis` package structure and field formats (including oasis/0.4 real-time games: loop, timers, keyboard/touch/joystick, canvas, sound, async AI), with no limits on story content |
+| ⭐ [Story delivery format](docs/story-format.md) | **The only document you need to write a story; you can hand it straight to an AI.** Defines the `.oasis` package structure and field formats (including oasis/0.4 real-time games: loop, timers, keyboard/touch/joystick, canvas, sound, async AI) and story-bundled custom UI components (sandboxed HTML/JS), with no limits on story content |
 | [JSON Schema](docs/schema/story.schema.json) | Machine-readable format of the story file, used by the app and the submission check |
 | [Story format spec (full)](docs/ruleset-spec.md) | Detailed description of every field and how the engine executes it |
 | [AI authoring guide](docs/ai-authoring-guide.md) | Older AI prompt with writing advice; reference only |

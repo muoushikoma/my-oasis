@@ -142,6 +142,7 @@ function showSettings() {
       chk("merge", "同一次操作的多个 AI 环节尽量合并成一次请求（更快、更省）"),
       chk("imageGen", "允许故事使用 AI 生图（尚未开放；关闭时显示故事自带的替代图）"),
       chk("muted", "静音"),
+      h("label", { class: "check" }, h("input", { type: "checkbox", checked: (s as any).customUi !== false, onchange: (ev: any) => saveSettings({ ...loadSettings(), customUi: ev.target.checked } as any) }), "允许故事自带的自定义组件（在隔离的沙箱里运行，不能联网，也拿不到你的 Key 和文件；关闭后显示作者写的替代文字）"),
       h("label", {}, "屏幕虚拟摇杆和按钮 ", h("select", { onchange: (ev: any) => saveSettings({ ...loadSettings(), virtualControls: ev.target.value } as any) },
         ...([["auto", "自动（只在手机上显示）"], ["on", "总是显示"], ["off", "不显示"]] as const).map(([v, t]) => h("option", { value: v, selected: ((s as any).virtualControls ?? "auto") === v }, t)))),
       h("label", {}, "故事语言 / Story language ", h("select", { onchange: (ev: any) => { saveSettings({ ...loadSettings(), lang: ev.target.value }); showSettings(); } },
