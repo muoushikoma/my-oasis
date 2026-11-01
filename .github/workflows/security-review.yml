@@ -61,7 +61,7 @@ jobs:
           fi
       - name: 依赖漏洞 cargo audit / Rust dependencies
         run: |
-          V=0.21.2
+          V=0.22.2
           if curl -sSfL "https://github.com/rustsec/rustsec/releases/download/cargo-audit%2Fv${V}/cargo-audit-x86_64-unknown-linux-musl-v${V}.tgz" | tar xz -C "$RUNNER_TEMP" --strip-components=1; then
             if "$RUNNER_TEMP/cargo-audit" audit --file Cargo.lock; then
               node tools/security/scan.mjs check "cargo audit" green "Rust 依赖没有已知漏洞" "no known Rust advisories"
