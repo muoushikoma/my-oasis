@@ -13,6 +13,20 @@ export class AssetBox {
     const u = URL.createObjectURL(new Blob([d as BlobPart], { type: MIME[path.split(".").pop()!.toLowerCase()] ?? "application/octet-stream" }));
     this.urls.set(path, u); return u;
   }
+  /** 素材原始字节（WebAudio 解码用） */
+  bytes(ref: unknown): Uint8Array | undefined {
+    if (typeof ref !== "string" || !ref) return;
+    const path = ref.startsWith("asset:") ? this.assets[ref.slice(6)]?.path : ref;
+    return path ? (this.files.get(path) as Uint8Array | undefined) : undefined;
+  }
+  /** 登记过的素材 id 及其类型（按扩展名） */
+  list(): { id: string; kind: "image" | "audio" | "other" }[] {
+    return Object.entries(this.assets).map(([id, a]: [string, any]) => {
+      const ext = String(a?.path ?? "").split(".").pop()!.toLowerCase();
+      if (a?.type === "image" || a?.type === "audio") return { id, kind: a.type };
+      return { id, kind: ["png", "webp", "jpg", "jpeg", "gif"].includes(ext) ? "image" : ["ogg", "mp3", "m4a", "wav"].includes(ext) ? "audio" : "other" };
+    });
+  }
   meta(ref: unknown): any { return typeof ref === "string" && ref.startsWith("asset:") ? this.assets[ref.slice(6)] : undefined; }
   dispose() { for (const u of this.urls.values()) URL.revokeObjectURL(u); this.urls.clear(); }
 }
