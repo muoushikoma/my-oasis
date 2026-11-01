@@ -133,14 +133,17 @@ my-story.oasis
 | `title` | 字符串 | **必填** | 1–40 字 |
 | `version` | 字符串 | **必填** | 语义化版本 `主.次.修`，如 `1.0.0`；再次上传必须更大 |
 | `summary` | 字符串 | **必填** | 1–200 字 |
-| `language` | 字符串 | **必填** | 如 `zh-CN` `en` `ja` |
+| `languages` | 字符串列表 | **必填**（或旧写法 `language`） | 故事和 AI 支持的语言，如 `[zh, en, ja]`；旧写法 `language: zh-CN` 等同 `[zh]` |
+| `ai_role` | 文本 | 可选（投稿必填，中英双语） | AI 在故事里做什么，一两句，≤ 120 字 |
+| `est_tokens_per_min` | 整数 | 可选（投稿必填） | 每分钟大约多少 token（输入 + 输出） |
+| `description` | 文本 | 可选 | 详情页长介绍，≤ 4000 字，纯文本（空行分段、`# ` 小标题、`- ` 列表） |
 | `rating` | 字符串 | **必填** | `all-ages` \| `teen` \| `mature`；**不接受成人内容**；公开故事库只收 `all-ages`；`teen`、`mature` 只能本地导入游玩 |
 | `authors` | 字符串列表 | 可选 | 作者名 |
 | `tags` | 字符串列表 | 可选 | ≤ 10 个，每个 ≤ 12 字 |
 | `content_warnings` | 字符串列表 | 可选 | 如 `[恐怖, 暴力]`；`mature` 时**必填** |
 | `cover` | 路径 | 可选 | 包内图片 |
 | `setting` | 路径 | 可选 | 包内 Markdown，作为 AI 设定资料 |
-| `est_minutes` | 整数 | 可选 | 1–600 |
+| `est_minutes` | 整数 | 可选（投稿必填） | 1–600 |
 | `min_engine` | 字符串 | 可选 | 最低引擎版本，默认 `0.3.0` |
 | `license` | 字符串 | 可选 | 作者授权声明（平台条款待定） |
 

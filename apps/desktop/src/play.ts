@@ -6,7 +6,7 @@ import { AssetBox } from "./assets";
 import { RealtimeDriver } from "./realtime";
 import { bridge } from "./bridge";
 import { makeLlm } from "./llm";
-import { beginSession, sessionUsage, loadUsage, onUsage, fmtNum, fmtCost, zero } from "./usage";
+import { addPlaytime, beginSession, sessionUsage, loadUsage, onUsage, fmtNum, fmtCost, zero } from "./usage";
 import { explainError } from "./providers";
 import { storyStorage } from "./story-storage";
 import { loadSettings, saveSettings, isLocalUrl, type Settings } from "./settings";
@@ -97,7 +97,7 @@ export class PlaySession {
   get takeover() { return !!(this.story.ui as any)?.takeover; }
   private tk?: { corner: HTMLElement; exit: () => void };
   private menu?: HTMLElement;
-  leave() { this.disposeFrames(); this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.offUsage?.(); this.tk?.exit(); this.tk = undefined; this.menu?.remove(); this.menu = undefined; this.onExit(); }
+  leave() { if (this.playTimer) clearInterval(this.playTimer); this.playTimer = undefined; this.disposeFrames(); this.rt?.stop(); this.sound.stop(); this.assets.dispose(); this.offUsage?.(); this.tk?.exit(); this.tk = undefined; this.menu?.remove(); this.menu = undefined; this.onExit(); }
   /** 暂停菜单：接管模式下玩家的出口（故事无法关闭）。继续 / 存档 / 声音 / 外观 / 设置（AI 与用量）/ 全屏 / 回故事库 */
   pauseMenu() {
     if (this.menu) return;
@@ -136,6 +136,12 @@ export class PlaySession {
   }
   async init(save?: any) {
     beginSession(this.storyId, String(this.story.meta.title));
+    if (this.playTimer) clearInterval(this.playTimer);
+    let lastTok = 0;
+    this.playTimer = window.setInterval(() => {
+      const se = sessionUsage(), tok = se.input + se.output, d = tok - lastTok; lastTok = tok;
+      if (document.visibilityState === "visible" && !this.game?.ending) addPlaytime(this.storyId, 15000, d);
+    }, 15000);
     this.offUsage?.(); this.offUsage = onUsage(() => { const el = document.getElementById("usage-line"); const n = this.usageEl(); if (el && n) el.replaceWith(n); });
     try { this.scripts = await createQuickJsRunner(); } catch { /* 没用脚本的故事不需要 */ }
     const s = this.settings;
@@ -388,6 +394,7 @@ export class PlaySession {
   }
   lastSent = new Set<string>();
   // ---------- 自定义组件（§13.3）：iframe 跨渲染保留，渲染时先停到 parking 再挂回新位置 ----------
+  playTimer?: number;
   frames = new Map<string, CustomFrame>();
   parking?: HTMLElement; frameTimer?: number;
   customFrame(cid: string, c: any): CustomFrame {

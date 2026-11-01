@@ -57,16 +57,18 @@ id 的通用格式：状态、动作、素材、接入点、组件这些的 id �
 | `id` | ✅ | `^[a-z][a-z0-9-]{2,63}$`，例如 `rainy-bookshop`。投稿时必须和文件夹名一样 |
 | `title` | ✅ | 故事名称。字符串，或中英双语 `{ zh: 雨夜书店, en: Rainy Bookshop }`（**投稿故事库必须中英都写**） |
 | `version` | ✅ | `x.y.z` 格式 |
-| `summary` | ✅ | 简介。字符串或 `{ zh: …, en: … }`（**投稿故事库必须中英都写**） |
-| `language` | ✅ | 主要语言，例如 `zh-CN`、`en` |
-| `languages` | | 故事支持的语言，例如 `[zh, en]`（见第 11 节） |
+| `summary` | ✅ | 一句话简介（列表卡片只显示名称、标签和简介，点开才是详情）。字符串或 `{ zh: …, en: … }`（**投稿故事库必须中英都写**） |
+| `languages` | ✅ | 故事（和 AI 回复）支持的语言列表，例如 `[zh, en]`、`[zh, en, ja]`。**旧写法** `language: zh-CN`（一个字符串）仍然可以用，相当于 `languages: [zh]`；两个都不写会报错 `meta_languages`。客户端界面目前能切换中文/英文 |
+| `ai_role` | 投稿必填 | AI 在故事里做什么，一两句话（≤ 120 字），如 `{ zh: AI 扮演守灯老人并叙述剧情, en: The AI plays the old keeper and narrates }`。**投稿故事库必须中英都写** |
+| `est_minutes` | 投稿必填 | 玩一遍大概多少分钟（整数 1–600） |
+| `est_tokens_per_min` | 投稿必填 | **每分钟**大约用多少 AI token（输入 + 输出，整数），例如 `2000`。显示为“约 2000 token/分钟”，客户端还会显示玩家自己的实测平均值 |
+| `description` | | 详情页里的长介绍（字符串或 `{ zh, en }`，≤ 4000 字）。纯文本：空行分段，`# ` 开头当小标题，`- ` 开头当列表；不支持 HTML |
 | `platforms` | | 支持的平台：`desktop`（电脑）、`mobile`（手机），可写一个或两个，例如 `[desktop, mobile]`；不写 = 两端都支持。客户端只列出、只加载当前设备能玩的故事，发布页会显示支持平台 |
 | `rating` | ✅ | `all-ages`、`teen` 或 `mature`（`mature` 时 `content_warnings` 必填）。**公开故事库只收 `all-ages`（全年龄）**，其他分级只能本地导入 |
 | `tags` | | 标签数组，每项是字符串或 `{ zh, en }`。**投稿故事库必须正好 3 个，每个中英都写** |
 | `authors` / `content_warnings` | | 字符串数组（`content_warnings` 每项也可写 `{ zh, en }`） |
 | `cover` | | 包内图片的路径 |
 | `setting` | | 包内文件的路径，内容是世界观设定文本 |
-| `est_minutes` | | 整数 |
 | `min_engine` | | `x.y.z` 格式 |
 | `license` | | 字符串 |
 
@@ -202,8 +204,10 @@ meta:
   title: { zh: 示例故事, en: Sample Story }
   version: 1.0.0
   summary: { zh: 一句话简介。, en: A one-line summary. }
-  language: zh-CN
   languages: [zh, en]
+  est_minutes: 15
+  est_tokens_per_min: 1500
+  ai_role: { zh: AI 负责叙述剧情，并在你打开箱子时描写结果。, en: The AI narrates the story and describes what you find in each box. }
   rating: all-ages
   tags:
     - { zh: 悬疑, en: Mystery }

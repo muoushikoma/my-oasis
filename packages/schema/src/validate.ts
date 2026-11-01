@@ -236,6 +236,11 @@ function semantic(s: Story, files: StoryFiles, report: Report) {
   const tools = obj(s.tools);
   const endings = Array.isArray(s.endings?.list) ? s.endings.list : [];
   const events = Array.isArray(s.events) ? s.events : [];
+  {
+    const m: any = obj(s.meta);
+    if (m.language === undefined && !(Array.isArray(m.languages) && m.languages.length))
+      report("error", "meta_languages", ["meta"], "没写故事支持哪些语言。", "加上 languages: [zh, en]（旧写法 language: zh-CN 也可以）。", "§1", "languages");
+  }
   const comps = obj(s.ui?.components);
   const entries = obj(s.ai?.entry_points);
   const isAi = (c: any) => c?.content === "ai" || c?.from_ai === true;

@@ -1,5 +1,5 @@
 // 投稿：GitHub 登录（Device Flow）+ 一键上传投稿 + 我的投稿状态。不登录也能浏览、下载、游玩。
-import { validateFiles, pickText, libraryProblems, libraryWarnings, type StoryFiles } from "@my-oasis/schema";
+import { validateFiles, pickText, libraryProblems, libraryWarnings, metaLanguages, fmtTokensPerMin, type StoryFiles } from "@my-oasis/schema";
 import { h, toast } from "./dom";
 import { bridge, bytesToB64 } from "./bridge";
 import { issuesView } from "./issues";
@@ -12,6 +12,9 @@ const PR_BODY = (meta: any, ai: boolean) => `## 投稿信息 / Submission / 投�
 - 故事名称 / Title：${pickText(meta.title, "zh")} / ${pickText(meta.title, "en")}
 - 标签 / Tags：${(meta.tags ?? []).map((t: any) => `${pickText(t, "zh")}/${pickText(t, "en")}`).join("，")}
 - 文件夹（= meta.id）：\`stories/${meta.id}/\`
+- AI 做什么 / AI role：${pickText(meta.ai_role, "zh")} / ${pickText(meta.ai_role, "en")}
+- 语言 / Languages：${metaLanguages(meta).join(", ")}
+- 时长 / Play time：约 ${meta.est_minutes ?? "?"} 分钟 · ${meta.est_tokens_per_min ? fmtTokensPerMin(meta.est_tokens_per_min) : "每分钟 token 未填写"}
 - 是否需要 AI：${ai ? "是" : "否"}
 - 分级：${meta.rating === "all-ages" ? "全年龄 all-ages" : meta.rating ?? "?"}
 

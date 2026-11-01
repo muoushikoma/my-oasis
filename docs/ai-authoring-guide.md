@@ -47,8 +47,8 @@ meta（必填）、state（可选）、endings（可选）
 所有 id（状态、动作、事件、工具、接入点、组件、结局）只能用小写英文字母开头、小写字母/数字/下划线，最长 40，例如 oil、keeper_trust。中文名写在 label。
 meta.id 用小写字母、数字、连字符，如 lighthouse-keeper。
 
-【meta】必填：id, title(≤40字), version("1.0.0"), summary(≤200字), language("zh-CN"), rating。可选：languages, platforms([desktop] / [mobile] / [desktop, mobile]，不写=两端都支持；只适合键盘或只适合触屏时一定要写), authors, tags, content_warnings, cover, setting, est_minutes, license。
-要投稿到公开故事库时必须：rating 写 all-ages（只收全年龄，禁止成人、色情、血腥内容）；title 和 summary 都写成中英双语 { zh: …, en: … }；tags 正好 3 个，每个都写成 { zh: …, en: … }；并写 languages: [zh, en]。
+【meta】必填：id, title(≤40字), version("1.0.0"), summary(一句话，≤200字), languages(列表，如 [zh, en]), rating。可选：ai_role, est_minutes, est_tokens_per_min, description(详情页长介绍，纯文本),  platforms([desktop] / [mobile] / [desktop, mobile]，不写=两端都支持；只适合键盘或只适合触屏时一定要写), authors, tags, content_warnings, cover, setting, est_minutes, license。
+要投稿到公开故事库时必须：rating 写 all-ages（只收全年龄，禁止成人、色情、血腥内容）；title 和 summary 都写成中英双语 { zh: …, en: … }；tags 正好 3 个，每个都写成 { zh: …, en: … }；并写 languages: [zh, en]；还必须写 ai_role（中英双语，一两句说清 AI 在故事里做什么：扮演哪些角色、是否当叙述者/主持人、是否判定玩家的自由输入、是否生成图片）、est_minutes（玩一遍大概几分钟）、est_tokens_per_min（每分钟大约多少 token，按“每分钟大约几次 AI 调用 × 每次输入+输出 token”估算，例如每分钟 2 次 × 1000 = 2000）。这些信息会显示在故事库卡片和详情页，让玩家玩之前就知道。
 
 【中英双语】所有玩家能看到的文字（title、summary、tags、intro、label、desc、text、require_message、fail、opening、fallback、placeholder、reject、alt、choices 的 label 等）都写成 { zh: 中文, en: English }，中英意思一致。写给 AI 看的 system/task/prompt/must/forbid 不用双语。引擎会让 AI 按玩家选的语言回复；脚本里用 api.lang（"zh" 或 "en"）判断语言。
 
@@ -208,8 +208,10 @@ meta:
   title: { zh: 三个箱子, en: Three Boxes }
   version: 1.0.0
   summary: { zh: 三次机会，找出藏着钥匙的箱子。, en: Three tries to find the box with the key. }
-  language: zh-CN
   languages: [zh, en]
+  est_minutes: 15
+  est_tokens_per_min: 1500
+  ai_role: { zh: AI 负责叙述剧情，并在你打开箱子时描写结果。, en: The AI narrates the story and describes what you find in each box. }
   rating: all-ages
   tags:
     - { zh: 解谜, en: Puzzle }

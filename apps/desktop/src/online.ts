@@ -1,14 +1,15 @@
 // 在线故事库：目录读 Release story-index 的 index.json（读不到就列出 stories/ 现场生成），故事文件读本仓库 main 的 stories/
-import { filesFromZip, validateFiles, type StoryFiles } from "@my-oasis/schema";
+import { filesFromZip, validateFiles, metaLanguages, type StoryFiles } from "@my-oasis/schema";
 import { bridge } from "./bridge";
 const dec = new TextDecoder();
 import { h, toast } from "./dom";
 import { loadSettings, saveSettings, tr, trList } from "./settings";
 import type { LocalText } from "@my-oasis/schema";
+import { briefCard, openDetail } from "./story-info";
 import { playableHere, platformText, currentPlatform, PLATFORM_LABEL } from "./platform";
 import { fetchLikes, isFavorite, toggleFavorite, likedLocally, setLike, type LikeInfo } from "./social";
 
-export interface OnlineStory { id: string; title: LocalText; summary?: LocalText; author?: string; version?: string; rating?: string; language?: string; tags?: LocalText[]; platforms?: ("desktop" | "mobile")[]; ai?: boolean; cover?: string; files: { path: string; size?: number }[]; updated?: string }
+export interface OnlineStory { id: string; title: LocalText; summary?: LocalText; author?: string; version?: string; rating?: string; language?: string; languages?: string[]; description?: LocalText; est_minutes?: number; est_tokens_per_min?: number; ai_role?: LocalText; content_warnings?: LocalText[]; tags?: LocalText[]; platforms?: ("desktop" | "mobile")[]; ai?: boolean; cover?: string; files: { path: string; size?: number }[]; updated?: string }
 export interface OnlineIndex { format: string; updated?: string; stories: OnlineStory[] }
 
 export const REPO = "muoushikoma/my-oasis";
@@ -69,7 +70,7 @@ export async function indexFromListing(files: { path: string; size?: number }[],
     if (cover.startsWith("asset:")) { const a = data?.assets?.[cover.slice(6)]; cover = typeof a === "string" ? a : a?.path ?? a?.src ?? ""; }
     cover = cover && !cover.includes("..") && list.some((f) => f.path === `stories/${id}/${cover}`) ? `stories/${id}/${cover}` : "";
     stories.push({ id, title: m.title ?? id, summary: m.summary ?? "", author: Array.isArray(m.authors) ? m.authors.join("、") : (m.author ?? ""), version: m.version ?? "",
-      rating: m.rating ?? "", language: m.language ?? "", tags: Array.isArray(m.tags) ? m.tags : [], platforms: Array.isArray(m.platforms) ? m.platforms : [], ai: !!(data?.ai && Object.keys(data.ai).length) || /"content":"ai"/.test(JSON.stringify(data ?? {})),
+      rating: m.rating ?? "", language: m.language ?? "", languages: metaLanguages(m), est_minutes: m.est_minutes, est_tokens_per_min: m.est_tokens_per_min, ai_role: m.ai_role, description: m.description, content_warnings: Array.isArray(m.content_warnings) ? m.content_warnings : [], tags: Array.isArray(m.tags) ? m.tags : [], platforms: Array.isArray(m.platforms) ? m.platforms : [], ai: !!(data?.ai && Object.keys(data.ai).length) || /"content":"ai"/.test(JSON.stringify(data ?? {})),
       cover, files: [...list].sort((a, b) => a.path.localeCompare(b.path)) });
   }
   return { format: "oasis-index/1", stories };
@@ -149,13 +150,9 @@ export function onlineView(onGet: (st: OnlineStory, files: StoryFiles) => Promis
       const size = st.files.reduce((a, f) => a + (f.size ?? 0), 0);
       const ph = h("div", { class: "cover ph" }, (tr(st.title).replace(/^[\s(（【\[]*(?:[^)）】\]]*[)）】\]])?\s*/, "") || tr(st.title)).slice(0, 1));
       const cover = st.cover && /^stories\/[a-z0-9-]+\/[^?#]+$/.test(st.cover) && !st.cover.includes("..") ? (() => { const img = h("img", { class: "cover", alt: "" }) as HTMLImageElement; bridge.netGet(source().file(st.cover!)).then((b) => { img.src = URL.createObjectURL(new Blob([b as BlobPart])); }).catch(() => img.replaceWith(ph)); return img; })() : ph;
-      return h("div", { class: "story-card" }, cover,
-        h("div", { class: "info" },
-          h("h3", {}, tr(st.title), h("span", { class: "tag ai" }, "AI 故事")),
-          h("p", { class: "muted" }, tr(st.summary)),
-          h("p", { class: "small muted" }, `作者 ${st.author ?? "未署名"} · 版本 ${st.version ?? "?"}${size ? ` · ${size < 1048576 ? Math.max(1, Math.round(size / 1024)) + " KB" : (size / 1048576).toFixed(1) + " MB"}` : ""}${st.tags?.length ? ` · ${trList(st.tags).join("、")}` : ""}`),
-          h("p", { class: "small muted" }, `支持平台：${platformText(st)}`),
-          h("div", { class: "row" }, btn, fav, like)));
+      return briefCard(cover, tr(st.title), st, () => openDetail({ title: tr(st.title), cover: cover.cloneNode(true) as HTMLElement, meta: st, storyId: st.id,
+        lines: [`作者 ${st.author || "未署名"} · 版本 ${st.version ?? "?"}${size ? ` · ${size < 1048576 ? Math.max(1, Math.round(size / 1024)) + " KB" : (size / 1048576).toFixed(1) + " MB"}` : ""}`],
+        buttons: [btn, fav, like] }));
     })) : h("p", { class: "muted" }, idx.stories.length ? (favOnly.checked ? "没有符合条件的收藏。" : "没有找到这台设备能玩的匹配故事。") : "在线故事库里还没有故事。欢迎到“创作 → 投稿”成为第一个投稿的作者！"));
     if (hidden) list.append(h("p", { class: "small muted" }, `另有 ${hidden} 个故事不支持${PLATFORM_LABEL[currentPlatform()]}，已隐藏。`));
   };

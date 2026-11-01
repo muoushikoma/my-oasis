@@ -35,7 +35,7 @@ pnpm --filter @my-oasis/schema gen:validator    # 改了 schema 后必须重新�
 pnpm --filter ./apps/desktop build              # vite build 前端
 pnpm bench                                      # 脚本沙箱性能测试，性能相关改动请附结果
 pnpm oasis validate examples/lighthouse-mini    # 校验示例故事
-npm ci --prefix tools/stories && node tools/stories/validate.mjs   # 校验 stories/
+pnpm install && npm ci --prefix tools/stories && pnpm exec tsx tools/stories/validate.mjs   # 校验 stories/
 ```
 
 #### 代码风格与提交信息
@@ -65,7 +65,7 @@ npm ci --prefix tools/stories && node tools/stories/validate.mjs   # 校验 stor
 12. **不得放宽故事包体积上限**（图片 10MB、音频 30MB、整包 300MB、最多 2000 个文件），除非维护者事先同意。
 
 ### B. 故事
-请按 README 的「怎么投稿」流程：推荐在客户端里「创作 → 投稿到故事库」一键投稿，或手动把故事放进 `stories/<故事id>/` 后提 PR。格式见 [docs/story-format.md](docs/story-format.md)，提交时按默认的 [PR 模板](.github/pull_request_template.md) 勾选自检清单。故事库只收全年龄作品，名称、简介和 3 个标签都要中英双语。
+请按 README 的「怎么投稿」流程：推荐在客户端里「创作 → 投稿到故事库」一键投稿，或手动把故事放进 `stories/<故事id>/` 后提 PR。格式见 [docs/story-format.md](docs/story-format.md)，提交时按默认的 [PR 模板](.github/pull_request_template.md) 勾选自检清单。故事库只收全年龄作品，名称、简介、3 个标签和 `ai_role`（AI 在故事里做什么）都要中英双语，还要写 `languages`、`est_minutes`、`est_tokens_per_min`（每分钟大约多少 token）。投稿检查会跑和客户端一样的完整校验器（必须接 AI、动作/结局、自定义组件等），有错误不能合并。
 
 ### 审核
 - 自动检查（CI）必须全部通过；
@@ -112,7 +112,7 @@ pnpm --filter @my-oasis/schema gen:validator    # regenerate the precompiled val
 pnpm --filter ./apps/desktop build              # vite build of the frontend
 pnpm bench                                      # sandbox benchmark; attach results for perf changes
 pnpm oasis validate examples/lighthouse-mini    # validate an example story
-npm ci --prefix tools/stories && node tools/stories/validate.mjs   # validate stories/
+pnpm install && npm ci --prefix tools/stories && pnpm exec tsx tools/stories/validate.mjs   # validate stories/
 ```
 
 #### Code style and commit messages
@@ -142,7 +142,7 @@ npm ci --prefix tools/stories && node tools/stories/validate.mjs   # validate st
 12. **Package size limits** (image 10MB, audio 30MB, package 300MB, 2000 files) must not be raised without the maintainer's prior agreement.
 
 ### B. Stories
-Follow "Submit a story" in the README: submit from the app (Create → Submit to library), or put your story in `stories/<story-id>/` and open a PR. See [docs/story-format.md](docs/story-format.md) and fill in the default [PR template](.github/pull_request_template.md) checklist. All-ages only; title, summary and exactly 3 tags must be bilingual.
+Follow "Submit a story" in the README: submit from the app (Create → Submit to library), or put your story in `stories/<story-id>/` and open a PR. See [docs/story-format.md](docs/story-format.md) and fill in the default [PR template](.github/pull_request_template.md) checklist. All-ages only; title, summary, exactly 3 tags and `ai_role` (what the AI does) must be bilingual, and `languages`, `est_minutes` and `est_tokens_per_min` (approx. tokens per minute) are required. The submission check runs the same full validator as the app (AI required, actions/endings, custom components…); errors block the merge.
 
 ### Review
 - CI must pass;

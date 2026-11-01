@@ -4,7 +4,11 @@ meta:
   title: 小岛地图（自定义组件示例）
   version: 0.1.0
   summary: 演示故事自带的自定义组件：一张能点的小地图。
-  language: zh-CN
+  languages: [zh]
+  est_minutes: 5
+  est_tokens_per_min: 800
+  ai_role: AI 描写你到达的地方，并在你打开地图时给出提示。
+  tags: [示例, 地图, 自定义组件]
   rating: all-ages
 start:
   intro: 你站在小岛的灯塔下。点右边的小地图去别的地方看看。
