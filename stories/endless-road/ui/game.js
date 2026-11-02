@@ -187,17 +187,16 @@ function itemBar(s) {
   return h("div", { class: "itembar" }, list.map((it) => h("button", { class: "slot2 " + it.kind + (it.usable ? " use" : ""), style: { borderColor: RK[it.rk] || "#c8c0a8" }, disabled: it.kind === "consumable" && (!it.usable || busy()),
     onclick: () => { if (it.kind === "consumable" && it.usable) run("use_item", { id: String(it.uid) }); else { sheet = "relic"; render(); } } },
     icon(it.kind === "consumable" ? "potion" : it.kind === "insight" ? "scroll" : "gem"),
-    h("span", { class: "tip" }, h("b", { style: { color: RK[it.rk] } }, `✦ ${it.name}`), h("small", {}, `${it.rarity} · ${{ trinket: T("饰品", "Trinket"), consumable: T("消耗品（点击使用）", "Consumable (click to use)"), insight: T("旅途感悟", "Insight") }[it.kind]}`),
+    h("span", { class: "tip" }, h("b", { style: { color: RK[it.rk] } }, it.name), h("small", {}, `${it.rarity} · ${{ trinket: T("饰品", "Trinket"), consumable: T("消耗品（点击使用）", "Consumable (click to use)"), insight: T("旅途感悟", "Insight") }[it.kind]}`),
       h("span", {}, it.eff), it.curse ? h("span", { class: "cur" }, it.curse) : null, it.desc ? h("i", {}, it.desc) : null))));
 }
-// AI 为这段旅程创造的玩法系统
+// 这段旅程独有的玩法
 function sysPanel(s) {
   const list = s.sys_ui || []; if (!list.length) return null;
   return h("div", { class: "syspanel" }, list.map((y) => h("div", { class: "sys out" + (y.off ? " off" : "") },
     h("div", { class: "shead", title: `${y.desc}\n\n${y.text}`, onclick: () => { sheet = "trip"; render(); } }, icon(y.icon), h("b", {}, y.name), h("em", {}, y.label || (y.val != null ? `${y.val}/${y.max}` : ""))),
     y.val != null ? h("div", { class: "sbar" }, h("i", { style: { width: `${(100 * y.val) / y.max}%` } })) : null,
-    h("div", { class: "ebar", title: T("能量：有益的效果会消耗，每里回复", "Energy: spent by helpful effects, refills each mile") }, h("i", { style: { width: `${(100 * y.energy) / y.emax}%` } })),
-    y.spends.length ? h("div", { class: "sbtns" }, y.spends.map((sp) => h("button", { class: "btn sbtn" + (sp.ok ? " ready" : ""), disabled: !sp.ok || busy(), title: `${sp.text}${sp.battle ? T("（战斗中）", " (in battle)") : ""}`, onclick: () => run("invoke", { id: sp.key }) }, `✦ ${sp.name}`))) : null)));
+    y.spends.length ? h("div", { class: "sbtns" }, y.spends.map((sp) => h("button", { class: "btn sbtn" + (sp.ok ? " ready" : ""), disabled: !sp.ok || busy(), title: `${sp.text}${sp.battle ? T("（战斗中）", " (in battle)") : ""}`, onclick: () => run("invoke", { id: sp.key }) }, sp.name))) : null)));
 }
 function resBar(s) {
   const r = s.res; if (!r || !r.k) return null;
@@ -208,9 +207,9 @@ function resBar(s) {
 function banner(s) {
   return h("div", { class: "banner" },
     h("div", { class: "region serif out" }, T(...(BIOME[s.biome] || BIOME.plains))),
-    h("div", { class: "mile out" }, icon("flag"), T(`第 ${s.distance || 0} 里`, `Mile ${s.distance || 0}`), h("span", { class: "path " + (s.path || "road") }, { road: T("大路", "Highway"), wilds: T("荒野", "Wilds"), shortcut: T("捷径", "Shortcut") }[s.path || "road"]), s.phase === "none" ? h("span", { class: "ready" + (s.next_ready ? "" : " wait") }, s.next_ready ? T("· 前方已备好", "· ready") : T("· AI 准备中…", "· AI preparing…")) : null),
-    s.omen_ui && s.omen_ui.name ? h("div", { class: "omen out", title: `${s.omen_ui.desc}\n${s.omen_ui.text}` }, h("b", {}, `✦ ${s.omen_ui.name}`), " ", h("span", {}, (s.omen_ui.text || "").split("\n")[0])) : null,
-    s.thread ? h("div", { class: "thread out", title: T("旅途主线：AI 一路写下、一路推进的故事线", "The journey's thread: a storyline the AI keeps weaving as you go") }, h("b", {}, "✦ "), s.thread) : null);
+    h("div", { class: "mile out" }, icon("flag"), T(`第 ${s.distance || 0} 里`, `Mile ${s.distance || 0}`), h("span", { class: "path " + (s.path || "road") }, { road: T("大路", "Highway"), wilds: T("荒野", "Wilds"), shortcut: T("捷径", "Shortcut") }[s.path || "road"])),
+    s.omen_ui && s.omen_ui.name ? h("div", { class: "omen out", title: `${s.omen_ui.desc}\n${s.omen_ui.text}` }, h("b", {}, s.omen_ui.name), " ", h("span", {}, (s.omen_ui.text || "").split("\n")[0])) : null,
+    s.thread ? h("div", { class: "thread out", title: T("旅途主线", "The journey") }, h("b", {}, "❝ "), s.thread) : null);
 }
 const tags = (list) => h("div", { class: "tags" }, (list || []).map((t) => h("span", { class: `tag ${t.k}` }, t.t)));
 function card(s) {
@@ -230,7 +229,7 @@ function card(s) {
   const ui = s.ui_card || { mode: "none" };
   if (ui.mode === "none") return s.last_result && s.phase === "none" && s.hp > 0 ? h("div", { class: "paper card", key: "result" }, h("span", { class: "kind" }, T("结果", "Outcome")), resultBox(s.last_result), h("small", { style: { color: "#7a6040" } }, T("按空格继续上路", "Press Space to walk on"))) : null;
   return h("div", { class: "paper card" + (ui.mode === "shop" ? " shop" : "") },
-    h("span", { class: "kind" }, ui.kind || ""), ui.ai ? h("span", { class: "aimark", title: T("这张卡（描述、选项、结果旁白）由 AI 现场写成", "This card — scene, options and outcome narration — was written live by the AI") }, T("✦ AI 写成", "✦ AI-written")) : null,
+    h("span", { class: "kind" }, ui.kind || ""),
     h("h2", { class: "serif" }, ui.title || ""),
     h("p", { class: "text" + (ui.mode === "loading" ? " loading" : "") }, ui.text || ""),
     s.last_result && s.phase === "card" ? resultBox(s.last_result) : null,
@@ -247,15 +246,15 @@ function actBox(inp) {
     onkeydown: (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } } });
   ta.value = inp.busy ? inp.last : draft;
   return h("div", { class: "actbox" },
-    h("div", { class: "actrow" }, ta, h("button", { class: "btn gold act send", disabled: inp.busy || busy(), onclick: send }, inp.busy ? T("裁定中…", "Ruling…") : T("行动", "Act"), h("span", { class: "key" }, T(`第 ${inp.step}/${inp.max} 步 · 回车`, `step ${inp.step}/${inp.max} · Enter`)))),
-    inp.busy ? h("div", { class: "judging loading" }, T("✦ AI 裁判正在判定你的行动", "✦ The AI judge is ruling on your action")) : null,
-    inp.stale ? h("div", { class: "judging bad" }, T("AI 没有回应。可以再试一次，或者换个说法。", "The AI didn't answer. Try again, or rephrase.")) : null,
+    h("div", { class: "actrow" }, ta, h("button", { class: "btn gold act send", disabled: inp.busy || busy(), onclick: send }, inp.busy ? T("……", "…") : T("行动", "Act"), h("span", { class: "key" }, T(`第 ${inp.step}/${inp.max} 步 · 回车`, `step ${inp.step}/${inp.max} · Enter`)))),
+    inp.busy ? h("div", { class: "judging loading" }, T("命运正在揭晓", "Fate is deciding")) : null,
+    inp.stale ? h("div", { class: "judging bad" }, T("什么也没有发生。再试一次，或者换个做法。", "Nothing happens. Try again, or try something else.")) : null,
     inp.ideas && inp.ideas.length && !inp.busy ? h("div", { class: "ideas" }, h("small", {}, T("灵感：", "Ideas: ")), inp.ideas.map((t) => h("button", { class: "idea", onclick: () => { draft = t; render(); setTimeout(() => { const el = document.getElementById("actin"); if (el) { el.focus(); el.setSelectionRange(t.length, t.length); } }, 0); } }, t))) : null);
 }
 function resultBox(r) {
   return h("div", { class: "result " + (r.good === true ? "good" : r.good === false ? "bad" : "info") },
     h("div", { class: "you" }, `➤ ${r.text}`),
-    r.ruling ? h("div", { class: "ruling" }, `✦ ${r.ruling}`) : null,
+    r.ruling ? h("div", { class: "ruling" }, r.ruling) : null,
     r.roll ? h("div", { class: "roll" }, r.roll) : null,
     r.narr ? h("div", { class: "narr" }, r.narr) : null,
     r.out ? h("div", { class: "outc" }, (r.good ? "✔ " : r.good === false ? "✘ " : "") + r.out) : null);
@@ -280,7 +279,7 @@ function actions(s) {
 }
 function journal(s) {
   const lines = (s.journal || []).slice(journalOpen ? -60 : -7);
-  return h("div", { class: "journal" + (journalOpen ? " open" : ""), title: T("点击展开 / 收起日志", "Click to expand / collapse"), onclick: () => { journalOpen = !journalOpen; render(); } }, lines.map((l) => h("div", { class: "out" + (l.startsWith("✦") ? " ai" : "") }, l)));
+  return h("div", { class: "journal" + (journalOpen ? " open" : ""), title: T("点击展开 / 收起日志", "Click to expand / collapse"), onclick: () => { journalOpen = !journalOpen; render(); } }, lines.map((l) => h("div", { class: "out" + (l.charCodeAt(0) === 0x200b ? " ai" : "") }, l)));
 }
 function menu(s) {
   return h("div", { class: "menu" }, [["char", "person", T("角色", "Hero")], ["pack", "pack", T("行囊", "Pack")], ["relic", "gem", T("道具", "Items")], ["trip", "map", T("世界", "World")], ["log", "scroll", T("日志", "Log")]].map(([id, ic, label]) =>
@@ -313,7 +312,7 @@ function sheetBody(s, id) {
     const its = s.items_ui || [];
     const blk = (kind, title, max) => { const l = its.filter((x) => x.kind === kind); return [h("h3", { class: "serif", style: { marginTop: "10px" } }, title),
       ...l.map((it) => h("div", { class: "slot", style: { boxShadow: `inset 0 0 0 2px ${RK[it.rk]}` } }, icon(kind === "consumable" ? "potion" : kind === "insight" ? "scroll" : "gem", true),
-        h("div", {}, h("b", { style: { color: RK[it.rk] } }, `✦ ${it.name}`), h("small", {}, `${it.rarity} · ${it.eff}`), it.curse ? h("small", { style: { color: "#ff9a7a" } }, it.curse) : null, it.desc ? h("small", { style: { fontStyle: "italic" } }, it.desc) : null))),
+        h("div", {}, h("b", { style: { color: RK[it.rk] } }, it.name), h("small", {}, `${it.rarity} · ${it.eff}`), it.curse ? h("small", { style: { color: "#ff9a7a" } }, it.curse) : null, it.desc ? h("small", { style: { fontStyle: "italic" } }, it.desc) : null))),
       max && l.length < max ? h("div", { class: "slot empty" }, icon("gem", true), h("span", {}, T(`空位 ${max - l.length}`, `${max - l.length} empty`))) : null]; };
     const lines = String(s.relic_text || "").split("\n").filter((l) => /[:：]/.test(l)), st = s.status || {}, on = Object.keys(st).filter((k) => st[k] > 0);
     return [...blk("trinket", T("饰品（最多 4 件）", "Trinkets (up to 4)"), 4), ...blk("consumable", T("消耗品（最多 4 件）", "Consumables (up to 4)"), 4), ...(its.some((x) => x.kind === "insight") ? blk("insight", T("旅途感悟", "Insights"), 0) : []),
@@ -326,12 +325,12 @@ function sheetBody(s, id) {
     ...[["flag", T("已走里程", "Miles walked"), s.distance], ["star", T("最远纪录", "Best record"), s.best], ["skull", T("击败敌人", "Foes defeated"), s.kills]].map(([ic, n, v]) => h("div", { class: "row" }, icon(ic), h("span", { class: "grow" }, n), h("b", {}, v))),
     s.quest && s.quest.due ? h("div", { class: "row" }, icon("scroll"), h("span", { class: "grow" }, T(`委托「${s.quest.title}」`, `Errand "${s.quest.title}"`)), h("b", {}, T(`第 ${s.quest.due} 里`, `mile ${s.quest.due}`))) : null,
     h("p", { style: { color: "#c5b392", fontSize: "13px" } }, T("每 10 里换一个地区，每 25 里有一个守关者。", "The region changes every 10 miles; a warden waits every 25 miles.")),
-    ...((s.sys_ui || []).length ? [h("h3", { class: "serif", style: { marginTop: "14px" } }, T("✦ 这段旅程的玩法（AI 创造）", "✦ This journey's systems (created by the AI)")),
+    ...((s.sys_ui || []).length ? [h("h3", { class: "serif", style: { marginTop: "14px" } }, T("这段旅程的羁绊", "Bonds of this journey")),
       ...(s.sys_ui || []).map((y) => h("div", { class: "slot", style: { gridTemplateColumns: "40px 1fr" } }, icon(y.icon, true), h("div", {}, h("b", {}, `${y.name}${y.label ? " · " + y.label : ""}`), h("small", { style: { fontStyle: "italic" } }, y.desc), h("small", { style: { whiteSpace: "pre-line" } }, y.text))))] : []),
-    h("h3", { class: "serif", style: { marginTop: "14px" } }, T(`✦ 本局 AI 造物（${(s.made || []).length}）· 图鉴共 ${s.codex_n || 0} 种`, `✦ AI creations this run (${(s.made || []).length}) · ${s.codex_n || 0} in your codex`)),
-    s.thread ? h("p", { style: { fontStyle: "italic", color: "#f0dcb0" } }, `✦ ${s.thread}`) : null,
+    h("h3", { class: "serif", style: { marginTop: "14px" } }, T(`旅途见闻（${(s.made || []).length}）· 图鉴共 ${s.codex_n || 0} 种`, `Seen on this journey (${(s.made || []).length}) · ${s.codex_n || 0} in your codex`)),
+    s.thread ? h("p", { style: { fontStyle: "italic", color: "#f0dcb0" } }, s.thread) : null,
     ...(s.made || []).slice().reverse().map((m) => h("div", { class: "row" }, icon(m.t === "foe" ? "skull" : m.t === "insight" ? "scroll" : "gem"), h("div", { class: "grow" }, h("b", {}, m.n), h("div", { style: { fontSize: "12.5px", color: "#d0bc96" } }, m.e), m.d ? h("div", { style: { fontSize: "12.5px", color: "#a89878", fontStyle: "italic" } }, m.d) : null))),
-    (s.made || []).length ? null : h("p", { style: { color: "#9c8c70" } }, T("（AI 发明的道具、怪物和感悟会出现在这里）", "(Items, monsters and insights the AI invents will appear here)"))];
+    (s.made || []).length ? null : h("p", { style: { color: "#9c8c70" } }, T("（一路上遇到的奇物、怪物和感悟会记在这里）", "(Curiosities, creatures and insights you meet will be recorded here)"))];
 }
 function modal(s) {
   if (!sheet) return null;
@@ -357,7 +356,7 @@ function toastEl(s) {
   if (toastSeen === null) { toastSeen = t.n; return null; }   // 读档时不弹旧提示
   if (t.n !== toastSeen) { toastSeen = t.n; toastUntil = Date.now() + 5200; setTimeout(render, 5300); }
   if (Date.now() > toastUntil) return null;
-  return h("div", { class: "toast wood", style: { borderColor: RK[t.rk] } }, h("small", {}, t.head || T("✦ AI 发明的新道具", "✦ A new item, invented by the AI"), " · ", h("b", { style: { color: RK[t.rk] } }, t.rarity)),
+  return h("div", { class: "toast wood", style: { borderColor: RK[t.rk] } }, h("small", {}, t.head || T("获得了新的东西", "You found something new"), " · ", h("b", { style: { color: RK[t.rk] } }, t.rarity)),
     h("h3", { class: "serif" }, t.title), h("div", { class: "eff" }, t.eff), t.curse ? h("div", { class: "cur" }, t.curse) : null, t.desc ? h("p", {}, t.desc) : null);
 }
 function render() {
