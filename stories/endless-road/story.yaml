@@ -164,6 +164,7 @@ state:
   sys_ui:    { type: json, init: [], visible: player, desc: 玩法系统的显示内容 }
   genesis:   { type: json, init: {}, visible: none }
   last_result: { type: json, init: null, visible: player, desc: 上一次自由行动的裁定结果（给界面显示） }
+  dice_fx:   { type: json, init: {}, visible: player, desc: 最近一次掷骰（给界面播放动画） }
   # 世界
   biome:
     type: enum

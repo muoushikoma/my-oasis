@@ -251,7 +251,47 @@ function actBox(inp) {
     inp.stale ? h("div", { class: "judging bad" }, T("什么也没有发生。再试一次，或者换个做法。", "Nothing happens. Try again, or try something else.")) : null,
     inp.ideas && inp.ideas.length && !inp.busy ? h("div", { class: "ideas" }, h("small", {}, T("灵感：", "Ideas: ")), inp.ideas.map((t) => h("button", { class: "idea", onclick: () => { draft = t; render(); setTimeout(() => { const el = document.getElementById("actin"); if (el) { el.focus(); el.setSelectionRange(t.length, t.length); } }, 0); } }, t))) : null);
 }
+// ================= 掷骰动画 =================
+// 一颗大号 d20 在画面中央翻滚、数字乱跳，落定后显示加值、总计和成败印章；动画结束前结果先不揭晓
+let diceSeen = null, diceUntil = 0, diceTimers = [];
+const diceBox = document.createElement("div"); diceBox.id = "dice"; $("game").append(diceBox);
+diceBox.addEventListener("click", () => endDice());
+const DICE_ROLL = 1100, DICE_HOLD = 1500;
+function diceBusy() { return Date.now() < diceUntil; }
+function endDice() { diceTimers.forEach(clearTimeout); diceTimers = []; diceBox.className = ""; diceBox.replaceChildren(); if (diceUntil) { diceUntil = 0; render(); } }
+function playDice(d) {
+  diceTimers.forEach(clearTimeout); diceTimers = [];
+  const num = h("b", { class: "dnum" }, "?");
+  const die = h("div", { class: "d20 rolling" }, h("i", { class: "facet" }), num);
+  const info = h("div", { class: "dinfo out" });
+  const stamp = h("div", { class: "dstamp" });
+  diceBox.replaceChildren(h("div", { class: "dlabel out" }, d.label || ""), die, info, stamp);
+  diceBox.className = "show";
+  diceUntil = Date.now() + DICE_ROLL + 650;
+  diceTimers.push(setTimeout(render, DICE_ROLL + 680));
+  let n = 0; const spin = () => { num.textContent = String(1 + Math.floor(Math.random() * 20)); if ((n += 1) < 16) diceTimers.push(setTimeout(spin, 30 + n * 4.5)); };
+  spin();
+  diceTimers.push(setTimeout(() => {
+    num.textContent = String(d.nat);
+    die.className = "d20 landed" + (d.nat === 20 ? " crit" : d.nat === 1 ? " fumble" : "");
+    diceTimers.push(setTimeout(() => {
+      info.replaceChildren(`d20 ${d.nat}`, d.mod ? ` ${d.mod >= 0 ? "+" : ""}${d.mod}` : "", " = ", h("b", {}, String(d.total)), h("span", {}, T(`　对 DC ${d.dc}`, `  vs DC ${d.dc}`)));
+      info.className = "dinfo out on";
+      stamp.textContent = d.nat === 20 ? T("大成功！", "CRITICAL!") : d.nat === 1 ? T("大失败", "FUMBLE") : d.ok ? T("成功", "SUCCESS") : T("失败", "FAILURE");
+      stamp.className = "dstamp on " + (d.ok ? "ok" : "no");
+      render();
+    }, 350));
+    diceTimers.push(setTimeout(() => { diceBox.className = "show fade"; }, 350 + DICE_HOLD));
+    diceTimers.push(setTimeout(() => { diceBox.className = ""; diceBox.replaceChildren(); }, 350 + DICE_HOLD + 450));
+  }, DICE_ROLL));
+}
+function checkDice(s) {
+  const d = s.dice_fx || {};
+  if (diceSeen === null) { diceSeen = d.id || 0; return; }   // 读档时不重放
+  if (d.id && d.id !== diceSeen) { diceSeen = d.id; playDice(d); }
+}
 function resultBox(r) {
+  if (diceBusy()) return h("div", { class: "result info" }, h("div", { class: "you" }, `➤ ${r.text}`), h("div", { class: "judging loading" }, T("骰子正在滚动", "The die is rolling")));
   return h("div", { class: "result " + (r.good === true ? "good" : r.good === false ? "bad" : "info") },
     h("div", { class: "you" }, `➤ ${r.text}`),
     r.ruling ? h("div", { class: "ruling" }, r.ruling) : null,
@@ -278,7 +318,9 @@ function actions(s) {
     A("camp", "fire", T("扎营", "Camp"), T(`C · 疲劳 ${s.fatigue || 0}→0`, `C · fatigue ${s.fatigue || 0}→0`), ph === "none" && !s.camped && s.rations > 0));
 }
 function journal(s) {
-  const lines = (s.journal || []).slice(journalOpen ? -60 : -7);
+  let all = s.journal || [];
+  if (diceBusy()) { const i = all.map((l) => l.indexOf("🎲") === 0).lastIndexOf(true); if (i >= 0) all = all.slice(0, i); }   // 骰子落定前不剧透
+  const lines = all.slice(journalOpen ? -60 : -7);
   return h("div", { class: "journal" + (journalOpen ? " open" : ""), title: T("点击展开 / 收起日志", "Click to expand / collapse"), onclick: () => { journalOpen = !journalOpen; render(); } }, lines.map((l) => h("div", { class: "out" + (l.charCodeAt(0) === 0x200b ? " ai" : "") }, l)));
 }
 function menu(s) {
@@ -361,6 +403,7 @@ function toastEl(s) {
 }
 function render() {
   const s = S;
+  checkDice(s);
   const ui = $("ui");
   const cardKey = s.phase === "battle" ? "battle" : JSON.stringify([(s.ui_card || {}).mode, (s.ui_card || {}).title, s.phase === "none" && !!s.last_result]);
   const kids = [hud(s), banner(s), journal(s), actions(s), menu(s), h("div", { class: "msg out" }, msg)];

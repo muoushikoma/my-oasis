@@ -206,6 +206,11 @@ function d20(api) {
   return { nat, bonus };
 }
 function bonusText(b) { return b ? sign(b) : ""; }
+// 掷骰动画：把这次检定交给界面播放
+function diceFx(api, o) {
+  const prev = get(api, "dice_fx") || {};
+  set(api, "dice_fx", { id: (prev.id || 0) + 1, nat: o.nat, mod: o.mod, total: o.total, dc: o.dc, ok: !!o.ok, label: en(api, o.label || "") });
+}
 // 疲劳：每走一里 +1，扎营清零；6 起 d20 -1，9 起 -2，12 起 -3 并且每里掉血
 function fatiguePen(api) { const f = (get(api, "fatigue") || 0) - (hasPerk(api, "hardy") ? 3 : 0); return f >= 12 ? 3 : f >= 9 ? 2 : f >= 6 ? 1 : 0; }
 function priceOf(api, k) { const v = PRICE[k] * (1 + get(api, "distance") / 50); return Math.max(1, Math.round(k === "iron_sell" ? v : v * (hasPerk(api, "haggler") ? 0.75 : 1))); }
@@ -611,6 +616,7 @@ function chooseOption(api, id) {
     const r = d20(api); const m = abilMod(api, o.ability) + prof(get(api, "level")) + checkBonus(api, o.ability);
     const total = r.nat + m + r.bonus;
     ok = r.nat === 20 || (r.nat !== 1 && total >= o.dc);
+    diceFx(api, { nat: r.nat, mod: m + r.bonus, total, dc: o.dc, ok, label: `${T2(api, ABIL_NAME[o.ability])}${L(api, "检定", " check")}` });
     log(api, `🎲 ${T2(api, ABIL_NAME[o.ability])} ${L(api, "检定", "check")}：d20=${r.nat} ${sign(m)}${bonusText(r.bonus)} = ${total} ${L(api, "对", "vs")} DC ${o.dc} → ${ok ? L(api, "成功", "success") : L(api, "失败", "failure")}`);
     pop(api, ok ? "v" : "x", ok ? "#9aff8a" : "#ff8a7a", false);
   }
@@ -695,6 +701,7 @@ function resolveJudge(api, d) {
     const r = d20(api), m = abilMod(api, ability) + prof(get(api, "level")) + checkBonus(api, ability), total = r.nat + m + r.bonus + edge;
     ok = r.nat === 20 || (r.nat !== 1 && total >= dc);
     roll = `🎲 ${T2(api, ABIL_NAME[ability])} DC ${dc}：d20=${r.nat} ${sign(m)}${bonusText(r.bonus)}${edge ? L(api, ` 巧思${sign(edge)}`, ` edge ${sign(edge)}`) : ""} = ${total} → ${ok ? L(api, "成功", "success") : L(api, "失败", "failure")}`;
+    diceFx(api, { nat: r.nat, mod: m + r.bonus + edge, total, dc, ok, label: `${T2(api, ABIL_NAME[ability])}${L(api, "检定", " check")}` });
     log(api, roll); pop(api, ok ? "v" : "x", ok ? "#9aff8a" : "#ff8a7a", false);
   }
   const cap = mode === "auto" ? "small" : DIFF_CAP[diff];
@@ -755,6 +762,7 @@ function leaveCard(api) {
   } else if (card.kind === "combat" && !card.boss) {
     // 想溜走：敏捷检定，失败就被追上
     const r = d20(api), m = abilMod(api, "dex") + prof(get(api, "level")) + checkBonus(api, "dex") + (get(api, "hero_class") === "rogue" ? 2 : 0), dc = 10 + Math.floor(card.threat / 2), total = r.nat + m + r.bonus;
+    diceFx(api, { nat: r.nat, mod: m + r.bonus, total, dc, ok: r.nat === 20 || (r.nat !== 1 && total >= dc), label: L(api, "溜走（敏捷）", "Slip away (DEX)") });
     if (!(r.nat === 20 || (r.nat !== 1 && total >= dc))) { log(api, L(api, `🏃 想溜走（${total} 对 DC ${dc}）——被追上了！`, `🏃 You try to slip away (${total} vs DC ${dc}) — caught!`)); startBattle(api, card.foe, true); return; }
     log(api, L(api, `🏃 你悄悄退开，换了条小路（${total} 对 DC ${dc}）。`, `🏃 You back off quietly and take a side path (${total} vs DC ${dc}).`));
   } else if (card.kind === "quest") {
@@ -2081,6 +2089,7 @@ export function flee(api) {
   const f = get(api, "foe");
   const dc = 10 + Math.floor(f.threat / 2) + (f.boss ? 3 : 0);
   const r = d20(api), total = r.nat + abilMod(api, "dex") + prof(get(api, "level")) + checkBonus(api, "dex") + (get(api, "hero_class") === "rogue" ? 2 : 0) + r.bonus;
+  diceFx(api, { nat: r.nat, mod: total - r.nat, total, dc, ok: r.nat === 20 || (r.nat !== 1 && total >= dc), label: L(api, "逃跑（敏捷）", "Flee (DEX)") });
   if (r.nat === 20 || (r.nat !== 1 && total >= dc)) {
     log(api, L(api, `🏃 敏捷检定 ${total} 对 DC ${dc}：你甩掉了${f.name}。`, `🏃 DEX check ${total} vs DC ${dc}: you shake off ${f.name}.`));
     endEvent(api); refresh(api); return { fled: true };
