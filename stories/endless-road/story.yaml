@@ -694,6 +694,9 @@ ui:
       type: custom
       region: screen
       src: ui/game.html
+      runtime: game        # 客户端内置的游戏运行时：PixiJS 画场景（调色、光晕、粒子、镜头震动）和音效
+      size: fill
+      files: [assets/sfx/]
       actions: [pick_class, walk, camp, potion, attack, defend, skill, flee, choose, trade, pick_perk, go, use_item, drop_item, invoke, act]
       height: 720
       player_can_hide: false

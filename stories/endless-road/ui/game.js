@@ -16,129 +16,251 @@ const BIOME = { plains: ["风语平原", "Whispering Plains"], forest: ["幽暗�
 const mod = (a, n) => ((a % n) + n) % n;
 let S = {}; // 最新状态
 
-// ================= 场景 =================
-const cv = $("scene"), ctx = cv.getContext("2d");
-let scale = 4, worldW = W0, offY = 0, dx = 0, viewW = 0, viewH = 0, dispScroll = 0, lastT = performance.now();
-const tintCache = new Map();
-function tinted(key, color) {
-  const id = key + color; let c = tintCache.get(id); if (c) return c;
-  const im = IMG[key]; if (!im || !im.complete) return im;
-  c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
-  const x = c.getContext("2d"); x.drawImage(im, 0, 0); x.globalCompositeOperation = "multiply"; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
-  x.globalCompositeOperation = "destination-in"; x.drawImage(im, 0, 0); tintCache.set(id, c); return c;
+// ================= 场景（客户端内置的游戏运行时：PixiJS） =================
+// 像素背景 4 层视差、精灵、粒子、天气、按时间的调色（白天 / 黄昏 / 夜晚）、篝火和幽魂的光晕、暗角、
+// 受击时的镜头震动与顿帧、攻击的刀光和法术弹道。界面仍然是叠在上面的 HTML。
+const SFX = ["dice_roll", "dice_land", "success", "fail", "crit", "fumble", "swing", "hit", "crit_hit", "miss", "hurt", "block", "magic", "charge", "victory", "battle",
+  "coin", "levelup", "item", "heal", "click", "step", "card", "camp", "death", "music"];
+const Z = { game: null, PIXI: null, tex: {}, frames: {}, ready: false, scale: 1, offY: 0, dx: 0, view: null };
+let dispScroll = 0, lastT = performance.now(), sceneTime = 0;
+const POS = {};
+function sfx(id, o) { try { Z.game && Z.game.audio.play(id, o || {}); } catch (e) { /* 没有声音也能玩 */ } }
+function music(on) { try { Z.game && Z.game.audio.music(on ? "music" : null, { volume: 0.45 }); } catch (e) {} }
+async function initScene() {
+  const rt = window.oasis && window.oasis.game;
+  if (!rt) { $("view").classList.add("noruntime"); return; }
+  const sounds = {}; for (const n of SFX) sounds[n] = `assets/sfx/${n}.wav`;
+  let game;
+  try { game = await rt.create({ height: H0, scaleMode: "expand", pixelArt: true, background: 0x0d0a08, input: { actions: {} }, assets: { sounds } }); }
+  catch (e) { try { game = await rt.create({ height: H0, scaleMode: "expand", pixelArt: true, background: 0x0d0a08, input: { actions: {} } }); } catch (e2) { $("view").classList.add("noruntime"); return; } }
+  const PIXI = (Z.PIXI = rt.PIXI); Z.game = game; Z.view = $("view");
+  const cv = game.app.canvas; Z.view.prepend(cv); cv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated";
+  game.app.resizeTo = Z.view; game.layout = layoutScene;
+  // 贴图：直接用页面里预载的图片
+  await Promise.all([...document.querySelectorAll("#assets img")].map((im) => im.complete ? 0 : new Promise((ok) => { im.onload = im.onerror = ok; })));
+  for (const im of document.querySelectorAll("#assets img")) { const t = PIXI.Texture.from(im); t.source.scaleMode = "nearest"; Z.tex[im.dataset.k] = t; }
+  const frameTex = (key, i) => { const m = SPR[key]; const id = key + ":" + i; if (Z.frames[id]) return Z.frames[id]; const base = Z.tex[key]; if (!base) return PIXI.Texture.EMPTY; return (Z.frames[id] = new PIXI.Texture({ source: base.source, frame: new PIXI.Rectangle(i * m[0], 0, m[0], m[1]) })); };
+  Z.frameTex = frameTex;
+  // 光晕贴图（径向渐变）
+  const glow = document.createElement("canvas"); glow.width = glow.height = 64; { const g = glow.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.35, "rgba(255,255,255,.45)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }
+  Z.glow = PIXI.Texture.from(glow);
+  game.camera.x = 0; game.camera.y = 0;
+  // 运行时切场景时会清空画面，所以场景里的东西都在 enter 里搭
+  game.scene("road", { enter: () => buildGraph(game, PIXI), render: () => drawScene() });
+  game.start("road");
+  Z.ready = true;
+  // 第一次操作后开始放背景音乐
+  const startMusic = () => { music(true); removeEventListener("pointerdown", startMusic); removeEventListener("keydown", startMusic); };
+  addEventListener("pointerdown", startMusic); addEventListener("keydown", startMusic);
 }
-function sprite(name, x, base, o) {
-  const m = SPR[name]; if (!m) return null; o = o || {};
-  const [w, h, frames = 1, float = 0, sink = 0] = m, sc = o.scale || 1;
-  const fr = o.frame || 0, y = base - h * sc + 1 + sink * sc - (float ? float + Math.round(Math.sin(performance.now() / 300) * 2) : 0);
-  const src = o.tint ? tinted(name, o.tint) : IMG[name]; if (!src) return null;
-  ctx.globalAlpha = o.alpha == null ? 1 : o.alpha;
-  ctx.drawImage(src, fr * w, 0, w, h, Math.round(x - (w * sc) / 2), Math.round(y), w * sc, h * sc);
-  ctx.globalAlpha = 1;
-  return { x: x - (w * sc) / 2, y, w: w * sc, h: h * sc };
+function buildGraph(game, PIXI) {
+  const W = game.world;
+  Z.bandTop = new PIXI.Graphics(); Z.bandBot = new PIXI.Graphics(); W.addChild(Z.bandTop, Z.bandBot);
+  Z.layers = LAYERS.map(([name]) => { const t = new PIXI.TilingSprite({ texture: PIXI.Texture.EMPTY, width: 256, height: H0 }); W.addChild(t); return t; });
+  Z.prev = new PIXI.Sprite(); Z.cur = new PIXI.Sprite(); Z.dying = new PIXI.Sprite(); Z.hero = new PIXI.Sprite(); Z.shadowL = new PIXI.Container();
+  for (const sp of [Z.prev, Z.cur, Z.dying, Z.hero]) { sp.anchor.set(0.5, 1); }
+  Z.shadows = new PIXI.Graphics(); W.addChild(Z.shadows);
+  W.addChild(Z.prev, Z.cur, Z.dying, Z.hero);
+  Z.fxG = new PIXI.Graphics(); Z.fxG.blendMode = "add"; W.addChild(Z.fxG);
+  Z.weather = new PIXI.Container(); W.addChild(Z.weather); Z.wp = [];
+  Z.lights = new PIXI.Container(); Z.lights.blendMode = "add"; W.addChild(Z.lights);
+  Z.flashF = new PIXI.ColorMatrixFilter(); Z.flashF.brightness(2.4, false);
+  Z.grade = new PIXI.ColorMatrixFilter(); W.filters = [Z.grade]; Z.gradeCur = [1, 1, 1, 1, 0];
+  // 暗角 + 受伤红光（叠在 HUD 层）
+  const vg = document.createElement("canvas"); vg.width = 256; vg.height = 144; { const g = vg.getContext("2d"), gr = g.createRadialGradient(128, 72, 40, 128, 72, 160); gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,.55)"); g.fillStyle = gr; g.fillRect(0, 0, 256, 144); }
+  Z.vignette = new PIXI.Sprite(PIXI.Texture.from(vg)); Z.red = new PIXI.Sprite(PIXI.Texture.WHITE); Z.red.tint = 0xff2a1a; Z.red.alpha = 0; Z.red.blendMode = "add";
+  game.hud.addChild(Z.vignette, Z.red);
+  lightPool.length = 0; Z.wp = [];
+  layoutScene();
 }
-// 粒子（纯视觉）
-const parts = [];
-function emit(n, x, y, o) { for (let i = 0; i < n; i++) { const a = (o.angle ?? -90) * Math.PI / 180 + (Math.random() - 0.5) * (o.spread ?? 360) * Math.PI / 180, sp = (o.speed ?? 20) * (0.5 + Math.random()); parts.push({ x: x + (Math.random() - 0.5) * 2 * (o.r || 0), y: y + (Math.random() - 0.5) * 2 * (o.ry ?? o.r ?? 0), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: o.g || 0, life: o.life || 1, t: 0, c0: o.c0, c1: o.c1 || o.c0, size: o.size || 1, add: !!o.add }); } }
-function stepParts(dt) {
-  for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.t += dt; if (p.t >= p.life) { parts.splice(i, 1); continue; } p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
-  if (parts.length > 900) parts.splice(0, parts.length - 900);
+function layoutScene() {
+  const g = Z.game; if (!g) return;
+  const r = Z.view.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let s = Math.floor((r.height * dpr) / H0) / dpr; if ((r.height / s) < H0 * 0.98 || s <= 0) s = Math.max(1 / dpr, s - 1 / dpr);
+  if (s * dpr < 1) s = r.height / H0;
+  g.scale = s; g.width = Math.ceil(r.width / s); g.height = Math.ceil(r.height / s);
+  g.root.scale.set(s); g.root.position.set(0, 0); g.root.mask = null;
+  Z.offY = Math.floor((g.height - H0) / 2);
+  Z.dx = Math.round(g.width * (r.width > r.height * 1.2 ? 0.3 : 0.24)) - HERO_X;
+  g.camera.x = g.width / 2; g.camera.y = g.height / 2;
+  if (Z.vignette) { Z.vignette.width = Z.red.width = g.width; Z.vignette.height = Z.red.height = g.height; }
+  for (const t of Z.layers || []) { t.width = g.width; }
 }
-function drawParts() {
-  for (const p of parts) { const k = p.t / p.life; ctx.globalAlpha = 1 - k * 0.8; ctx.globalCompositeOperation = p.add ? "lighter" : "source-over"; ctx.fillStyle = k < 0.5 ? p.c0 : p.c1; const s = Math.max(1, Math.round(p.size * (1 - k * 0.5))); ctx.fillRect(Math.round(p.x), Math.round(p.y), s, s); }
-  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+const sampled = {};
+function bandColors(biome) {
+  if (sampled[biome]) return sampled[biome];
+  const c = document.createElement("canvas"); c.width = c.height = 1; const x = c.getContext("2d");
+  const px = (k, y) => { const im = IMG[k]; if (!im) return 0x0d0a08; x.clearRect(0, 0, 1, 1); x.drawImage(im, 0, y, 1, 1, 0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return (d[0] << 16) | (d[1] << 8) | d[2]; };
+  return (sampled[biome] = [px(`${biome}_sky`, 0), px(`${biome}_ground`, H0 - 1)]);
 }
-let acc = { weather: 0, fire: 0, aura: 0, rune: 0 };
-function resize() {
-  const r = $("view").getBoundingClientRect(); viewW = Math.max(1, Math.round(r.width)); viewH = Math.max(1, Math.round(r.height));
-  const dpr = window.devicePixelRatio || 1;
-  cv.width = Math.round(viewW * dpr); cv.height = Math.round(viewH * dpr);
-  scale = Math.max(1, Math.floor((viewH * dpr) / H0)); if ((viewH * dpr) / scale < H0 * 0.98) scale = Math.max(1, scale - 1);
-  worldW = Math.ceil(cv.width / scale); offY = Math.floor((cv.height / scale - H0) / 2);
-  dx = Math.round(worldW * (viewW > viewH * 1.2 ? 0.3 : 0.24)) - HERO_X; // 主角在画面的位置
+// 时间调色：[r, g, b, 亮度, 饱和度偏移]
+const GRADE = { day: [1, 1, 1, 1, 0], dusk: [1.12, 0.9, 0.74, 0.96, 0.05], night: [0.62, 0.72, 1.05, 0.62, -0.25] };
+function applyGrade(t) {
+  const tgt = GRADE[t] || GRADE.day, c = Z.gradeCur, k = 0.04;
+  for (let i = 0; i < 5; i++) c[i] += (tgt[i] - c[i]) * k;
+  const [r, g, b, br, sat] = c, l = (1 - sat) ; // 简单的颜色矩阵：亮度 × 色偏，再按饱和度混灰
+  const m = Z.grade.matrix; const gr = sat < 0 ? -sat : 0, kk = 1 - gr;
+  const row = (cr, cg, cb, mul) => [ (0.3 * gr + kk * cr) * mul * br, 0.59 * gr * mul * br, 0.11 * gr * mul * br ];
+  const R = row(1, 0, 0, r), G = [0.3 * gr * g * br, (0.59 * gr + kk) * g * br, 0.11 * gr * g * br], B = [0.3 * gr * b * br, 0.59 * gr * b * br, (0.11 * gr + kk) * b * br];
+  m[0] = R[0]; m[1] = R[1]; m[2] = R[2]; m[3] = 0; m[4] = 0;
+  m[5] = G[0]; m[6] = G[1]; m[7] = G[2]; m[8] = 0; m[9] = 0;
+  m[10] = B[0]; m[11] = B[1]; m[12] = B[2]; m[13] = 0; m[14] = 0;
+  m[15] = 0; m[16] = 0; m[17] = 0; m[18] = 1; m[19] = 0;
+  Z.grade.matrix = m;
 }
-window.addEventListener("resize", resize);
-function frame(now) {
-  const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
-  const s = S.scene_fx || { scroll: 0, target: 0 };
-  // 本地插值：朝目标卷动，不落后于规则里的位置
+const lightPool = [];
+function light(i, x, y, r, color, a) { let sp = lightPool[i]; if (!sp) { sp = new Z.PIXI.Sprite(Z.glow); sp.anchor.set(0.5); Z.lights.addChild(sp); lightPool[i] = sp; } sp.visible = true; sp.position.set(x, y); sp.width = sp.height = r * 2; sp.tint = color; sp.alpha = a; }
+function burst(o) { try { Z.game.particles.burst(o); } catch (e) {} }
+let acc = { weather: 0, fire: 0, aura: 0, rune: 0, step: 0 }, lastDying = null, shakeHurt = 0;
+function setSprite(sp, key, frame, scale, tint, alpha) {
+  const m = SPR[key]; if (!m) { sp.visible = false; return; }
+  sp.visible = true; sp.texture = Z.frameTex(key, frame || 0); sp.scale.set(scale || 1); sp.tint = tint == null ? 0xffffff : tint; sp.alpha = alpha == null ? 1 : alpha;
+}
+const hexTint = (c) => c ? parseInt(c.slice(1), 16) : null;
+function drawScene() {
+  if (!Z.layers || !Z.shadows) return;
+  const now = performance.now(), dt = Math.min(0.1, (now - lastT) / 1000); lastT = now; sceneTime += dt;
+  const V = viewState(), s = V.scene_fx || { scroll: 0, target: 0 }, g = Z.game;
   if (dispScroll < s.scroll - 4 || dispScroll > s.target + 1) dispScroll = s.scroll;
   if (dispScroll < s.target) dispScroll = Math.min(s.target, dispScroll + SPEED * dt);
-  draw(s, dt, now);
-  requestAnimationFrame(frame);
-}
-function draw(s, dt, now) {
-  if (!viewW) resize();
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
-  const biome = S.biome || "plains";
-  // 上下留出的空白：顶部用天空色，底部用泥土色
-  ctx.fillStyle = "#0d0a08"; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.setTransform(scale, 0, 0, scale, 0, offY * scale);
-  if (offY > 0) { const sky = IMG[`${biome}_sky`]; if (sky) ctx.drawImage(sky, 0, 0, 1, 1, 0, -offY, worldW, offY + 1); const g = IMG[`${biome}_ground`]; if (g) ctx.drawImage(g, 0, H0 - 1, 1, 1, 0, H0 - 1, worldW, offY + 2); }
-  const scroll = dispScroll;
-  for (const [layer, k, lw] of LAYERS) { const im = IMG[`${biome}_${layer}`]; if (!im) continue; const ox = -mod(Math.round(scroll * k), lw); for (let x = ox; x < worldW; x += lw) ctx.drawImage(im, x, 0); }
+  const biome = V.biome || "plains", oy = Z.offY, scroll = dispScroll, dx = Z.dx;
+  // 上下留白
+  const [top, bot] = bandColors(biome);
+  Z.bandTop.clear().rect(0, 0, g.width, oy + 1).fill(top); Z.bandBot.clear().rect(0, oy + H0 - 1, g.width, g.height - oy - H0 + 2).fill(bot);
+  LAYERS.forEach(([layer, k, lw], i) => { const t = Z.layers[i], tex = Z.tex[`${biome}_${layer}`]; if (tex && t.texture !== tex) t.texture = tex; t.y = oy; t.height = H0; t.tilePosition.x = -Math.round(scroll * k); });
+  const sx = (wx) => wx - scroll + dx, base = oy + GROUND + 1;
   const walking = dispScroll < s.target - 0.5;
-  const sx = (wx) => wx - scroll + dx;
-  if (s.prev) sprite(s.prev.sprite, sx(s.prev.wx), GROUND, { scale: s.prev.scale, tint: TINT[s.prev.tint], frame: 0 });
-  let box = null, foeX = null;
+  Z.shadows.clear();
+  if (s.prev) { setSprite(Z.prev, s.prev.sprite, 0, s.prev.scale, hexTint(TINT[s.prev.tint])); Z.prev.position.set(Math.round(sx(s.prev.wx)), base + (SPR[s.prev.sprite][4] || 0) * (s.prev.scale || 1)); } else Z.prev.visible = false;
+  let foeX = null, foeTop = null;
   if (s.cur) {
-    const c = s.cur, m = SPR[c.sprite] || [20, 20];
+    const c = s.cur, m = SPR[c.sprite] || [20, 20], sc = c.scale || 1;
     let x = sx(c.wx); if (s.fhurt > 0) x += Math.round(Math.sin(s.fhurt / 20) * 3) + 3;
-    foeX = x;
-    if (c.boss && !c.pending) { acc.aura += dt * 24; while (acc.aura > 1) { acc.aura--; emit(1, x, GROUND - m[1] * (c.scale || 1) / 2, { r: 22, speed: 8, life: 1.2, c0: "#ff8a4a", c1: "#ff2a1a", size: 2, add: true }); } }
-    const flash = s.fhurt > 0 && Math.floor(s.fhurt / 60) % 2 === 0;
-    box = sprite(c.sprite, x, GROUND, { scale: c.scale, frame: m[2] > 1 ? Math.floor(now / 180) % m[2] : 0, tint: c.pending ? TINT.black : TINT[c.tint], alpha: c.pending ? 0.75 : flash ? 0.35 : 1 });
-    if (!c.pending && c.sprite === "campfire") { acc.fire += dt * 16; while (acc.fire > 1) { acc.fire--; emit(1, x + 6, GROUND - 8, { r: 2, angle: -90, spread: 30, speed: 14, g: -6, life: 0.7, c0: "#ffb03a", c1: "#ff4a1a", add: true }); } }
-    if (!c.pending && c.sprite === "shrine") { acc.rune += dt * 6; while (acc.rune > 1) { acc.rune--; emit(1, x, GROUND - 22, { r: 6, angle: -90, spread: 120, speed: 8, life: 1.6, c0: "#c4f2ff", c1: "#4a8aff", add: true }); } }
-  }
-  if (s.dying) sprite(s.dying.sprite, sx(s.dying.wx) + (600 - s.dying.t) / 30, GROUND, { scale: s.dying.scale, tint: "#ff6a5a", alpha: Math.max(0, s.dying.t / 600) });
+    const fl = m[2] > 1 ? Math.floor(now / 180) % m[2] : 0, flash = s.fhurt > 0 && Math.floor(s.fhurt / 60) % 2 === 0;
+    const float = m[3] ? m[3] + Math.round(Math.sin(now / 300) * 2) : 0;
+    setSprite(Z.cur, c.sprite, fl, sc, c.pending ? 0x000000 : hexTint(TINT[c.tint]), c.pending ? 0.75 : 1);
+    Z.cur.position.set(Math.round(x), base + (m[4] || 0) * sc - float);
+    Z.cur.filters = flash ? [Z.flashF] : null;
+    foeX = x; foeTop = base - m[1] * sc - float;
+    Z.shadows.ellipse(Math.round(x), base - 1, m[0] * sc * 0.42, 2.5).fill({ color: 0x000000, alpha: 0.28 });
+    if (c.boss && !c.pending) { acc.aura += dt * 20; while (acc.aura > 1) { acc.aura--; burst({ x: x + (Math.random() - 0.5) * m[0] * sc, y: base - Math.random() * m[1] * sc, count: 1, color: [0xff8a4a, 0xff3a1a], speed: [6, 14], angle: [-110, -70], life: [0.6, 1.2], size: [1, 2] }); } }
+    if (!c.pending && c.sprite === "campfire") { acc.fire += dt * 14; while (acc.fire > 1) { acc.fire--; burst({ x: x + 6 + (Math.random() - 0.5) * 6, y: base - 8, count: 1, color: [0xffd06a, 0xff8a2a, 0xff4a1a], speed: [10, 22], angle: [-100, -80], life: [0.4, 0.9], size: [1, 2], gravity: -10 }); } }
+    if (!c.pending && c.sprite === "shrine") { acc.rune += dt * 5; while (acc.rune > 1) { acc.rune--; burst({ x: x + (Math.random() - 0.5) * 14, y: base - 18, count: 1, color: [0xc4f2ff, 0x6aa8ff], speed: [4, 10], angle: [-120, -60], life: [1, 1.8], size: 1 }); } }
+  } else { Z.cur.visible = false; Z.cur.filters = null; }
+  if (s.dying) {
+    if (lastDying !== s.dying.t0key) { lastDying = s.dying.t0key; }
+    const m = SPR[s.dying.sprite] || [20, 20], k = Math.max(0, s.dying.t / 600);
+    setSprite(Z.dying, s.dying.sprite, 0, s.dying.scale, 0xff6a5a, k); Z.dying.position.set(Math.round(sx(s.dying.wx) + (600 - s.dying.t) / 30), base);
+  } else Z.dying.visible = false;
   // 主角
-  const cls = S.hero_class || "fighter";
+  const cls = V.hero_class || "fighter";
   let hx = HERO_X + dx, fr = 0;
   if (walking) fr = 1 + (Math.floor(dispScroll / 7) % 4); else if (s.atk > 0) { fr = 5; hx += 6; }
-  if (s.hhurt > 0) hx -= Math.round(Math.sin(s.hhurt / 25) * 2) + 2;
-  const hb = sprite(`hero_${cls}`, hx, GROUND, { frame: fr, tint: s.hhurt > 0 && Math.floor(s.hhurt / 60) % 2 === 0 ? TINT.hurt : null, alpha: S.hp <= 0 ? 0.4 : 1 });
-  if (s.atk > 0 && cls === "wizard" && foeX != null) { const k = Math.min(1, 1 - s.atk / 450), bx = hx + 14 + (foeX - hx - 14) * k, by = GROUND - 16 - Math.sin(k * Math.PI) * 6; emit(3, bx, by, { r: 1, speed: 10, life: 0.25, c0: "#ffd06a", c1: "#ff4a1a", size: 2, add: true }); ctx.fillStyle = "#fff2b0"; ctx.fillRect(Math.round(bx) - 2, Math.round(by) - 2, 4, 4); }
-  else if (s.atk > 0) { const a = 1 - s.atk / 300; ctx.fillStyle = "#fff"; for (let i = 0; i < 6; i++) { const ang = -1.2 + a * 2 + i * 0.12; ctx.globalAlpha = 0.9 - i * 0.12; ctx.fillRect(Math.round(hx + 14 + Math.cos(ang) * 14), Math.round(GROUND - 12 + Math.sin(ang) * 14), 2, 2); } ctx.globalAlpha = 1; }
-  // 敌人血条
-  if (S.phase === "battle" && box && S.foe && S.foe.max_hp && s.cur && !s.cur.pending) {
-    const bw = 30, bx = Math.round(box.x + box.w / 2 - bw / 2), by = Math.round(box.y - 7);
-    ctx.fillStyle = "#1a1420"; ctx.fillRect(bx - 1, by - 1, bw + 2, 5); ctx.fillStyle = "#4a1410"; ctx.fillRect(bx, by, bw, 3);
-    ctx.fillStyle = S.foe.boss ? "#ff7a3a" : "#e2422c"; ctx.fillRect(bx, by, Math.max(0, Math.round(bw * S.foe.hp / S.foe.max_hp)), 3);
+  if (s.hhurt > 0 || shakeHurt > 0) hx -= Math.round(Math.sin((s.hhurt || shakeHurt * 1000) / 25) * 2) + 2;
+  const hurtBlink = (s.hhurt > 0 && Math.floor(s.hhurt / 60) % 2 === 0) || (shakeHurt > 0 && Math.floor(shakeHurt * 16) % 2 === 0);
+  setSprite(Z.hero, `hero_${cls}`, fr, 1, hurtBlink ? 0xff7a7a : null, V.hp <= 0 ? 0.4 : 1);
+  Z.hero.position.set(hx, base);
+  Z.shadows.ellipse(hx, base - 1, 9, 2.5).fill({ color: 0x000000, alpha: 0.3 });
+  if (shakeHurt > 0) shakeHurt -= dt;
+  // 脚步扬尘与脚步声
+  if (walking) { acc.step += dt; if (acc.step > 0.26) { acc.step = 0; burst({ x: hx - 4, y: base - 1, count: 2, color: [0xd8c8a8, 0xb8a888], speed: [6, 14], angle: [180, 250], life: [0.3, 0.5], size: [1, 2] }); sfx("step", { volume: 0.25, rate: 0.9 + Math.random() * 0.2 }); } }
+  // 攻击：刀光 / 法术弹道
+  if (s.atk > 0 && !Z.lastAtk) sfx(cls === "wizard" ? "magic" : "swing", { volume: 0.6 });
+  Z.lastAtk = s.atk > 0;
+  Z.fxG.clear();
+  if (s.atk > 0 && cls === "wizard" && foeX != null) {
+    const k = Math.min(1, 1 - s.atk / 450), bx = hx + 14 + (foeX - hx - 14) * k, by = base - 16 - Math.sin(k * Math.PI) * 8;
+    Z.fxG.circle(bx, by, 3).fill({ color: 0xfff2b0, alpha: 0.95 }).circle(bx, by, 6).fill({ color: 0xff8a2a, alpha: 0.35 });
+    burst({ x: bx, y: by, count: 2, color: [0xffd06a, 0xff4a1a], speed: [4, 12], life: [0.15, 0.3], size: [1, 2] });
+    light(9, bx, by, 26, 0xffa040, 0.6);
+  } else if (s.atk > 0) {
+    const a = 1 - s.atk / 300, cx = hx + 12, cy = base - 13;
+    for (let i = 0; i < 3; i++) Z.fxG.arc(cx, cy, 13 + i * 2, -1.3 + a * 2.2 - 0.9, -1.3 + a * 2.2, false).stroke({ width: 2 - i * 0.5, color: i ? 0xffd890 : 0xffffff, alpha: (1 - a) * (1 - i * 0.3) });
   }
+  if (!(s.atk > 0 && cls === "wizard")) lightPool[9] && (lightPool[9].visible = false);
+  // 敌人血条
+  if (V.phase === "battle" && s.cur && !s.cur.pending && V.foe && V.foe.max_hp && foeX != null) {
+    const bw = 30, bx = Math.round(foeX - bw / 2), by = Math.round(foeTop - 7);
+    Z.shadows.rect(bx - 1, by - 1, bw + 2, 5).fill(0x1a1420).rect(bx, by, bw, 3).fill(0x4a1410).rect(bx, by, Math.max(0, Math.round(bw * V.foe.hp / V.foe.max_hp)), 3).fill(V.foe.boss ? 0xff7a3a : 0xe2422c);
+  }
+  // 光源：夜里更明显
+  const time = (V.art || {}).time || "day", nightK = time === "night" ? 1 : time === "dusk" ? 0.55 : 0.2;
+  let li = 0;
+  if (s.cur && !s.cur.pending) {
+    const c = s.cur;
+    if (c.sprite === "campfire") light(li++, foeX + 6, base - 6, 46 + Math.sin(now / 90) * 3, 0xff9a3a, 0.55 * nightK + 0.15);
+    if (c.sprite === "wisp") light(li++, foeX, foeTop + 10, 34, hexTint(TINT[c.tint]) || 0x9ad8ff, 0.5 * nightK + 0.1);
+    if (c.sprite === "shrine") light(li++, foeX, base - 16, 30, 0x8ac8ff, 0.4 * nightK + 0.08);
+  }
+  if (time === "night") light(li++, hx + 2, base - 14, 40, 0xffd8a0, 0.35);
+  for (let i = li; i < 8; i++) if (lightPool[i]) lightPool[i].visible = false;
   // 天气
-  const weather = (S.art || {}).weather || "clear", Wd = worldW;
-  const rate = { rain: 200, snow: 50, embers: 26, fireflies: 6, leaves: 9 }[weather] || 0;
-  acc.weather += dt * rate * (Wd / 256);
-  while (acc.weather > 1) { acc.weather--; const x = Math.random() * Wd;
-    if (weather === "rain") emit(1, x, -4, { angle: 105, spread: 4, speed: 260, life: 0.7, c0: "#a8c8ff" });
-    else if (weather === "snow") emit(1, x, -4, { angle: 100, spread: 30, speed: 20, life: 7, c0: "#ffffff", size: 2 });
-    else if (weather === "embers") emit(1, x, H0 + 2, { angle: -95, spread: 40, speed: 20, life: 4, c0: "#ffc04a", c1: "#ff3a1a", size: 2, add: true });
-    else if (weather === "fireflies") emit(1, x, GROUND - 20 - Math.random() * 30, { speed: 5, life: 3, c0: "#e8ff8a", c1: "#6aff6a", size: 2, add: true });
-    else if (weather === "leaves") emit(1, x, -4, { angle: 115, spread: 30, speed: 22, life: 6, c0: "#e8a040", c1: "#c25a2a", size: 2 }); }
-  stepParts(dt); drawParts();
-  if (weather === "fog") { ctx.fillStyle = "#dfe8e4"; for (let i = 0; i < 5; i++) { const fx = mod(Math.round(i * 90 - now / 60 - scroll * 0.6), Wd + 120) - 120; ctx.globalAlpha = 0.12; ctx.fillRect(fx, GROUND - 32 + i * 6, 140, 14); } ctx.globalAlpha = 1; }
-  // 时间色调（用 CSS 叠加层，过渡更柔和）
-  const time = (S.art || {}).time || "day";
-  $("tint").style.backgroundColor = time === "night" ? "rgba(40,54,120,.62)" : time === "dusk" ? "rgba(255,140,80,.32)" : "rgba(0,0,0,0)";
-  // 记下屏幕位置给界面用（飘字、问号）
-  const css = (wx, wy) => ({ x: (wx * scale) / (window.devicePixelRatio || 1), y: ((wy + offY) * scale) / (window.devicePixelRatio || 1) });
-  POS.hero = hb ? css(hb.x + hb.w / 2, hb.y) : null; POS.foe = box ? css(box.x + box.w / 2, box.y) : null; POS.pending = !!(s.cur && s.cur.pending);
+  weather(V, dt, now, scroll);
+  applyGrade(time);
+  if (Z.red.alpha > 0) Z.red.alpha = Math.max(0, Z.red.alpha - dt * 1.6);
+  // 屏幕坐标（给飘字、问号用）
+  const css = (wx, wy) => ({ x: (wx + g.world.x) * Z.game.scale, y: (wy + g.world.y) * Z.game.scale });
+  POS.hero = css(hx, base - 27); POS.foe = foeX != null ? css(foeX, foeTop) : null; POS.pending = !!(s.cur && s.cur.pending);
+  POS.ground = css(g.width / 2, base);
   placeMarks();
 }
-const POS = {};
-// 飘字：每条 fx 只弹一次
+function weather(V, dt, now, scroll) {
+  const w = (V.art || {}).weather || "clear", g = Z.game, PIXI = Z.PIXI;
+  const rate = { rain: 160, snow: 40, embers: 22, fireflies: 5, leaves: 8, fog: 0.6 }[w] || 0;
+  acc.weather += dt * rate * (g.width / 256);
+  while (acc.weather > 1 && Z.wp.length < 500) {
+    acc.weather--; const sp = new PIXI.Sprite(w === "fireflies" || w === "fog" || w === "embers" ? Z.glow : PIXI.Texture.WHITE); sp.anchor.set(0.5);
+    const p = { sp, w, x: Math.random() * g.width, y: -4, vx: 0, vy: 0, life: 6, t: 0 };
+    if (w === "rain") { sp.width = 1; sp.height = 5; sp.tint = 0xa8c8ff; sp.alpha = 0.7; sp.rotation = 0.25; p.vx = -40; p.vy = 240; p.life = 1; }
+    else if (w === "snow") { sp.width = sp.height = 1 + Math.round(Math.random()); sp.tint = 0xffffff; p.vx = -6 + Math.random() * 4; p.vy = 18 + Math.random() * 10; p.life = 9; }
+    else if (w === "embers") { sp.width = sp.height = 4; sp.tint = Math.random() < 0.5 ? 0xffb03a : 0xff5a1a; sp.blendMode = "add"; p.y = g.height + 2; p.vx = (Math.random() - 0.5) * 10; p.vy = -18 - Math.random() * 10; p.life = 5; }
+    else if (w === "fireflies") { sp.width = sp.height = 6; sp.tint = 0xd8ff8a; sp.blendMode = "add"; p.y = Z.offY + GROUND - 10 - Math.random() * 40; p.vx = (Math.random() - 0.5) * 6; p.vy = (Math.random() - 0.5) * 4; p.life = 4; }
+    else if (w === "leaves") { sp.width = 2; sp.height = 2; sp.tint = Math.random() < 0.5 ? 0xe8a040 : 0xc25a2a; p.vx = -16 - Math.random() * 8; p.vy = 16 + Math.random() * 8; p.life = 9; }
+    else if (w === "fog") { sp.width = 160; sp.height = 30; sp.tint = 0xe8f0ec; sp.alpha = 0; p.x = g.width + 80; p.y = Z.offY + GROUND - 30 + Math.random() * 30; p.vx = -6 - Math.random() * 4; p.life = 40; }
+    Z.weather.addChild(sp); Z.wp.push(p);
+  }
+  for (let i = Z.wp.length - 1; i >= 0; i--) {
+    const p = Z.wp[i]; p.t += dt;
+    if (p.t > p.life || p.w !== w && p.t > 0.5 || p.y > g.height + 6 || p.x < -120) { p.sp.destroy(); Z.wp.splice(i, 1); continue; }
+    if (p.w === "leaves") p.vx += Math.sin(now / 300 + i) * 4 * dt;
+    if (p.w === "fireflies") { p.vx += (Math.random() - 0.5) * 10 * dt; p.vy += (Math.random() - 0.5) * 10 * dt; p.sp.alpha = 0.5 + 0.5 * Math.sin(now / 200 + i); }
+    if (p.w === "fog") p.sp.alpha = Math.min(0.12, p.t / 6) * Math.min(1, (p.life - p.t) / 6);
+    if (p.w === "embers") p.sp.alpha = Math.min(1, (p.life - p.t));
+    p.x += p.vx * dt; p.y += p.vy * dt; p.sp.position.set(p.x, p.y);
+  }
+}
+// 受击反馈（由飘字触发）：镜头震动、顿帧、火花、声音
+function impact(f) {
+  const g = Z.game; if (!g) return;
+  const at = f.foe ? POS.foe : POS.hero; const wx = at ? at.x / g.scale - g.world.x : 0, wy = at ? at.y / g.scale - g.world.y + 10 : 0;
+  const t = String(f.text);
+  if (f.foe && /^\d/.test(t)) {
+    const crit = /!$/.test(t) || f.color === "#ffdd44";
+    burst({ x: wx, y: wy, count: crit ? 22 : 10, color: crit ? [0xffffff, 0xffdd44, 0xff8a2a] : [0xffffff, 0xffd890], speed: [30, crit ? 110 : 70], life: [0.2, 0.45], size: [1, 2], drag: 3 });
+    g.camera.shake(crit ? 3 : 1.5, crit ? 220 : 120); if (crit) g.hitStop(90);
+    sfx(crit ? "crit_hit" : "hit", { volume: 0.8 });
+  } else if (f.foe && t === "!") { /* 暴击标记：和数字一起处理 */ }
+  else if (t === "x" && f.foe) sfx("miss", { volume: 0.6 });
+  else if (t === "s") sfx("block", { volume: 0.6 });
+  else if (!f.foe && /^-\d/.test(t)) { g.camera.shake(2.5, 200); Z.red.alpha = 0.22; shakeHurt = 0.35; sfx("hurt", { volume: 0.7 }); burst({ x: wx, y: wy, count: 8, color: [0xff5a4a, 0xaa2a2a], speed: [20, 50], life: [0.2, 0.4], size: [1, 2], gravity: 80 }); }
+  else if (!f.foe && /^\+\d/.test(t)) { sfx("heal", { volume: 0.6 }); burst({ x: wx, y: wy, count: 12, color: [0x9aff8a, 0xffffff], speed: [8, 24], angle: [-120, -60], life: [0.6, 1], size: [1, 2], gravity: -20 }); }
+  else if (t === "h") { sfx("block", { volume: 0.5 }); burst({ x: wx, y: wy, count: 14, color: [0xffd890, 0xffffff], speed: [20, 60], life: [0.3, 0.6], size: 1 }); }
+}
+// 飘字：每条 fx 只弹一次；骰子落定前先不弹（不剧透）
 const seen = new Set();
 function popups() {
+  if (diceBusy()) return;
   const s = S.scene_fx || {};
   for (const f of s.fx || []) {
     if (!f.id || seen.has(f.id)) continue; seen.add(f.id);
+    if (f.text === "v" || (f.text === "x" && !f.foe)) continue;   // 检定的对勾 / 叉由骰子动画表现
+    impact(f);
     const at = (f.foe ? POS.foe : POS.hero) || POS.hero; if (!at) continue;
-    const map = { v: "✓", x: T("未命中", "MISS"), s: T("闪开", "DODGE"), h: "⚒" };
-    const el = document.createElement("div"); el.className = "pop out"; el.textContent = map[f.text] || f.text; el.style.color = f.color || "#fff";
-    if (map[f.text] && f.text !== "v" && f.text !== "h") el.style.fontSize = "22px";
+    const map = { x: T("未命中", "MISS"), s: T("闪开", "DODGE"), h: "⚒" };
+    const el = document.createElement("div"); el.className = "pop out" + (/!$/.test(f.text) || f.color === "#ffdd44" ? " crit" : ""); el.textContent = map[f.text] || f.text; el.style.color = f.color || "#fff";
+    if (map[f.text] && f.text !== "h") el.style.fontSize = "22px";
     el.style.left = `${at.x + (Math.random() - 0.5) * 30}px`; el.style.top = `${at.y - 20}px`;
-    $("fx").append(el); setTimeout(() => el.remove(), 950);
+    $("fx").append(el); setTimeout(() => el.remove(), 1100);
   }
   if (seen.size > 200) { const keep = [...seen].slice(-50); seen.clear(); keep.forEach((k) => seen.add(k)); }
 }
@@ -160,7 +282,7 @@ const icon = (n, big) => h("i", { class: `i i-${n}${big ? " x2" : ""}` });
 const busy = () => pending || oasis.busy || oasis.ended;
 const heroUrl = (c) => (IMG[`hero_${c}`] || IMG.hero_fighter).src;
 async function run(action, params) {
-  if (pending) return; pending = true; msg = ""; render();
+  if (pending) return; pending = true; msg = ""; sfx("click", { volume: 0.4 }); render();
   try { const r = await oasis.action(action, params || {}); if (!r.ok) { msg = r.error || T("现在做不到。", "Can't do that right now."); setTimeout(() => { msg = ""; render(); }, 2600); } }
   finally { pending = false; render(); }
 }
@@ -252,46 +374,106 @@ function actBox(inp) {
     inp.ideas && inp.ideas.length && !inp.busy ? h("div", { class: "ideas" }, h("small", {}, T("灵感：", "Ideas: ")), inp.ideas.map((t) => h("button", { class: "idea", onclick: () => { draft = t; render(); setTimeout(() => { const el = document.getElementById("actin"); if (el) { el.focus(); el.setSelectionRange(t.length, t.length); } }, 0); } }, t))) : null);
 }
 // ================= 掷骰动画 =================
-// 一颗大号 d20 在画面中央翻滚、数字乱跳，落定后显示加值、总计和成败印章；动画结束前结果先不揭晓
-let diceSeen = null, diceUntil = 0, diceTimers = [];
+// 骰子从主角手里抛出，划一道弧线落在画面中央，弹两下停住；落定后点数放大，依次显示加值、总计和 DC，
+// 最后盖上成败印章（20 金光四射，1 裂开变红）。整段动画结束前，画面上所有数值都保持掷骰前的样子。
+let diceSeen = null, diceUntil = 0, diceTimers = [], frozen = null;
 const diceBox = document.createElement("div"); diceBox.id = "dice"; $("game").append(diceBox);
 diceBox.addEventListener("click", () => endDice());
-const DICE_ROLL = 1100, DICE_HOLD = 1500;
+const DICE_FLY = 1250, DICE_REVEAL = 260, DICE_STAMP = 900, DICE_HOLD = 1500;
 function diceBusy() { return Date.now() < diceUntil; }
-function endDice() { diceTimers.forEach(clearTimeout); diceTimers = []; diceBox.className = ""; diceBox.replaceChildren(); if (diceUntil) { diceUntil = 0; render(); } }
+function viewState() { return diceBusy() && frozen ? frozen : S; }
+function endDice() { diceTimers.forEach(clearTimeout); diceTimers = []; diceBox.className = ""; diceBox.replaceChildren(); if (diceUntil) { diceUntil = 0; frozen = null; render(); } }
+const FACETS = [
+  ["4,26 50,0 50,24", 0.86], ["50,0 96,26 50,24", 0.72], ["4,26 50,24 18,80", 0.62], ["96,26 82,80 50,24", 0.48], ["4,26 18,80 4,86", 0.4], ["96,26 96,86 82,80", 0.3],
+  ["18,80 82,80 50,112", 0.36], ["4,86 18,80 50,112", 0.28], ["96,86 50,112 82,80", 0.22], ["50,24 82,80 18,80", 1],
+];
+function d20svg() {
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "-2 -2 104 116"); svg.setAttribute("class", "d20svg");
+  for (const [pts, k] of FACETS) { const pg = document.createElementNS(NS, "polygon"); pg.setAttribute("points", pts); pg.setAttribute("class", "facet"); pg.style.setProperty("--k", k); svg.append(pg); }
+  const out = document.createElementNS(NS, "polygon"); out.setAttribute("points", "50,0 96,26 96,86 50,112 4,86 4,26"); out.setAttribute("class", "rim"); svg.append(out);
+  const crack = document.createElementNS(NS, "polyline"); crack.setAttribute("points", "30,10 44,40 36,56 54,74 48,100"); crack.setAttribute("class", "crack"); svg.append(crack);
+  return svg;
+}
 function playDice(d) {
   diceTimers.forEach(clearTimeout); diceTimers = [];
+  const vr = $("view").getBoundingClientRect(), portrait = vr.height < innerHeight * 0.6;
+  const land = { x: vr.width * (portrait ? 0.5 : 0.46), y: vr.height * (portrait ? 0.5 : 0.42) };
+  const from = POS.hero ? { x: POS.hero.x + 10, y: POS.hero.y + 10 } : { x: land.x - 260, y: land.y + 60 };
+  const size = Math.max(84, Math.min(150, vr.height * 0.17));
   const num = h("b", { class: "dnum" }, "?");
-  const die = h("div", { class: "d20 rolling" }, h("i", { class: "facet" }), num);
-  const info = h("div", { class: "dinfo out" });
+  const die = h("div", { class: "d20 spin", style: { width: `${size}px`, height: `${size * 1.12}px`, fontSize: `${size * 0.36}px` } }, d20svg(), num);
+  const wrap = h("div", { class: "dwrap" }, h("div", { class: "drays" }), die);
+  const shadow = h("div", { class: "dshadow", style: { width: `${size * 0.9}px` } });
+  const label = h("div", { class: "dlabel out" }, d.label || "");
+  const math = h("div", { class: "dmath out" });
   const stamp = h("div", { class: "dstamp" });
-  diceBox.replaceChildren(h("div", { class: "dlabel out" }, d.label || ""), die, info, stamp);
+  const panel = h("div", { class: "dpanel", style: { left: `${land.x}px`, top: `${land.y + size * 0.62}px` } }, math, stamp);
+  label.style.left = `${land.x}px`; label.style.top = `${land.y - size * 0.95}px`;
+  diceBox.replaceChildren(shadow, wrap, label, panel);
   diceBox.className = "show";
-  diceUntil = Date.now() + DICE_ROLL + 650;
-  diceTimers.push(setTimeout(render, DICE_ROLL + 680));
-  let n = 0; const spin = () => { num.textContent = String(1 + Math.floor(Math.random() * 20)); if ((n += 1) < 16) diceTimers.push(setTimeout(spin, 30 + n * 4.5)); };
-  spin();
+  diceUntil = Date.now() + DICE_FLY + DICE_STAMP + 120;
+  sfx("dice_roll", { volume: 0.9 });
+  // 弧线 + 两次弹跳（Web Animations）
+  const P = (k, x, y, sc) => ({ offset: k, transform: `translate(${x - size / 2}px, ${y - size * 0.56}px) scale(${sc})` });
+  const mid = { x: (from.x + land.x) / 2, y: Math.min(from.y, land.y) - vr.height * 0.28 };
+  wrap.animate([P(0, from.x, from.y, 0.35), P(0.33, mid.x, mid.y, 0.85), P(0.62, land.x, land.y, 1), P(0.74, land.x + 10, land.y - size * 0.32, 1), P(0.86, land.x + 14, land.y, 1), P(0.93, land.x + 16, land.y - size * 0.1, 1), P(1, land.x + 17, land.y, 1)],
+    { duration: DICE_FLY, easing: "linear", fill: "forwards" });
+  const groundY = land.y + size * 0.5;
+  shadow.animate([{ offset: 0, transform: `translate(${from.x - size * 0.45}px, ${groundY}px) scale(.2)`, opacity: 0 }, { offset: 0.33, transform: `translate(${mid.x - size * 0.45}px, ${groundY}px) scale(.45)`, opacity: 0.25 },
+    { offset: 0.62, transform: `translate(${land.x - size * 0.45}px, ${groundY}px) scale(1)`, opacity: 0.6 }, { offset: 0.74, transform: `translate(${land.x + 10 - size * 0.45}px, ${groundY}px) scale(.7)`, opacity: 0.4 },
+    { offset: 1, transform: `translate(${land.x + 17 - size * 0.45}px, ${groundY}px) scale(1)`, opacity: 0.6 }], { duration: DICE_FLY, fill: "forwards" });
+  // 数字乱跳，越来越慢
+  let n = 0, stopped = false; const tumble = () => { if (stopped) return; num.textContent = String(1 + Math.floor(Math.random() * 20)); die.style.setProperty("--shade", String(0.7 + Math.random() * 0.3)); n++; const k = n / 22; if (k < 1) diceTimers.push(setTimeout(tumble, 26 + 70 * k * k)); };
+  tumble();
+  const landed = (k, power) => diceTimers.push(setTimeout(() => {
+    sfx("dice_land", { volume: power, rate: 1 + (1 - power) * 0.3 });
+    try { Z.game.camera.shake(power * 2, 120); const g = Z.game; burst({ x: (land.x + (k > 0.7 ? 14 : 0)) / g.scale - g.world.x, y: groundY / g.scale - g.world.y, count: Math.round(10 * power), color: [0xd8c8a8, 0xa89878], speed: [10, 40], angle: [180, 360], life: [0.3, 0.6], size: [1, 2], gravity: 40 }); } catch (e) {}
+  }, DICE_FLY * k));
+  landed(0.62, 1); landed(0.86, 0.5);
+  // 落定
   diceTimers.push(setTimeout(() => {
-    num.textContent = String(d.nat);
+    stopped = true; num.textContent = String(d.nat);
     die.className = "d20 landed" + (d.nat === 20 ? " crit" : d.nat === 1 ? " fumble" : "");
+    if (d.nat === 20) { wrap.classList.add("crit"); sparkles(wrap, size); }
     diceTimers.push(setTimeout(() => {
-      info.replaceChildren(`d20 ${d.nat}`, d.mod ? ` ${d.mod >= 0 ? "+" : ""}${d.mod}` : "", " = ", h("b", {}, String(d.total)), h("span", {}, T(`　对 DC ${d.dc}`, `  vs DC ${d.dc}`)));
-      info.className = "dinfo out on";
+      const sign = d.mod >= 0 ? "+" : "−";
+      math.replaceChildren(h("span", { class: "m1" }, `d20 ${d.nat}`), d.mod ? h("span", { class: "m2" }, `${sign} ${Math.abs(d.mod)}`) : null, h("span", { class: "m3" }, "= ", h("b", {}, String(d.total))),
+        h("span", { class: "m4" + (d.ok ? " ok" : " no") }, `${d.total >= d.dc ? "≥" : "<"} DC ${d.dc}`));
+      math.classList.add("on");
+    }, DICE_REVEAL));
+    diceTimers.push(setTimeout(() => {
       stamp.textContent = d.nat === 20 ? T("大成功！", "CRITICAL!") : d.nat === 1 ? T("大失败", "FUMBLE") : d.ok ? T("成功", "SUCCESS") : T("失败", "FAILURE");
-      stamp.className = "dstamp on " + (d.ok ? "ok" : "no");
-      render();
-    }, 350));
-    diceTimers.push(setTimeout(() => { diceBox.className = "show fade"; }, 350 + DICE_HOLD));
-    diceTimers.push(setTimeout(() => { diceBox.className = ""; diceBox.replaceChildren(); }, 350 + DICE_HOLD + 450));
-  }, DICE_ROLL));
+      stamp.className = "dstamp on " + (d.ok ? "ok" : "no") + (d.nat === 20 ? " crit" : d.nat === 1 ? " fumble" : "");
+      sfx(d.nat === 20 ? "crit" : d.nat === 1 ? "fumble" : d.ok ? "success" : "fail", { volume: 0.9 });
+      try { Z.game.camera.shake(d.ok ? 1.5 : 2.5, 160); } catch (e) {}
+    }, DICE_STAMP - 120));
+    diceTimers.push(setTimeout(() => { frozen = null; render(); }, DICE_STAMP + 140));
+    diceTimers.push(setTimeout(() => { diceBox.className = "show fade"; }, DICE_STAMP + DICE_HOLD));
+    diceTimers.push(setTimeout(() => { diceBox.className = ""; diceBox.replaceChildren(); }, DICE_STAMP + DICE_HOLD + 450));
+  }, DICE_FLY));
 }
-function checkDice(s) {
-  const d = s.dice_fx || {};
-  if (diceSeen === null) { diceSeen = d.id || 0; return; }   // 读档时不重放
-  if (d.id && d.id !== diceSeen) { diceSeen = d.id; playDice(d); }
+function sparkles(el, size) {
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2 + Math.random() * 0.3, r = size * (0.8 + Math.random() * 0.7);
+    const sp = h("i", { class: "spark", style: { left: `${size / 2}px`, top: `${size * 0.56}px`, "--dx": `${Math.cos(a) * r}px`, "--dy": `${Math.sin(a) * r}px`, animationDelay: `${Math.random() * 120}ms` } });
+    el.append(sp);
+  }
+}
+// 声音：按画面上看到的状态变化触发（骰子落定前画面是冻结的，所以声音也会等骰子）
+function cues(a, b) {
+  if (!a || !b || a === b) return;
+  if ((b.gold || 0) > (a.gold || 0)) sfx("coin", { volume: 0.55 });
+  if ((b.level || 1) > (a.level || 1)) sfx("levelup", { volume: 0.8 });
+  if (b.phase === "battle" && a.phase !== "battle") sfx("battle", { volume: 0.7 });
+  if (a.phase === "battle" && b.phase !== "battle" && (a.foe || {}).hp > 0 && b.hp > 0 && (b.kills || 0) > (a.kills || 0)) sfx("victory", { volume: 0.8 });
+  if ((b.toast || {}).n && (b.toast || {}).n !== (a.toast || {}).n) sfx("item", { volume: 0.7 });
+  if (b.camped && !a.camped) sfx("camp", { volume: 0.7 });
+  if (b.hp <= 0 && a.hp > 0) { sfx("death", { volume: 0.9 }); music(false); }
+  const ta = (a.ui_card || {}).title, tb = (b.ui_card || {}).title;
+  if (tb && tb !== ta && (b.ui_card || {}).mode === "card") sfx("card", { volume: 0.5 });
+  if ((b.res || {}).cur < (a.res || {}).cur && b.phase === "battle") sfx("magic", { volume: 0.6 });
 }
 function resultBox(r) {
-  if (diceBusy()) return h("div", { class: "result info" }, h("div", { class: "you" }, `➤ ${r.text}`), h("div", { class: "judging loading" }, T("骰子正在滚动", "The die is rolling")));
   return h("div", { class: "result " + (r.good === true ? "good" : r.good === false ? "bad" : "info") },
     h("div", { class: "you" }, `➤ ${r.text}`),
     r.ruling ? h("div", { class: "ruling" }, r.ruling) : null,
@@ -319,7 +501,6 @@ function actions(s) {
 }
 function journal(s) {
   let all = s.journal || [];
-  if (diceBusy()) { const i = all.map((l) => l.indexOf("🎲") === 0).lastIndexOf(true); if (i >= 0) all = all.slice(0, i); }   // 骰子落定前不剧透
   const lines = all.slice(journalOpen ? -60 : -7);
   return h("div", { class: "journal" + (journalOpen ? " open" : ""), title: T("点击展开 / 收起日志", "Click to expand / collapse"), onclick: () => { journalOpen = !journalOpen; render(); } }, lines.map((l) => h("div", { class: "out" + (l.charCodeAt(0) === 0x200b ? " ai" : "") }, l)));
 }
@@ -401,9 +582,10 @@ function toastEl(s) {
   return h("div", { class: "toast wood", style: { borderColor: RK[t.rk] } }, h("small", {}, t.head || T("获得了新的东西", "You found something new"), " · ", h("b", { style: { color: RK[t.rk] } }, t.rarity)),
     h("h3", { class: "serif" }, t.title), h("div", { class: "eff" }, t.eff), t.curse ? h("div", { class: "cur" }, t.curse) : null, t.desc ? h("p", {}, t.desc) : null);
 }
+let lastShown = null;
 function render() {
-  const s = S;
-  checkDice(s);
+  const s = viewState();
+  cues(lastShown, s); lastShown = s;
   const ui = $("ui");
   const cardKey = s.phase === "battle" ? "battle" : JSON.stringify([(s.ui_card || {}).mode, (s.ui_card || {}).title, s.phase === "none" && !!s.last_result]);
   const kids = [hud(s), banner(s), journal(s), actions(s), menu(s), h("div", { class: "msg out" }, msg)];
@@ -433,11 +615,14 @@ addEventListener("keydown", (e) => {
   else if (e.key === "c" || e.key === "C") run("camp");
   else if (e.key === "f" || e.key === "F") run("flee");
 });
-function fit() { const sc = S.screen || {}; if (sc.h > 100) oasis.resize(Math.max(320, Math.min(2000, sc.h - 22))); }
-oasis.ready.then((o) => { S = o.state || {}; fit(); resize(); render(); requestAnimationFrame(frame); });
-let lastH = 0;
-oasis.onState((s, ch) => { S = s; if ((s.screen || {}).h !== lastH) { lastH = (s.screen || {}).h; fit(); setTimeout(resize, 50); }
+oasis.ready.then((o) => { S = o.state || {}; diceSeen = (S.dice_fx || {}).id || 0; render(); initScene(); });
+oasis.onState((s, ch) => {
+  const prev = S; S = s;
+  const d = s.dice_fx || {};
+  if (diceSeen === null) diceSeen = d.id || 0;
+  else if (d.id && d.id !== diceSeen) { diceSeen = d.id; frozen = prev; playDice(d); }   // 新的掷骰：画面停在掷骰前，等骰子落定
   // 只有动画状态变了时不重建界面（20 次/秒），只处理飘字
   if (ch && ch.length === 1 && ch[0] === "scene_fx") { popups(); return; }
-  render(); });
+  render();
+});
 })();

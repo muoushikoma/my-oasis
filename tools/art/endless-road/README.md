@@ -17,3 +17,8 @@ node bggen.mjs out/bg         # 背景 4 层 × 6 个地区 → out/bg/*.png，o
 2. 重新生成，把 PNG 放进 `assets/sprites/`。
 3. 在 `story.yaml` 的 `assets` 里登记，在 `scripts/scene.js` 的 `SPR` 里写上帧的宽高（看 `out/pix/meta.json`）。
 4. 想让 AI 能选它：把名字加进 `scripts/road.js` 的 `FOE_SPRITES` 或 `KIND_SPRITES`，以及 `story.yaml` 里 `road_event` 的 `sprite` 枚举和提示词。
+
+
+## 音效与音乐
+
+`node tools/art/endless-road/sfx.mjs` 用代码合成全部音效（骰子、战斗、收获、界面）和一段循环的旅途小调，写到 `stories/endless-road/assets/sfx/`。
