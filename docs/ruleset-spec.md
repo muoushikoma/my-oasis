@@ -428,7 +428,7 @@ export function run(api) {
 | `text-block` | `bind: 状态id` 或 `text` | 显示一段文字 |
 | `image` | `src`，或 `bind`（一个状态）+ `images: { 值: 素材引用 }`（可再写 `src` 作默认图），或 `generated: 生图点id`；`fit: cover\|contain` | 图片 / 随状态切换 / AI 生图 |
 | `dice-log` | —（需 `oasis/dice`） | 随机结果记录 |
-| `custom` | `src`（包内 `.html`），`actions`（可调用的动作 id 列表），`emits`（可发出的事件名），`config`（任意数据，原样交给组件），`height`，`fallback`（关闭时显示的文字） | 作者自带的 HTML/JS 组件，沙箱运行，见下方“自定义组件” |
+| `custom` | `src`（包内 `.html`），`actions`（可调用的动作 id 列表），`emits`（可发出的事件名），`config`（任意数据，原样交给组件），`height`，`size: fill`（铺满区域），`runtime: game`（注入内置游戏运行时，见 §13.6），`files`（交给组件的包内文件/文件夹），`fallback`（关闭时显示的文字） | 作者自带的 HTML/JS 组件，沙箱运行，见下方“自定义组件” |
 | `node-map`、`portrait`、`item-grid`、`timer` | — | 以后再加（可先用 `custom` 自己做） |
 
 **自定义组件（type: custom）**
@@ -464,7 +464,7 @@ ui:
 
 - 拿不到 Key、令牌、存档、文件、Tauri 命令，也不能直接写状态、调模型，只能“调用声明过的动作”和“发声明过的事件”。
 - 玩家可在“设置”里全局关闭自定义组件，此时显示组件的 `fallback` 文字。作者应保证关掉后故事仍能玩（同样的动作另外给按钮或输入框）。
-- 校验：`src` 必须是包里存在的 `.html`（`custom_no_src` / `custom_src_type` / `missing_file`）；HTML 里相对引用的文件必须存在（`missing_file`）；引用外网地址给警告（`custom_network`，运行时也加载不到）；内联后总大小 ≤ 8 MB（`custom_too_big`）；`actions` 必须是存在且玩家可调用的动作；`ui:<id>.<事件>` 触发器的事件必须写在 `emits` 里（`component_event`）；没写 `fallback` 给提示。
+- 校验：`src` 必须是包里存在的 `.html`（`custom_no_src` / `custom_src_type` / `missing_file`）；HTML 里相对引用的文件必须存在（`missing_file`）；引用外网地址给警告（`custom_network`，运行时也加载不到）；内联后总大小 ≤ 8 MB（`runtime: game` 的组件 ≤ 24 MB，§13.6）（`custom_too_big`）；`actions` 必须是存在且玩家可调用的动作；`ui:<id>.<事件>` 触发器的事件必须写在 `emits` 里（`component_event`）；没写 `fallback` 给提示。
 - 示例：`tests/fixtures/custom-ui-mini/`。
 
 **AI 生成的选项按钮（choices 约定）**
@@ -519,6 +519,114 @@ assets:
 | `alt` / `loop` / `volume` | 否 | 文字说明 / 是否循环 / 默认音量 0–1 |
 
 格式与大小：图片 WebP/PNG/JPG，单张 ≤ 10 MB（背景建议 1920 宽 WebP，约 200–400 KB）；音频 OGG/MP3/M4A，单个 ≤ 30 MB（建议 96–128 kbps，需要时可用更高码率）；整包 ≤ 300 MB。校验时检查：文件存在、扩展名与类型相符、用途与类型相符、引用的 id 存在且类型对（背景要图片、音乐要音频）。
+
+### 13.6 游戏运行时（custom 组件 `runtime: game`）
+
+想做横版动作、平台跳跃、射击、俯视角冒险这类 2D 引擎级游戏时，给自定义组件写 `runtime: game`，客户端会在它的沙箱里**内置一套游戏运行时**（PixiJS 渲染 + Rapier 2D 物理，全部随客户端打包，不走 CDN，沙箱照样不能联网）。
+
+```yaml
+spec: oasis/0.4
+ui:
+  takeover: true                       # 建议配合接管模式，整个窗口给游戏
+  layout: { template: custom, grid: ["screen"] }
+  components:
+    arena:
+      type: custom
+      region: screen
+      src: game/main.html
+      runtime: game                    # 注入 window.oasis.game
+      size: fill                       # 铺满区域（游戏组件建议都写）
+      files: [game/art/, game/sfx/, game/data/]   # 交给组件的包内文件；以 / 结尾表示整个文件夹
+      actions: [clear_wave, fall, finish]
+      emits: [scout]
+      fallback: 这个故事是动作游戏，需要打开设置里的“自定义组件”。
+```
+
+| 字段 | 说明 |
+|---|---|
+| `runtime` | 目前只有 `game`。不写就是普通自定义组件（§13 “自定义组件”），不加载运行时 |
+| `files` | 包内路径列表，文件夹以 `/` 结尾。列出的文件以 `window.oasis.files`（路径 → `data:` 地址）交给组件，运行时的素材加载器就从这里读。每一项都必须存在（`missing_file`），文件大小计入组件总大小 |
+| `size` | `fill` 时组件铺满所在区域、不再按 `height` 调高度；游戏组件没写 `fill` 时给提示（`game_not_fill`） |
+
+**大小上限**：普通组件内联后 ≤ 8 MB；`runtime: game` 的组件（含 `files`）≤ 24 MB（`custom_too_big`）。运行时本身约 2.4 MB，不算在内，只在用到时加载。
+
+**沙箱不变**：仍是 `sandbox="allow-scripts"`、`default-src 'none'`、不能联网、拿不到 Key/存档/文件/Tauri 命令。为了跑 Rapier 的 WebAssembly，组件文档的 CSP 额外允许 `'wasm-unsafe-eval'`（只允许编译 wasm，**不允许** `eval` / `new Function`；运行时里 PixiJS 的 `new Function` 在打包时就被换成了会报错的空函数）。
+
+#### 运行时接口（`window.oasis.game`）
+
+```js
+const O = window.oasis; await O.ready;
+const game = await O.game.create({
+  height: 216, scaleMode: "expand",          // 逻辑分辨率；fit 留黑边 / expand 按高度缩放、宽度随窗口 / stretch 拉伸
+  pixelArt: true,                            // 像素风：最近邻采样 + 整数倍缩放
+  physics: { pixelsPerMeter: 16, gravity: [0, 0], layers: ["world", "player", "enemy"], debug: false },
+  input: { actions: { ...O.game.DEFAULT_BINDINGS }, touch: { buttons: [{ action: "jump", label: "A", x: -0.1, y: -0.15 }] } },
+  assets: { images: {...}, sheets: {...}, sounds: {...}, json: {...}, fonts: {...} },   // 路径都是包内路径，必须在 files 里
+});
+game.scene("play", { enter(g, data) {}, update(g, dt) {}, render(g, alpha) {}, exit(g) {} });
+game.start("play");
+```
+
+| 模块 | 能做什么 |
+|---|---|
+| 循环 | 固定步长（默认 60 Hz），单帧最多补 5 步；`game.hitStop(ms)` 顿帧；`game.paused`；场景 `scene()` / `go()`；`onUpdate(cb)` |
+| 素材 | 预加载图片、图集（`frameWidth/frameHeight` 网格，或 `atlas` 指向 TexturePacker 风格 JSON）、声音、JSON、字体；`onProgress` 进度 |
+| 渲染（PixiJS 8） | `spawn({ sprite \| anim, anchor, z })` 精灵与图集动画；`game.ui.nineSlice()` 九宫格、`text()`（按缩放清晰渲染）、`bar()`；`game.particles.burst()` 粒子；`game.camera.follow(e, { lerp, deadzone })`、`setBounds`、`shake(amp, ms)`、`zoom`；`game.world` / `game.hud` 两个图层；`O.game.PIXI` 可直接用 |
+| 物理（Rapier 2D） | `spawn({ body: { type, box\|circle\|capsule, sensor, layer, mask } })` 刚体与碰撞体；`colliders: [{ name, sensor, … }]` 附加碰撞体（`e.enable(name, on)`）；`character: { mask }` 角色控制器（`e.move(dx, dy)` 返回是否着地）；`game.physics.static()` 静态地形；`onHit` / `physics.onCollision` 碰撞开始/结束事件；`raycast()`、`overlapBox()` 查询；层 → 碰撞分组 |
+| 动画状态机 | `anim: { sheet, fsm }`，见下 |
+| 输入 | 见下 |
+| 声音 | WebAudio；`game.audio.play(id, { volume, rate })`、`music(id)`；第一次按键/点击时自动解锁 |
+| AI | 见下（不进实时循环） |
+
+#### 动画状态机（JSON）
+
+```json
+{
+  "initial": "idle",
+  "params": { "speed": 0, "grounded": true, "attack": "trigger" },
+  "states": {
+    "idle":   { "anim": "idle" },
+    "run":    { "anim": "run", "speed": 1.2 },
+    "attack": { "anim": "attack", "loop": false, "events": { "1": "hit_on", "3": "hit_off" }, "on_enter": "swing" }
+  },
+  "transitions": [
+    { "from": ["idle", "run"], "to": "attack", "when": "attack" },
+    { "from": "attack", "to": "idle", "on_end": true },
+    { "from": "idle", "to": "run", "when": "grounded && speed > 10", "min_time": 0.05 },
+    { "from": "run", "to": "idle", "when": "speed <= 10" }
+  ]
+}
+```
+
+- `params`：数字/布尔，或 `"trigger"`（用一次自动清零）。脚本里 `e.fsm.set("speed", 40)`、`e.fsm.trigger("attack")`。
+- `transitions` 按顺序检查第一条成立的：`from`（状态、列表或 `"*"`）、`to`、`when`（只支持参数、数字、`true/false`、比较、`&& || !` 和括号，**不执行代码**）、`on_end`（不循环的动画播完）、`min_time`（在当前状态待够秒数）。
+- `states`：`anim`（图集里的动画名，默认同名）、`loop`、`speed`、`events`（`{ 帧号: 事件名或列表 }`）、`on_enter` / `on_exit`。不循环的动画播完还会发 `<状态>:end`。
+- 事件用 `game.on("hit_on", (entity, ev) => …)` 接——攻击判定、脚步声、特效都挂在帧上。状态机写错（状态/动画/参数不存在）会在创建时报出具体哪一条。
+
+#### 统一输入
+
+- 键盘（`KeyboardEvent.code`，如 `KeyJ`、`Space`、`ArrowLeft`）、手柄（标准布局 `Pad0`–`Pad16`，摇杆 `PadAxis0-` / `PadAxis0+` / `PadAxis1-` / `PadAxis1+`，带死区）、触屏虚拟按键，都先变成“动作”。
+- 默认映射 `DEFAULT_BINDINGS`：`left right up down jump attack confirm pause`；作者可在 `input.actions` 里改，也可运行时 `game.input.rebind("jump", ["KeyZ"])`、`getBindings()`。改键不会自动保存（沙箱里没有 `localStorage`）；要记住可以通过动作把映射写进状态。
+- 查询：`isDown(a)`、`pressed(a)`、`released(a)`、`axis("left", "right")`；两步之间按下又松开的快速点按不会丢。
+- **虚拟按键默认不显示**：只有写了 `input.touch` 才会出现，并且默认只在触屏设备上显示（`show: "always" | "never"` 可改）；十字键 `dpad` 也要单独声明。不会出现摇杆。
+- 手柄：沙箱里 Gamepad API 不一定可用，客户端会把手柄状态转发进组件。
+- **Esc**：短按交给游戏；按住 1 秒仍然打开客户端暂停菜单（运行时把 Esc 转给客户端），游戏拦不住。
+
+#### AI（必须有，但不进实时循环）
+
+故事仍然必须接 AI（最高原则）。游戏里的 AI 都是**异步**的：在波次之间、过场、标题画面里请求，拿到前游戏照常跑，失败/超时用备用文字。
+
+| 接口 | 说明 |
+|---|---|
+| `game.ai.ask(event, payload, { key, timeout, fallback })` | 等客户端空闲 → `oasis.emit(event, payload)` 触发 `ui:<组件>.<event>` 接入点（其 `output.to` 写 `state:<key>`）→ 等 `state[key]` 变化后返回新值；AI 关闭/失败/超时返回 `fallback` |
+| `game.ai.action(id, params)` | 等空闲再调用动作（动作可触发 AI 接入点，比如 `trigger: "action:clear_wave"` 写旁白） |
+| `game.ai.waitState(key, timeout)` / `game.ai.idle()` | 等某个状态变化 / 等 AI 处理完 |
+
+叙述写进状态（`output.to: state:…`）由游戏自己显示，此时不要求界面里有 `text-log`。
+
+#### 示例
+
+`examples/ember-corridor/`《余烬回廊》：像素风横版动作，接管模式；角色控制器 + 土狼时间 + 跳跃缓冲、帧事件攻击判定、顿帧与镜头震动、粒子、九宫格对话框、三波敌人；波次之间由 AI 写旁白和侦察短句。美术和音效都是 `tools/demo-art/ember-corridor.mjs` 程序生成的原创素材。
 
 ## 14. 校验级别
 客户端导入、服务端上传都用同一套校验，结果分三级：

@@ -6,7 +6,7 @@ import type { StoryFiles } from "@my-oasis/schema";
 /** 桥接协议版本：只做向后兼容的增加；不兼容的改动会换成 oasis-ui/2 */
 export const BRIDGE_VERSION = "oasis-ui/1";
 /** iframe 内文档自己的 CSP（再叠加客户端的 CSP） */
-export const FRAME_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; media-src data:; font-src data:";
+export const FRAME_CSP = "default-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data:; media-src data:; font-src data:";
 export const CUSTOM_MAX_BYTES = 8 * 1024 * 1024;
 
 const MIME: Record<string, string> = {
@@ -42,8 +42,28 @@ const ch=m.changed||Object.keys(api.state);L.forEach(f=>{try{f(api.state,ch)}cat
 else if(m.type==="result"){const r=pend.get(m.req);if(r){pend.delete(m.req);r({ok:!!m.ok,error:m.error})}}});
 window.oasis=api;send({type:"ready"})})();`;
 
+/** 组件 files 列表（包内路径；以 / 结尾表示整个文件夹）→ 实际文件路径 */
+export function componentFiles(files: StoryFiles, list: unknown): string[] {
+  if (!Array.isArray(list)) return [];
+  const out = new Set<string>();
+  for (const raw of list) {
+    if (typeof raw !== "string") continue;
+    const dirMode = raw.endsWith("/"), p = normPath(raw);
+    if (!p) continue;
+    if (dirMode) { for (const k of files.keys()) if (k.startsWith(p + "/") && !k.startsWith(p + "/.")) out.add(k); }
+    else if (files.has(p)) out.add(p);
+  }
+  return [...out].sort();
+}
+export interface FrameExtras {
+  /** runtime: game 时注入的游戏运行时脚本（§13.6） */
+  runtime?: string;
+  /** 组件 files 列出的包内文件，作为 window.oasis.files（路径 → data: 地址）交给组件 */
+  files?: string[];
+}
+
 /** 把组件 HTML 和它引用的包内文件拼成一份独立文档（脚本/样式内联，图片/声音/字体变 data: 地址） */
-export function buildFrameHtml(files: StoryFiles, src: string): string {
+export function buildFrameHtml(files: StoryFiles, src: string, extras: FrameExtras = {}): string {
   const raw = files.get(src); if (!raw) throw new Error(`找不到自定义组件文件 ${src}`);
   const dir = src.includes("/") ? src.slice(0, src.lastIndexOf("/") + 1) : "";
   const get = (ref: string, base = dir) => { if (isUrl(ref)) return undefined; const p = normPath(base + ref.split(/[?#]/)[0]); return p ? files.get(p) : undefined; };
@@ -60,7 +80,14 @@ export function buildFrameHtml(files: StoryFiles, src: string): string {
   });
   html = html.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (_m, a, t) => `<style${a}>${css(t, dir)}</style>`);
   html = html.replace(/\b(src|href|poster)\s*=\s*(["'])([^"']+)\2/gi, (m, k, q, ref) => { const u = dataUrl(ref); return u ? `${k}=${q}${u}${q}` : m; });
-  const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}"><script>${BRIDGE_SCRIPT}</script>`;
+  let extra = "";
+  if (extras.files?.length) {
+    const map: Record<string, string> = {};
+    for (const p of extras.files) { const u = dataUrl(p, ""); if (u) map[p] = u; }
+    extra += `<script>window.oasis.files=${scriptSafe(JSON.stringify(map))};</script>`;
+  }
+  if (extras.runtime) extra += `<script>${scriptSafe(extras.runtime)}</script>`;
+  const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}"><script>${BRIDGE_SCRIPT}</script>${extra}`;
   // 放在最前面：CSP 和 window.oasis 在作者的任何代码之前生效
   if (/<head\b[^>]*>/i.test(html)) return html.replace(/<head\b[^>]*>/i, (m) => m + head);
   return `<!doctype html><html><head>${head}</head><body>${html}</body></html>`;
@@ -74,6 +101,10 @@ export interface FrameHost {
   /** 把文档交给客户端：Tauri 里走自定义协议（独立 CSP 和源），浏览器开发模式用 srcdoc */
   load(iframe: HTMLIFrameElement, html: string): void | Promise<void>;
   log?(text: string): void;
+  /** 组件转发的 Esc（游戏运行时抢走了键盘焦点，长按 Esc 仍要能打开暂停菜单） */
+  key?(key: string, down: boolean): void;
+  /** runtime: game 时的游戏运行时脚本 */
+  runtime?(): Promise<string>;
 }
 
 /** 一个自定义组件实例：iframe 跨渲染保留（用 moveBefore 移动，不会重新加载） */
@@ -81,18 +112,40 @@ export class CustomFrame {
   readonly el: HTMLElement;
   readonly iframe: HTMLIFrameElement;
   private lastSent = ""; private ready = false; private lastAction = 0; private actionsInWindow = 0;
+  private padRaf = 0; private lastPad = "";
+  readonly game: boolean; readonly fill: boolean;
   constructor(readonly cid: string, readonly c: any, files: StoryFiles, private host: FrameHost) {
+    this.game = c.runtime === "game"; this.fill = c.size === "fill";
     this.iframe = document.createElement("iframe");
     this.iframe.setAttribute("sandbox", "allow-scripts");
     this.iframe.setAttribute("referrerpolicy", "no-referrer");
     this.iframe.setAttribute("allow", "");
     this.iframe.setAttribute("title", String(c.label ?? cid));
     this.iframe.className = "custom-frame";
-    this.iframe.style.height = `${clampH(c.height ?? 200)}px`;
-    this.el = document.createElement("div"); this.el.className = "custom-host"; this.el.append(this.iframe);
+    if (this.game) this.iframe.setAttribute("allow", "gamepad; autoplay");
+    if (this.fill) this.iframe.classList.add("fill"); else this.iframe.style.height = `${clampH(c.height ?? 200)}px`;
+    this.el = document.createElement("div"); this.el.className = "custom-host" + (this.fill ? " fill" : ""); this.el.append(this.iframe);
     window.addEventListener("message", this.onMsg);
-    void host.load(this.iframe, buildFrameHtml(files, c.src));
+    const isGame = this.game, iframe = this.iframe;
+    void (async () => {
+      const runtime = isGame ? await host.runtime?.() : undefined;
+      await host.load(iframe, buildFrameHtml(files, c.src, { files: componentFiles(files, c.files), runtime }));
+    })().catch((e) => host.log?.(`自定义组件「${cid}」加载失败：${e?.message ?? e}`));
+    if (this.game) { this.iframe.addEventListener("load", () => this.iframe.focus()); this.pollPad(); }
   }
+  /** 把主窗口读到的手柄状态转发给游戏（沙箱 iframe 里 Gamepad API 可能被权限策略挡住） */
+  private pollPad() {
+    this.padRaf = requestAnimationFrame(() => this.pollPad());
+    if (!this.ready) return;
+    let msg: { buttons: number[]; axes: number[] } = { buttons: [], axes: [] };
+    try {
+      const g = [...(navigator.getGamepads?.() ?? [])].find((x) => x && x.connected);
+      if (g) msg = { buttons: g.buttons.map((b, i) => (b.pressed || b.value > 0.5 ? i : -1)).filter((i) => i >= 0), axes: g.axes.map((a) => Math.round(a * 100) / 100) };
+    } catch { /* 没有手柄 API */ }
+    const j = JSON.stringify(msg); if (j === this.lastPad) return; this.lastPad = j;
+    this.post({ type: "gamepad", ...msg });
+  }
+  focus() { try { this.iframe.focus(); this.iframe.contentWindow?.focus(); } catch { /* 跨源 */ } }
   private post(m: any) { this.iframe.contentWindow?.postMessage({ oasis: BRIDGE_VERSION, ...m }, "*"); }
   private snapshot() { return { state: this.host.state(), lang: this.host.lang(), ended: this.host.ended(), busy: this.host.busy() }; }
   /** 状态变了就推给组件（只推玩家可见的状态） */
@@ -126,11 +179,12 @@ export class CustomFrame {
         let payload = m.payload; try { if (JSON.stringify(payload ?? null).length > 2048) payload = null; } catch { payload = null; }
         this.host.emit(m.event, payload); return;
       }
-      case "resize": this.iframe.style.height = `${clampH(m.height)}px`; return;
+      case "resize": if (!this.fill) this.iframe.style.height = `${clampH(m.height)}px`; return;
       case "log": this.host.log?.(`[${this.cid}] ${String(m.text).slice(0, 500)}`); return;
+      case "key": if (m.key === "Escape") this.host.key?.("Escape", !!m.down); return;
     }
   };
-  destroy() { window.removeEventListener("message", this.onMsg); this.el.remove(); }
+  destroy() { cancelAnimationFrame(this.padRaf); window.removeEventListener("message", this.onMsg); this.el.remove(); }
 }
 const clampH = (h: unknown) => Math.max(40, Math.min(2000, Math.round(Number(h) || 200)));
 

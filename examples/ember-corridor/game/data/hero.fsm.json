@@ -1,0 +1,24 @@
+{
+  "initial": "idle",
+  "params": { "speed": 0, "grounded": true, "vy": 0, "attack": "trigger", "hurt": "trigger", "dead": false },
+  "states": {
+    "idle":   { "anim": "idle" },
+    "run":    { "anim": "run" },
+    "jump":   { "anim": "jump" },
+    "fall":   { "anim": "fall" },
+    "attack": { "anim": "attack", "loop": false, "events": { "0": "swing", "1": "hit_on", "3": "hit_off" } },
+    "hurt":   { "anim": "hurt", "loop": false },
+    "dead":   { "anim": "dead", "loop": false, "on_enter": "died" }
+  },
+  "transitions": [
+    { "from": "*", "to": "dead", "when": "dead" },
+    { "from": ["idle", "run", "jump", "fall", "attack"], "to": "hurt", "when": "hurt && !dead" },
+    { "from": ["idle", "run", "jump", "fall"], "to": "attack", "when": "attack" },
+    { "from": "attack", "to": "idle", "on_end": true },
+    { "from": "hurt", "to": "idle", "on_end": true, "min_time": 0.25 },
+    { "from": ["idle", "run", "fall"], "to": "jump", "when": "!grounded && vy < 0" },
+    { "from": ["idle", "run", "jump"], "to": "fall", "when": "!grounded && vy >= 0" },
+    { "from": ["jump", "fall", "idle"], "to": "run", "when": "grounded && speed > 10" },
+    { "from": ["jump", "fall", "run"], "to": "idle", "when": "grounded && speed <= 10" }
+  ]
+}

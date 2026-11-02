@@ -169,7 +169,7 @@ ai:
   - `stage`：`top`、`main`、`input`、`side`
 - `components` 的写法是 `组件id: { type, region, content?, … }`：
   - `type` 可选 `text-log`、`text-input`、`button`、`choice-buttons`、`stat-list`、`stat-bar`、`item-list`、`chat-box`、`text-block`、`image`、`dice-log`、`canvas`（0.4，见第 10 节）、`custom`（作者自带的 HTML/JS 组件，见下面）。
-  - `custom`：`{ type: custom, region, src: ui/map.html, actions: [动作id], emits: [事件名], config: {...}, height, fallback }`。组件在沙箱 iframe 里运行，不能联网，只能用 `window.oasis` 读玩家可见的状态（`oasis.state`、`oasis.onState(cb)`）、调用 `actions` 里的动作（`await oasis.action('move', { to: '海滩' })`）、发 `emits` 里的事件（`oasis.emit('opened', 数据)`，AI 用 `trigger: "ui:map.opened"` 接）。玩家可在设置里关掉自定义组件，此时显示 `fallback`。完整接口见 ruleset-spec §13.3，示例 `tests/fixtures/custom-ui-mini/`。
+  - `custom`：`{ type: custom, region, src: ui/map.html, actions: [动作id], emits: [事件名], config: {...}, height, fallback }`。组件在沙箱 iframe 里运行，不能联网，只能用 `window.oasis` 读玩家可见的状态（`oasis.state`、`oasis.onState(cb)`）、调用 `actions` 里的动作（`await oasis.action('move', { to: '海滩' })`）、发 `emits` 里的事件（`oasis.emit('opened', 数据)`，AI 用 `trigger: "ui:map.opened"` 接）。玩家可在设置里关掉自定义组件，此时显示 `fallback`。完整接口见 ruleset-spec §13，示例 `tests/fixtures/custom-ui-mini/`。要做 2D 动作游戏可加 `runtime: game`（见 10.10）。
   - `content` 可选 `fixed`（默认）或 `ai`。**AI 输出的目标组件必须写 `content: ai`**。
   - `text-input` 和 `chat-box` 可选 `input: { actions: [动作id…], reject: 超出范围时的回应文字, words?, max_length? }`。不写时，玩家文字不能触发任何动作（仍可交给 AI 接入点）。
   - 其他字段：`label`、`placeholder`、`writes`、`action`、`emit`、`choices`、`from_ai`、`bind`、`title`、`portrait`、`text`、`src`、`images`、`fit`、`generated`、`hidden_by_default`、`player_can_hide`。
@@ -508,7 +508,22 @@ api.overlay.hide("menu");            // hide() 不带参数 = 全部关掉
 
 以上请求（除了 `storage.get`）都不能在 render 里用。`realtime.on_ui` 写法同 `on_ai`：`on_ui: scripts/game.js#onUi`。
 
-### 10.10 为什么有些事情故事不能做
+### 10.10 2D 游戏运行时（custom 组件 `runtime: game`）
+
+要做横版动作、平台跳跃、射击这类 2D 引擎级游戏，用自定义组件加 `runtime: game`：客户端在沙箱里注入 `window.oasis.game`（PixiJS 渲染：精灵、图集动画、九宫格、粒子、镜头跟随/震动；Rapier 2D 物理：刚体、碰撞体、传感器、碰撞事件、射线；JSON 动画状态机；键盘/手柄/触屏统一输入，可改键；固定步长循环、场景、素材预加载、声音）。全部随客户端打包，不联网。
+
+```yaml
+components:
+  arena: { type: custom, region: screen, src: game/main.html, runtime: game, size: fill,
+           files: [game/art/, game/sfx/, game/data/], actions: [clear_wave], emits: [scout] }
+```
+
+- `files` 列出的包内文件（文件夹以 `/` 结尾）以 `window.oasis.files` 交给组件；组件总大小 ≤ 24 MB。
+- 虚拟按键默认不显示，写了 `input.touch` 才在触屏设备上出现；没有摇杆。
+- AI 仍然必须有，但只能异步用：`game.ai.ask(事件, 数据, { key, fallback })` 发事件给 AI 接入点、等它写进 `state:<key>`；`game.ai.action(id)` 调动作触发接入点。不要在每帧里等 AI。
+- 完整接口、状态机格式见 ruleset-spec §13.6；示例 `examples/ember-corridor/`。
+
+### 10.11 为什么有些事情故事不能做
 
 这些限制是为了保护玩家，不是能力不够：
 

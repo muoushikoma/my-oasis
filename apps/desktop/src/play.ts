@@ -406,6 +406,9 @@ export class PlaySession {
       emit: (ev, payload) => { void this.op(async () => { await this.runAi(entriesFor(this.game, `ui:${cid}.${ev}`), payload == null ? "" : JSON.stringify(payload)); }); },
       load: (iframe, html) => bridge.loadCustomFrame(iframe, html),
       log: (t) => { if (this.debug) console.info(t); },
+      // 游戏运行时（§13.6）按需加载：只有 runtime: game 的组件才会下载这 2 MB 多的脚本
+      runtime: () => import("virtual:oasis-game-runtime").then((m) => m.default),
+      key: (key, down) => window.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup", { key })),
     });
     this.frames.set(cid, f);
     this.frameTimer ??= window.setInterval(() => this.frames.forEach((x) => x.update()), 250);
@@ -484,7 +487,7 @@ export class PlaySession {
       case "custom": {
         if (this.settings.customUi === false || !this.files.has(c.src)) return box(h("p", { class: "muted small" }, c.fallback ?? "（这里是作者自定义的组件，已在设置里关闭）"));
         this.customFrame(cid, c);
-        return box(h("div", { class: "custom-slot", "data-custom-slot": cid }));
+        return box(h("div", { class: "custom-slot" + (c.size === "fill" ? " fill" : ""), "data-custom-slot": cid }));
       }
       case "canvas": return this.rt ? box(this.rt.canvas(cid, c)) : box(h("p", { class: "muted" }, "（画布需要 realtime 循环）"));
       default: return null;

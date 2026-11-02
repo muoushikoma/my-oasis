@@ -46,9 +46,11 @@
 
 ```
 apps/desktop/         客户端（Tauri 2：Windows + 安卓）
+apps/desktop/game-runtime/  自定义组件用的 2D 游戏运行时（PixiJS + Rapier，打包进客户端）
 packages/             schema（校验）、engine（规则引擎）、cli
 crates/oasis-native/  本地能力：故事包读取、存档、模型请求、GitHub 登录与投稿（Key/token 不出 Rust）
-docs/                 故事包格式规范、AI 创作指南、JSON Schema
+docs/                 故事包格式规范、AI 创作指南、JSON Schema、设计说明（DESIGN.md）
+examples/             示例故事（含 2D 动作演示《余烬回廊》examples/ember-corridor）
 stories/<id>/         已上架的故事
 site/                 故事发布页模板（GitHub Pages 自动部署）
 tools/stories/        投稿检查、生成目录与发布页的脚本
@@ -69,11 +71,12 @@ API Key、GitHub token 只存在系统安全存储里（Windows 凭据管理器 
 
 | 文档 | 用途 |
 |---|---|
-| ⭐ [故事交付格式](docs/story-format.md) | **写故事只看这一份，可直接交给 AI。** 规定 `.oasis` 故事包的文件结构和字段格式（含 oasis/0.4 实时游戏：循环、定时器、键盘/触摸/摇杆、画布、声音、异步 AI）以及故事自带的自定义组件（沙箱里的 HTML/JS），不限制故事内容 |
+| ⭐ [故事交付格式](docs/story-format.md) | **写故事只看这一份，可直接交给 AI。** 规定 `.oasis` 故事包的文件结构和字段格式（含 oasis/0.4 实时游戏：循环、定时器、键盘/触摸/摇杆、画布、声音、异步 AI）以及故事自带的自定义组件（沙箱里的 HTML/JS）；自定义组件加 `runtime: game` 就能用内置 2D 游戏运行时（PixiJS 渲染、Rapier 物理、动画状态机、键盘/手柄/触屏输入、异步 AI）做横版动作等引擎级游戏，不限制故事内容 |
 | [JSON Schema](docs/schema/story.schema.json) | 故事主文件的机器可读格式定义，客户端和投稿检查都用它校验 |
 | [故事包格式规范（完整版）](docs/ruleset-spec.md) | 每个字段的详细说明，以及引擎怎么执行它们 |
 | [AI 创作指南](docs/ai-authoring-guide.md) | 旧版的 AI 写故事提示词，内容含创作建议，仅供参考 |
 | [项目说明](docs/overview.md) | 项目是什么、给谁用、整体思路 |
+| [设计说明](docs/DESIGN.md) | 2D 游戏运行时的设计：为什么这样分层、沙箱与 CSP、AI 为什么不进实时循环 |
 | [架构](docs/architecture.md) | 客户端、引擎、AI 接入和安全设计，以及 AI 用量（token）本机记录 |
 | [里程碑](docs/mvp.md) | 已完成和计划中的功能 |
 | [服务器 API（暂缓）](docs/server-api.md) | 以后做服务器时的接口草案，目前不做服务器 |
